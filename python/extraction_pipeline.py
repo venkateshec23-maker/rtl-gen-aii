@@ -11,6 +11,7 @@ from typing import Dict
 
 from python.code_extractor import CodeExtractor
 from python.code_formatter import CodeFormatter
+from python.testbench_generator import TestbenchGenerator
 from python.config import RTL_OUTPUT_DIR
 
 
@@ -29,6 +30,7 @@ class ExtractionPipeline:
         self.debug = debug
         self.extractor = CodeExtractor(debug=debug)
         self.formatter = CodeFormatter(indent_size=indent_size, debug=debug)
+        self.tb_generator = TestbenchGenerator(debug=debug)
 
     def process(self, llm_response, description=None):
         """
@@ -44,6 +46,27 @@ class ExtractionPipeline:
             result['rtl_filename'] = ""
             result['tb_filename'] = ""
             return result
+
+        # Fallback testbench generation
+        if result['success'] and not result['testbench_code']:
+            if self.debug:
+                print("No testbench found. Generating automatically...")
+            
+            tb_result = self.tb_generator.generate(
+                rtl_code=result['rtl_code'],
+                design_type='auto'
+            )
+            
+            if tb_result['success']:
+                result['testbench_code'] = tb_result['testbench_code']
+                result['testbench_name'] = tb_result['testbench_name']
+                result['num_tb_blocks'] = 1
+                if self.debug:
+                    print(f"Generated testbench: {result['testbench_name']}")
+            else:
+                result['warnings'].extend(tb_result['errors'])
+                if self.debug:
+                    print(f"Testbench generation failed: {tb_result['errors']}")
 
         # Format RTL
         rtl_formatted = self.formatter.format(
