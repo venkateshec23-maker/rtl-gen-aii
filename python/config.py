@@ -84,6 +84,55 @@ def validate_config():
         return False
     return True
 
+# ============================================================================
+# VERIFICATION CONFIGURATION (Day 12)
+# ============================================================================
+
+# Icarus Verilog paths (auto-detect or specify)
+IVERILOG_PATH = os.getenv('IVERILOG_PATH', 'iverilog')
+VVP_PATH = os.getenv('VVP_PATH', 'vvp')
+
+# Simulation settings
+SIMULATION_TIMEOUT = int(os.getenv('SIMULATION_TIMEOUT', 30))  # seconds
+ENABLE_WAVEFORMS = os.getenv('ENABLE_WAVEFORMS', 'true').lower() == 'true'
+
+# Verification directories
+VERIFICATION_DIR = CACHE_DIR / 'verification'
+VERIFICATION_DIR.mkdir(exist_ok=True)
+
+# Temporary simulation workspace
+SIM_WORKSPACE = VERIFICATION_DIR / 'sim_workspace'
+SIM_WORKSPACE.mkdir(exist_ok=True)
+
+# Waveform output directory
+WAVEFORM_DIR = VERIFICATION_DIR / 'waveforms'
+WAVEFORM_DIR.mkdir(exist_ok=True)
+
+
+# ============================================================================
+# UTILITY FUNCTIONS FOR VERIFICATION (Day 12)
+# ============================================================================
+
+def check_iverilog_available() -> bool:
+    """Check if Icarus Verilog is available."""
+    import shutil
+    return shutil.which('iverilog') is not None
+
+
+def check_vvp_available() -> bool:
+    """Check if vvp (Icarus simulator) is available."""
+    import shutil
+    return shutil.which('vvp') is not None
+
+
+def get_verification_tools_status() -> dict:
+    """Get status of all verification tools."""
+    return {
+        'iverilog': check_iverilog_available(),
+        'vvp': check_vvp_available(),
+    }
+
 
 if __name__ == "__main__":
     validate_config()
+
