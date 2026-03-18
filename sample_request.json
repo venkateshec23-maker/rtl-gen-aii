@@ -1,5 +1,5 @@
 {
-  "model": "claude-3-sonnet-20240229",
+  "model": "deepseek-ai/deepseek-v3.2",
   "max_tokens": 4000,
   "temperature": 0.3,
   "messages": [
@@ -8,5 +8,5 @@
       "content": "Generate an 8-bit adder with carry output"
     }
   ],
-  "system": "You are an expert Verilog programmer. Generate clean, synthesizable code."
+  "stream": false
 }

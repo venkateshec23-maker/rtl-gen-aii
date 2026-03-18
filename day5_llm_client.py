@@ -10,7 +10,7 @@ import time
 class LLMClient:
     """Client for interacting with LLM APIs (SIMULATION)"""
 
-    def __init__(self, api_key="simulated-key", provider="anthropic"):
+    def __init__(self, api_key="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", provider="nvidia"):
         self.api_key = api_key
         self.provider = provider
         self.call_count = 0
@@ -120,7 +120,7 @@ print("=" * 50)
 print("SIMULATED LLM CLIENT")
 print("=" * 50)
 
-client = LLMClient(api_key="test-key", provider="anthropic")
+client = LLMClient(provider="nvidia")
 
 descriptions = [
     "Create an 8-bit adder with carry output",
@@ -143,14 +143,14 @@ print("\n" + "=" * 50)
 print("REAL API STRUCTURE (for future use)")
 print("=" * 50)
 
-anthropic_request = {
-    "model": "claude-3-sonnet-20240229",
+nvidia_request = {
+    "model": "deepseek-ai/deepseek-v3.2",
     "max_tokens": 4000,
     "messages": [{"role": "user", "content": "Generate an 8-bit adder in Verilog"}],
-    "system": "You are an expert Verilog programmer."
+    "stream": False
 }
-print("Anthropic API format:")
-print(json.dumps(anthropic_request, indent=2))
+print("NVIDIA API format:")
+print(json.dumps(nvidia_request, indent=2))
 
 openai_request = {
     "model": "gpt-4",

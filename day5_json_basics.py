@@ -65,8 +65,8 @@ config = {
     },
     "supported_components": ["adder", "counter", "alu", "mux"],
     "api_settings": {
-        "provider": "anthropic",
-        "model": "claude-3-sonnet",
+        "provider": "nvidia",
+        "model": "deepseek-ai/deepseek-v3.2",
         "temperature": 0.3,
         "max_tokens": 4000
     }
@@ -169,7 +169,7 @@ print("=" * 50)
 def create_llm_request(description, system_prompt=None):
     """Create a request in the format expected by LLM APIs"""
     request = {
-        "model": "claude-3-sonnet-20240229",
+        "model": "deepseek-ai/deepseek-v3.2",
         "max_tokens": 4000,
         "temperature": 0.3,
         "messages": [

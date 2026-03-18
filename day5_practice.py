@@ -23,7 +23,7 @@ class Config:
             "project": "RTL-Gen AII",
             "version": "1.0",
             "api": {
-                "model": "claude-3-sonnet",
+                "model": "deepseek-ai/deepseek-v3.2",
                 "temperature": 0.3,
                 "max_tokens": 4000
             },
@@ -111,9 +111,9 @@ print(f"Invalid spec: {validate_design_spec(invalid)}")
 # ============================================
 
 
-def parse_api_response(response_json, provider="anthropic"):
+def parse_api_response(response_json, provider="nvidia"):
     """Extract code from API response"""
-    if provider == "anthropic":
+    if provider == "nvidia":
         content_list = response_json.get("content", [])
         code = content_list[0].get("text", "") if content_list else ""
         metadata = {
@@ -133,9 +133,9 @@ def parse_api_response(response_json, provider="anthropic"):
     return code, metadata
 
 
-anthropic_response = {
+nvidia_response = {
     "content": [{"text": "module adder(); endmodule"}],
-    "model": "claude-3",
+    "model": "deepseek-ai/deepseek-v3.2",
     "usage": {"input_tokens": 10, "output_tokens": 20}
 }
 
@@ -145,7 +145,7 @@ openai_response = {
     "usage": {"prompt_tokens": 10, "completion_tokens": 20}
 }
 
-print(f"\nAnthropic: {parse_api_response(anthropic_response, 'anthropic')}")
+print(f"\nNVIDIA: {parse_api_response(nvidia_response, 'nvidia')}")
 print(f"OpenAI: {parse_api_response(openai_response, 'openai')}")
 
 # ============================================

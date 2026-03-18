@@ -1,0 +1,7 @@
+# Core Dependencies
+python-dotenv>=1.0.0
+openai>=1.0.0
+
+# Development Dependencies
+pytest>=7.4.0
+pytest-cov>=4.1.0

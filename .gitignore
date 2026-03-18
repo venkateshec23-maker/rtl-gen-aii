@@ -1,0 +1,26 @@
+# Environment
+.env
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Cache
+cache/
+
+# Logs
+logs/
+
+# Generated outputs
+outputs/
+generated/
+generated_designs/
+
+# Temp files
+*.bak
+*.tmp
+
+# IDE
+.vscode/
+.idea/

@@ -15,8 +15,8 @@
     "mux"
   ],
   "api_settings": {
-    "provider": "anthropic",
-    "model": "claude-3-sonnet",
+    "provider": "nvidia",
+    "model": "deepseek-ai/deepseek-v3.2",
     "temperature": 0.5,
     "max_tokens": 4000
   }
