@@ -1,0 +1,17 @@
+1. What was the hardest part of today?
+Getting everything configured and replacing the old project name correctly in my workspace.
+
+2. What error did you encounter and how did you fix it?
+Encoding issues during the find-and-replace using PowerShell. Fixed it by writing a Python script to do the replacement reliably on UTF-8 strings.
+
+3. What are you most confident about now?
+Basic git commands, running Python scripts, and VS Code.
+
+4. Rate your understanding (1-10):
+   __9_ Python installed and working
+   __9_ VS Code setup
+   __8_ Git basics
+   __9_ Overall confidence
+
+5. Questions for tomorrow:
+Ready to learn Python basics!
