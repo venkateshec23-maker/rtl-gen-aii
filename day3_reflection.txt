@@ -1,0 +1,18 @@
+1. What's the most useful function I wrote today?
+The `generate_port_list` function looks the most practical for generating repetitive Verilog code.
+
+2. What was tricky about modules?
+Remembering to use the correct alias when importing and ensuring the files are in the same directory.
+
+3. How will I use functions in RTL-Gen AII?
+Functions will be essential to break down the logic when writing the code generators (e.g., parsing, evaluating parameters, creating text files).
+
+4. Rate your understanding (1-10):
+   __9_ Writing functions
+   __8_ Return values
+   __9_ Modules
+   __8_ Function composition
+   __9_ Overall
+
+5. Questions for tomorrow:
+Ready to explore File operations and String manipulation on Day 4!

@@ -1,0 +1,7 @@
+{
+  "default_bit_width": 8,
+  "save_location": "outputs",
+  "create_testbench": true,
+  "add_comments": true,
+  "recent_designs": 10
+}

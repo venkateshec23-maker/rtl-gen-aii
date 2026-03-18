@@ -1,0 +1,12 @@
+{
+  "model": "claude-3-sonnet-20240229",
+  "max_tokens": 4000,
+  "temperature": 0.3,
+  "messages": [
+    {
+      "role": "user",
+      "content": "Generate an 8-bit adder with carry output"
+    }
+  ],
+  "system": "You are an expert Verilog programmer. Generate clean, synthesizable code."
+}

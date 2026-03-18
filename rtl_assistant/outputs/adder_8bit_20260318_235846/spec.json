@@ -1,0 +1,12 @@
+{
+  "original": "Create an 8-bit adder",
+  "component": "adder",
+  "bit_width": 8,
+  "has_clock": false,
+  "has_reset": false,
+  "operations": [
+    "ADD"
+  ],
+  "confidence": 0.8,
+  "module_name": "adder_8bit"
+}

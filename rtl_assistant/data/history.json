@@ -1,0 +1,10 @@
+[
+  {
+    "timestamp": "2026-03-18T23:58:46.281822",
+    "module_name": "adder_8bit",
+    "component": "adder",
+    "bit_width": 8,
+    "description": "Create an 8-bit adder",
+    "location": ".\\outputs\\adder_8bit_20260318_235846"
+  }
+]

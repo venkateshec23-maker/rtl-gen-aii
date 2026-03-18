@@ -1,0 +1,23 @@
+{
+  "project_name": "RTL-Gen AII",
+  "version": "1.0.0",
+  "author": "Venka",
+  "default_settings": {
+    "bit_width": 16,
+    "verify": true,
+    "simulate": true,
+    "output_dir": "./outputs"
+  },
+  "supported_components": [
+    "adder",
+    "counter",
+    "alu",
+    "mux"
+  ],
+  "api_settings": {
+    "provider": "anthropic",
+    "model": "claude-3-sonnet",
+    "temperature": 0.5,
+    "max_tokens": 4000
+  }
+}

@@ -1,0 +1,7 @@
+{
+  "description": "Create a 16-bit ALU with ADD, SUB",
+  "component": "alu",
+  "bit_width": 16,
+  "has_clock": false,
+  "has_reset": false
+}
