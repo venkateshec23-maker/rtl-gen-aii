@@ -85,6 +85,22 @@ if SAVE_PERFORMANCE_REPORTS:
     PERFORMANCE_REPORT_DIR.mkdir(parents=True, exist_ok=True)
 
 # ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
+
+# Log file location
+LOG_FILE = str(LOGS_DIR / 'rtl_gen_ai.log')
+
+# Log level
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO')
+
+# Enable console logging
+ENABLE_CONSOLE_LOG = os.getenv('ENABLE_CONSOLE_LOG', 'true').lower() == 'true'
+
+# JSON formatted logs
+JSON_LOGS = os.getenv('JSON_LOGS', 'false').lower() == 'true'
+
+# ============================================================================
 # VALIDATION
 # ============================================================================
 

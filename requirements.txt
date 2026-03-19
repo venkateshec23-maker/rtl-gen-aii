@@ -1,8 +1,38 @@
+# ============================================================================
+# RTL-Gen AI - Python Dependencies
+# ============================================================================
+
 # Core Dependencies
-python-dotenv>=1.0.0
-openai>=1.0.0
-click>=8.1.7
-streamlit>=1.31.0
-# Development Dependencies
-pytest>=7.4.0
-pytest-cov>=4.1.0
+# ============================================================================
+python-dotenv>=1.0.0          # Environment variable management
+
+# LLM & AI
+# ============================================================================
+anthropic>=0.18.0             # Anthropic Claude API
+
+# HTTP & Networking
+# ============================================================================
+requests>=2.31.0              # HTTP library
+
+# Web Framework
+# ============================================================================
+streamlit>=1.31.0             # Web UI framework
+
+# CLI Framework
+# ============================================================================
+click>=8.1.7                  # Command-line interface framework
+
+# Testing
+# ============================================================================
+pytest>=7.4.0                 # Testing framework
+pytest-cov>=4.1.0             # Coverage plugin for pytest
+
+# Performance Monitoring
+# ============================================================================
+psutil>=5.9.8                 # System and process utilities
+
+# ============================================================================
+# Version Compatibility
+# ============================================================================
+# Python 3.9+ required
+# Tested on Python 3.9, 3.10, 3.11

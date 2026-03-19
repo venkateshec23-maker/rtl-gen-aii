@@ -1,0 +1,31 @@
+Generate a sequential logic circuit with the following specifications:
+
+DESIGN: {description}
+
+REQUIREMENTS:
+- Module name: {module_name}
+- Bit width: {bit_width} bits
+- Clock: clk (positive edge triggered)
+- Reset: reset (synchronous, active high)
+- Additional inputs: {inputs}
+- Outputs: {outputs}
+
+SPECIFIC GUIDELINES FOR SEQUENTIAL LOGIC:
+1. Use always @(posedge clk) for sequential logic
+2. Implement synchronous reset (checked on clock edge)
+3. Use non-blocking assignments (<=) ONLY
+4. Initialize all registers in reset condition
+5. Clearly separate sequential and combinational logic
+
+RESET BEHAVIOR:
+- On reset: All registers/counters go to initial state
+- Reset is synchronous (checked on posedge clk)
+
+EXPECTED OUTPUT:
+1. Module declaration with clock and reset
+2. Register declarations
+3. Sequential always block with reset
+4. Clear state machine (if applicable)
+5. Output assignments
+
+Generate complete, production-ready Verilog code.
