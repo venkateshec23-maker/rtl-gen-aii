@@ -128,10 +128,9 @@ write_verilog {output_file}
         print(f"{'='*70}")
 
         if not self.yosys_available:
-            return {
-                'success': False,
-                'message': 'Yosys not available. Install: apt-get install yosys',
-            }
+            print(f"\n[INFO] Yosys not available - using Python-based fallback analyzer")
+            print(f"       For full synthesis: apt-get install yosys (Linux) or choco install yosys (Windows)")
+            return self._fallback_synthesis(rtl_code, module_name)
 
         # Create work directory for this synthesis
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -208,6 +207,115 @@ write_verilog {output_file}
                 'message': f'Synthesis error: {str(e)}',
             }
 
+    def _fallback_synthesis(self, rtl_code: str, module_name: str) -> Dict:
+        """
+        Fallback Python-based synthesis analyzer (when Yosys unavailable).
+        
+        Provides gate count estimation and basic cell analysis without
+        external tools.
+        """
+        print(f"\n[FALLBACK] Analyzing RTL structure for gate count estimation...")
+        
+        # Analyze RTL structure
+        design_info = self._analyze_rtl_structure(rtl_code)
+        
+        # Estimate gate count
+        gate_count = self._estimate_gate_count(design_info)
+        
+        # Build cell library for this design
+        cell_types = self._estimate_cell_types(design_info, gate_count)
+        
+        results = {
+            'success': True,
+            'method': 'fallback_python_analyzer',
+            'gate_count': gate_count,
+            'cell_types': cell_types,
+            'design_info': design_info,
+            'warnings': [
+                'Using Python fallback analyzer (Yosys not available)',
+                'Gate count is estimated, not actual synthesis result',
+                'For accurate results, install Yosys',
+            ],
+        }
+        
+        self._print_synthesis_summary(results)
+        return results
+    
+    def _analyze_rtl_structure(self, rtl_code: str) -> Dict:
+        """Analyze RTL structure for gate estimation."""
+        info = {
+            'registers': len(re.findall(r'\breg\s+', rtl_code)),
+            'wires': len(re.findall(r'\bwire\s+', rtl_code)),
+            'logic_ops': rtl_code.count('&') + rtl_code.count('|') + rtl_code.count('^'),
+            'arithmetic_ops': rtl_code.count('+') + rtl_code.count('-'),
+            'multipliers': rtl_code.count('*'),
+            'comparators': rtl_code.count('==') + rtl_code.count('!=') + rtl_code.count('<') + rtl_code.count('>'),
+            'muxes': rtl_code.count('?') + len(re.findall(r'case\s*\(', rtl_code)) * 2,
+            'bit_width': self._extract_max_bit_width(rtl_code),
+        }
+        return info
+    
+    def _extract_max_bit_width(self, rtl_code: str) -> int:
+        """Extract maximum bit width from RTL."""
+        width_matches = re.findall(r'\[(\d+):0\]', rtl_code)
+        if width_matches:
+            return max(int(w) for w in width_matches) + 1
+        return 8  # Default
+    
+    def _estimate_gate_count(self, design_info: Dict) -> int:
+        """Estimate total gate count from design structure."""
+        count = 0
+        
+        # Register gates (flipflop = ~6-8 gates)
+        count += design_info['registers'] * 6
+        
+        # Logic operation gates (2-input gate = 1 gate, but typically needs multiple)
+        count += design_info['logic_ops'] * 1
+        
+        # Arithmetic gates (adder bit = ~20 gates, multiplier bit = ~50 gates)
+        count += design_info['arithmetic_ops'] * design_info['bit_width'] * 5
+        count += design_info['multipliers'] * (design_info['bit_width'] ** 2) * 2
+        
+        # Comparator gates
+        count += design_info['comparators'] * design_info['bit_width'] * 2
+        
+        # Mux gates (2:1 mux = ~3-4 gates)
+        count += design_info['muxes'] * 3
+        
+        # Add control logic overhead (~20% of total)
+        count = int(count * 1.2)
+        
+        # Minimum gate count
+        return max(count, 10)
+    
+    def _estimate_cell_types(self, design_info: Dict, gate_count: int) -> Dict:
+        """Estimate distribution of cell types."""
+        cells = {}
+        
+        # Proportional distribution based on operations
+        total_ops = (
+            design_info['logic_ops'] + 
+            design_info['arithmetic_ops'] +
+            design_info['multipliers'] +
+            design_info['comparators'] +
+            design_info['muxes']
+        )
+        
+        if total_ops > 0:
+            factor = gate_count / total_ops
+            
+            cells['AND2'] = int(design_info['logic_ops'] * 0.3 * factor)
+            cells['OR2'] = int(design_info['logic_ops'] * 0.3 * factor)
+            cells['XOR2'] = int(design_info['logic_ops'] * 0.4 * factor)
+            cells['ADDER_1B'] = int(design_info['arithmetic_ops'] * design_info['bit_width'] * factor)
+            cells['MUX2'] = int(design_info['muxes'] * factor)
+            cells['DFF'] = int(design_info['registers'] * factor)
+        
+        # Remove zero entries
+        cells = {k: v for k, v in cells.items() if v > 0}
+        
+        return cells
+
     def _parse_synthesis_results(self, log: str, work_dir: Path) -> Dict:
         """Parse synthesis results from log."""
         results = {
@@ -234,20 +342,23 @@ write_verilog {output_file}
     def _print_synthesis_summary(self, results: Dict):
         """Print synthesis summary."""
         print(f"\nSynthesis Results:")
-        print(f"  Total gates: {results['gate_count']}")
+        print(f"  Total gates: {results.get('gate_count', 0)}")
 
-        if results['cell_types']:
+        cell_types = results.get('cell_types', {})
+        if cell_types:
             print(f"\n  Cell types:")
-            for cell_type, count in sorted(results['cell_types'].items(), key=lambda x: x[1], reverse=True):
+            for cell_type, count in sorted(cell_types.items(), key=lambda x: x[1], reverse=True):
                 print(f"    {cell_type}: {count}")
 
-        if results['warnings']:
-            print(f"\n  Warnings: {len(results['warnings'])}")
-            for warning in results['warnings'][:3]:
+        warnings = results.get('warnings', [])
+        if warnings:
+            print(f"\n  Warnings: {len(warnings)}")
+            for warning in warnings[:3]:
                 print(f"    - {warning[:80]}...")
 
-        if results['errors']:
-            print(f"\n  Errors: {len(results['errors'])}")
+        errors = results.get('errors', [])
+        if errors:
+            print(f"\n  Errors: {len(errors)}")
 
     def estimate_area(self, gate_count: int, technology: str = 'generic') -> Dict:
         """

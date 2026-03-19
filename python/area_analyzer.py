@@ -264,10 +264,11 @@ class AreaAnalyzer:
             print(f"  Gate count: {final_area['gate_count']}")
         
         print(f"\nArea Breakdown:")
-        for component, area in sorted(final_area['breakdown'].items(), key=lambda x: x[1], reverse=True):
-            if isinstance(area, (int, float)):
-                pct = area / final_area['total_area_um2'] * 100
-                print(f"  {component:20s}: {area:8.2f} µm² ({pct:5.1f}%)")
+        # Filter to only numeric values for sorting
+        numeric_breakdown = {k: v for k, v in final_area['breakdown'].items() if isinstance(v, (int, float))}
+        for component, area in sorted(numeric_breakdown.items(), key=lambda x: x[1], reverse=True):
+            pct = area / final_area['total_area_um2'] * 100
+            print(f"  {component:20s}: {area:8.2f} µm² ({pct:5.1f}%)")
     
     def estimate_die_area(
         self,
