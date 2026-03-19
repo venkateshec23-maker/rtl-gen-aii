@@ -1,0 +1,14 @@
+version: '3.8'
+
+services:
+  rtl-gen:
+    build: .
+    ports:
+      - "8501:8501"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - ENABLE_PERFORMANCE_MONITORING=True
+      - DEBUG_MODE=False
+    volumes:
+      - ./cache:/app/cache
+      - ./outputs:/app/outputs

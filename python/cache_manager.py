@@ -18,8 +18,11 @@ class CacheManager:
         self.cache_dir = Path(cache_dir) if cache_dir else (CACHE_DIR / 'responses')
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.ttl_days = ttl_days
+        self.ttl_hours = ttl_days * 24
         self.index_file = self.cache_dir / 'cache_index.json'
         self.index = self._load_index()
+        self.hits = 0
+        self.misses = 0
         self._clean_expired()
 
     def _load_index(self):
@@ -66,6 +69,7 @@ class CacheManager:
         key = self._generate_key(prompt, **kwargs)
         cache_file = self.cache_dir / f"{key}.json"
         if not cache_file.exists():
+            self.misses += 1
             return None
         try:
             with open(cache_file, 'r') as f:
@@ -79,6 +83,7 @@ class CacheManager:
             if key in self.index:
                 self.index[key]['hits'] = self.index[key].get('hits', 0) + 1
                 self._save_index()
+            self.hits += 1
             return entry.get('response')
         except (json.JSONDecodeError, IOError, KeyError):
             return None
@@ -115,18 +120,106 @@ class CacheManager:
         self.index = {}
         self._save_index()
 
-    def get_stats(self):
-        """Get cache statistics."""
-        total = len(self.index)
-        hits = sum(i.get('hits', 0) for i in self.index.values())
-        tokens = sum(i.get('tokens_saved', 0) for i in self.index.values())
-        size = sum(f.stat().st_size for f in self.cache_dir.glob("*.json"))
+    def get_stats(self) -> dict:
+        """Get detailed cache statistics."""
+        total_keys = len(list(self.cache_dir.glob("*.json")))
+        total_size = sum(f.stat().st_size for f in self.cache_dir.glob("*.json"))
+        
+        hit_rate = (self.hits / (self.hits + self.misses) * 100) if (self.hits + self.misses) > 0 else 0
+        
         return {
-            'entries': total,
-            'hits': hits,
-            'tokens_saved': tokens,
-            'size_kb': round(size / 1024, 1)
+            'hits': self.hits,
+            'misses': self.misses,
+            'hit_rate': hit_rate,
+            'total_cached_items': total_keys,
+            'total_size_mb': total_size / 1024 / 1024,
+            'cache_directory': str(self.cache_dir),
         }
+
+    def cleanup_expired(self):
+        """Remove all expired cache entries."""
+        removed = 0
+        
+        for cache_file in self.cache_dir.glob("*.json"):
+            if cache_file.name == 'cache_index.json':
+                continue
+            try:
+                data = json.loads(cache_file.read_text())
+                cache_time = datetime.fromisoformat(data['timestamp'])
+                age_hours = (datetime.now() - cache_time).total_seconds() / 3600
+                
+                if age_hours > self.ttl_hours:
+                    cache_file.unlink()
+                    removed += 1
+            except Exception:
+                pass
+        
+        return removed
+
+    def get_cache_size_limit(self) -> int:
+        """Get max cache size in MB."""
+        return 100  # 100 MB limit
+
+    def enforce_size_limit(self):
+        """
+        Enforce cache size limit using LRU eviction.
+        Removes oldest entries if cache exceeds size limit.
+        """
+        max_size_bytes = self.get_cache_size_limit() * 1024 * 1024
+        
+        # Get all cache files with their access times
+        cache_files = []
+        for cache_file in self.cache_dir.glob("*.json"):
+            if cache_file.name == 'cache_index.json':
+                continue
+            try:
+                stat = cache_file.stat()
+                cache_files.append({
+                    'path': cache_file,
+                    'size': stat.st_size,
+                    'atime': stat.st_atime,
+                })
+            except Exception:
+                pass
+        
+        # Calculate total size
+        total_size = sum(f['size'] for f in cache_files)
+        
+        if total_size <= max_size_bytes:
+            return 0  # No cleanup needed
+        
+        # Sort by access time (oldest first)
+        cache_files.sort(key=lambda x: x['atime'])
+        
+        # Remove files until under limit
+        removed = 0
+        for file_info in cache_files:
+            if total_size <= max_size_bytes:
+                break
+            
+            try:
+                file_info['path'].unlink()
+                total_size -= file_info['size']
+                removed += 1
+            except Exception:
+                pass
+        
+        return removed
+
+    def print_stats(self):
+        """Print formatted cache statistics."""
+        stats = self.get_stats()
+        
+        print("=" * 70)
+        print("CACHE STATISTICS")
+        print("=" * 70)
+        print(f"Hits: {stats['hits']}")
+        print(f"Misses: {stats['misses']}")
+        print(f"Hit Rate: {stats['hit_rate']:.1f}%")
+        print(f"Cached Items: {stats['total_cached_items']}")
+        print(f"Cache Size: {stats['total_size_mb']:.2f} MB")
+        print(f"Cache Directory: {stats['cache_directory']}")
+        print("=" * 70)
 
 
 def get_cache_manager():

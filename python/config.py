@@ -59,6 +59,32 @@ ENABLE_MOCK_LLM = os.getenv('ENABLE_MOCK_LLM', 'false').lower() == 'true'
 DEBUG_MODE = os.getenv('DEBUG_MODE', 'false').lower() == 'true'
 
 # ============================================================================
+# PERFORMANCE SETTINGS
+# ============================================================================
+
+# Monitoring
+ENABLE_PERFORMANCE_MONITORING = True
+SAVE_PERFORMANCE_REPORTS = True
+PERFORMANCE_REPORT_DIR = CACHE_DIR / 'performance_reports'
+
+# Caching
+CACHE_SIZE_LIMIT_MB = 100  # Maximum cache size
+AUTO_CLEANUP_CACHE = True  # Automatically remove old cache
+CACHE_CLEANUP_INTERVAL_HOURS = 24  # How often to cleanup
+
+# Batch Processing
+MAX_BATCH_WORKERS = 4  # Number of parallel workers
+BATCH_TIMEOUT_SECONDS = 300  # 5 minutes per batch item
+
+# Memory Management
+MAX_MEMORY_MB = 2048  # Maximum memory usage
+ENABLE_MEMORY_MONITORING = True
+
+# Create performance report directory
+if SAVE_PERFORMANCE_REPORTS:
+    PERFORMANCE_REPORT_DIR.mkdir(parents=True, exist_ok=True)
+
+# ============================================================================
 # VALIDATION
 # ============================================================================
 

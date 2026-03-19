@@ -1,0 +1,12 @@
+include README.md
+include LICENSE
+include BUGS.md
+include .env.example
+recursive-include docs *.md
+recursive-include templates *.py *.v *.sv
+recursive-include examples *.v *.sv *.md
+global-exclude *.pyc
+global-exclude __pycache__
+global-exclude .pytest_cache
+global-exclude *.tmp
+global-exclude *.vcd

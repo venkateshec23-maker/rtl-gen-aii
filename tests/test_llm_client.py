@@ -37,7 +37,7 @@ class TestCacheManager:
     def test_stats(self):
         self.cache.set("p1", {"a": 1}, tokens_saved=10)
         stats = self.cache.get_stats()
-        assert stats['entries'] >= 1
+        assert stats['total_cached_items'] >= 1
 
     def teardown_method(self):
         self.cache.clear()

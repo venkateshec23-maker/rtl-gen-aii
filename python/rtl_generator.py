@@ -20,6 +20,7 @@ from python.extraction_pipeline import ExtractionPipeline
 from python.verification_engine import VerificationEngine
 from python.error_handler import error_handler, RTLGenError, ErrorCategory
 from python.config import DEBUG_MODE
+from python.performance_monitor import PerformanceMonitor
 
 
 class RTLGenerator:
@@ -41,7 +42,8 @@ class RTLGenerator:
     """
     
     def __init__(self, use_mock: bool = False, api_key: Optional[str] = None,
-                 enable_verification: bool = True, debug: bool = None):
+                 enable_verification: bool = True, debug: bool = None,
+                 enable_monitoring: bool = True):
         """
         Initialize RTL Generator.
         
@@ -50,9 +52,17 @@ class RTLGenerator:
             api_key: Anthropic API key (if not using mock)
             enable_verification: Run verification after generation
             debug: Enable debug output
+            enable_monitoring: Enable performance monitoring
         """
         self.debug = debug if debug is not None else DEBUG_MODE
         self.enable_verification = enable_verification
+        self.enable_monitoring = enable_monitoring
+        
+        # Initialize monitor
+        if self.enable_monitoring:
+            self.monitor = PerformanceMonitor()
+        else:
+            self.monitor = None
         
         # Initialize all components
         try:
@@ -77,16 +87,69 @@ class RTLGenerator:
             print(f"  Verification: {enable_verification}")
     
     def generate(self, description: str, verify: Optional[bool] = None) -> Dict:
-        """
-        Generate RTL code from description.
+        """Generate RTL code from description."""
         
-        Args:
-            description: Natural language description
-            verify: Override verification setting
+        if self.monitor:
+            with self.monitor.measure("total_generation"):
+                return self._generate_with_monitoring(description, verify)
+        else:
+            return self._generate_without_monitoring(description, verify)
+
+    def _generate_with_monitoring(self, description: str, verify: Optional[bool] = None) -> Dict:
+        """Generate with performance monitoring."""
+        if verify is None:
+            verify = self.enable_verification
+        
+        try:
+            # Step 1: Parse input
+            with self.monitor.measure("input_parsing"):
+                parsed = self._parse_input(description)
+                self.monitor.increment("inputs_parsed")
             
-        Returns:
-            dict: Complete generation result
-        """
+            # Step 2: Generate code
+            with self.monitor.measure("code_generation"):
+                generation = self._generate_code(parsed)
+                self.monitor.increment("codes_generated")
+            
+            # Step 3: Verify (if enabled)
+            verification = None
+            if verify:
+                with self.monitor.measure("verification"):
+                    verification = self._verify_code(
+                        generation['rtl_code'],
+                        generation['testbench_code'],
+                        generation['module_name']
+                    )
+                    self.monitor.increment("verifications_run")
+            
+            # Combine results
+            result = {
+                'success': True,
+                'module_name': generation['module_name'],
+                'rtl_code': generation['rtl_code'],
+                'testbench_code': generation['testbench_code'],
+                'file_paths': generation.get('file_paths', {}),
+                'warnings': generation.get('warnings', []),
+                'verification': verification,
+                'metadata': {
+                    'description': description,
+                    'component_type': parsed.get('component_type'),
+                    'bit_width': parsed.get('bit_width'),
+                },
+            }
+            
+            return result
+        
+        except RTLGenError as e:
+            self.monitor.increment("errors")
+            return error_handler.handle_error(e, "Generation")
+        
+        except Exception as e:
+            self.monitor.increment("errors")
+            return error_handler.handle_error(e, "Unexpected error in generation")
+
+    def _generate_without_monitoring(self, description: str, verify: Optional[bool] = None) -> Dict:
+        """Original generate method without monitoring."""
         if verify is None:
             verify = self.enable_verification
         
@@ -204,6 +267,19 @@ class RTLGenerator:
             'llm_stats': self.client.get_stats(),
             'verification_stats': self.verifier.get_stats() if self.enable_verification else {},
         }
+
+    def get_performance_report(self) -> Optional[Dict]:
+        """Get performance monitoring report."""
+        if self.monitor:
+            return self.monitor.get_report()
+        return None
+
+    def print_performance_report(self):
+        """Print performance report."""
+        if self.monitor:
+            self.monitor.print_report()
+        else:
+            print("Performance monitoring not enabled")
 
 
 # ============================================================================
