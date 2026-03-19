@@ -1,0 +1,1792 @@
+{
+  "stats": {
+    "total": 198,
+    "valid": 198,
+    "invalid": 0,
+    "warnings": 0
+  },
+  "reports": [
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_0b3d2ed0.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_1cb3f93e.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_3d7a6254.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_431b0b38.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_54e928c0.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_5a56081b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_6614e6e5.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_6aa6baf3.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_ae28ba72.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_b9fe646d.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_bb0933f5.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_c590110f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_d0501a32.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_e80f5aaa.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_16bit_ea444868.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_08e434b3.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_0d7f30d3.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_3689bb6a.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_40bf8ad9.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_64c947a2.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_663ad4b2.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_69460625.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_72f658e0.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_89a597e8.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_a131b3a9.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_a8911d87.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_cb8b3638.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_d7d28451.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_4bit_e7727d28.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_06020bde.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_1ba345d0.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_342e5aa3.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_487a5093.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_55fdd2c7.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_5a883e50.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_82f467f6.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_83c3062e.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_a4545b22.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_c3faff7c.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_c44e7c8a.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_d9304580.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_dc7edbb8.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_counter_8bit_8bit_dea7b4f2.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_16bit_1a580c4a.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_16bit_42ed6aeb.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_16bit_6f695924.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_16bit_8f8b5958.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_16bit_9fe1fe0e.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_16bit_b08d9f28.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_16bit_d1abd8d1.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_16bit_e378609f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_16bit_efeb23b1.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_16bit_fab0cf44.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_4bit_1c0eb684.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_4bit_3084d984.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_4bit_309415f2.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_4bit_3e6cb00b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_4bit_45b148f8.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_4bit_5e164dba.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_4bit_657f618f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_4bit_bc0a12cb.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_4bit_dfd2607b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_0b14083c.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_1dd09d9b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_2c256344.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_3adefb97.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_432bb3ed.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_52057c9f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_55d6fd48.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_718bb64a.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_75b05f5f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_78ac90ff.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_8094a89f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_8ce72534.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_96edd9e1.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_9e8ae665.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_ad80af28.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_b501ba9e.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_cdccbc44.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_d7ff93e3.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_df94da3b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_dfa1d002.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_dfd57df0.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_e2594b7b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_eb9b6237.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_ed0728d4.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_f0440555.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_fa72c105.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\sequential\\sequential_custom_module_8bit_fef27dde.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\fsm\\fsm_custom_module_8bit_24631bb7.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\fsm\\fsm_custom_module_8bit_2de7ed45.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\fsm\\fsm_custom_module_8bit_5b89c997.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\fsm\\fsm_custom_module_8bit_8015d435.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\fsm\\fsm_custom_module_8bit_9e7eada2.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\fsm\\fsm_custom_module_8bit_a7bcabf2.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\fsm\\fsm_custom_module_8bit_b6b2513e.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\fsm\\fsm_custom_module_8bit_cb467bc9.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_16bit_2c33a99e.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_16bit_98a1fa26.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_16bit_cbdb2cf6.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_4bit_1955da16.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_4bit_31868543.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_4bit_a0412336.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_4bit_e2799f8b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_4bit_ed765eb6.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_13706c51.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_22bd99c0.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_3d15beb0.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_44ac1cf3.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_65f61bd4.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_7d97e556.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_83511734.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_86772664.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_a84eb145.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_ac735e7f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_b85fea69.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_d8aa3a41.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\memory\\memory_custom_module_8bit_ebbd5d60.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_16bit_16bit_495a2d1b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_16bit_16bit_5db36358.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_16bit_16bit_63b08442.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_16bit_16bit_a145a6f5.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_16bit_16bit_ac97c354.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_16bit_16bit_e5f6663f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_16bit_16bit_e97978d5.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_4bit_2c638a5a.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_4bit_2f370b5f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_4bit_78b74ee9.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_4bit_a1508b33.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_4bit_d1738820.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_4bit_e8955328.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_4bit_f3766f23.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_4bit_fce35044.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_8bit_2fb16250.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_8bit_34557fbe.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_8bit_4215dc9b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_8bit_6e3aa4de.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_8bit_aba48117.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_8bit_d4bff3af.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_adder_8bit_8bit_f913ec27.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_16bit_3858bc1b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_16bit_560763e4.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_16bit_6d5163c3.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_16bit_712dbb28.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_16bit_9cbd9228.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_16bit_9e265552.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_4bit_0a704a98.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_4bit_1e4c32fa.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_4bit_61eb6d2d.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_4bit_92f5d171.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_4bit_a9fed793.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_4bit_ad70715d.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_4bit_adf83579.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_4bit_fb56e020.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_01908c33.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_42f81448.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_543cda9d.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_5bdea29b.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_6ce21314.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_704e7419.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_7cf501a7.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_87e2f355.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_9bac43c4.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_cfcd57aa.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_d0f107ec.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_efc4ddd6.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_alu_8bit_8bit_f576a13e.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_16bit_8466500e.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_16bit_fa235e96.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_4bit_07195689.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_4bit_c0c6cba2.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_8bit_0c48bdb6.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_8bit_1a7e4e67.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_8bit_2e89be98.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_8bit_50bccccf.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_8bit_9cd4622c.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_8bit_b77b3983.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_8bit_d3ea84d0.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\arithmetic\\arithmetic_custom_module_8bit_d4812e39.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_2c45fac4.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_37e9bd6f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_3e87a4ef.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_4ece9ba8.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_624f4bfb.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_70ebd104.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_72f4bb75.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_7de4e965.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_83eca7e9.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_8b5ca243.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_9b1b1922.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_ad01fbfd.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_b3d0ead2.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_b68e5c5a.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_c25b465f.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_d097f78c.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_dd0735d3.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_e2eec1b1.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    },
+    {
+      "file": "training_data\\designs\\control\\control_custom_module_8bit_fd6545be.json",
+      "valid": true,
+      "errors": [
+        "Missing compilation results",
+        "Missing simulation results"
+      ],
+      "warnings": []
+    }
+  ]
+}

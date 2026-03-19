@@ -1,0 +1,40 @@
+{
+  "model_name": "test_model",
+  "evaluated_at": "2026-03-19T13:47:29.766926",
+  "test_examples": 2,
+  "metrics": {
+    "total_examples": 2,
+    "successful_generations": 2,
+    "syntax_correct": 2,
+    "simulation_passed": 2,
+    "average_quality_score": 0.0,
+    "average_generation_time": 0.13390827178955078,
+    "average_code_length": 21.0,
+    "average_test_coverage": 0.0,
+    "success_rate": 100.0,
+    "syntax_correctness_rate": 100.0,
+    "simulation_success_rate": 100.0
+  },
+  "individual_results": [
+    {
+      "description": "4-bit adder",
+      "success": true,
+      "generation_time": 0.11885333061218262,
+      "syntax_correct": true,
+      "simulation_passed": true,
+      "quality_score": 0,
+      "code_length": 20,
+      "test_coverage": 0
+    },
+    {
+      "description": "8-bit counter",
+      "success": true,
+      "generation_time": 0.14896321296691895,
+      "syntax_correct": true,
+      "simulation_passed": true,
+      "quality_score": 0,
+      "code_length": 22,
+      "test_coverage": 0
+    }
+  ]
+}

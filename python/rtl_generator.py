@@ -21,6 +21,8 @@ from python.verification_engine import VerificationEngine
 from python.error_handler import error_handler, RTLGenError, ErrorCategory
 from python.config import DEBUG_MODE
 from python.performance_monitor import PerformanceMonitor
+from python.error_tracker import ErrorTracker
+from python.learning_engine import LearningEngine
 
 
 class RTLGenerator:
@@ -43,7 +45,7 @@ class RTLGenerator:
     
     def __init__(self, use_mock: bool = False, api_key: Optional[str] = None,
                  enable_verification: bool = True, debug: bool = None,
-                 enable_monitoring: bool = True):
+                 enable_monitoring: bool = True, enable_learning: bool = True):
         """
         Initialize RTL Generator.
         
@@ -73,6 +75,12 @@ class RTLGenerator:
             
             if self.enable_verification:
                 self.verifier = VerificationEngine(debug=self.debug)
+            
+            # Learning components
+            self.enable_learning = enable_learning
+            if enable_learning:
+                self.error_tracker = ErrorTracker()
+                self.learning_engine = LearningEngine()
         
         except Exception as e:
             raise RTLGenError(
@@ -261,6 +269,106 @@ class RTLGenerator:
                 {'original_error': str(e)}
             )
     
+    def generate_with_learning(self, description: str, max_retries: int = 3, verify: bool = True) -> Dict:
+        """
+        Generate with learning from failures.
+        """
+        result = None
+        learning_info = {
+            'attempts': 0,
+            'errors_encountered': [],
+            'improvements_applied': [],
+        }
+        
+        for attempt in range(max_retries):
+            learning_info['attempts'] = attempt + 1
+            
+            # Generate
+            result = self.generate(description, verify=verify)
+            
+            # If successful, learn from success
+            if result['success']:
+                if self.enable_learning and verify and result.get('verification'):
+                    self.learning_engine.learn_from_success(
+                        description=description,
+                        code=result['rtl_code'],
+                        quality_score=result['metadata'].get('quality_score', 0),
+                        verification_results=result['verification']
+                    )
+                
+                result['learning_info'] = learning_info
+                return result
+            
+            # If failed, learn from failure
+            if self.enable_learning:
+                error_type = 'unknown'
+                error_message = result.get('message', 'Unknown error')
+                
+                if 'syntax' in error_message.lower():
+                    error_type = 'syntax_error'
+                elif 'verification' in error_message.lower():
+                    error_type = 'verification_failure'
+                elif 'simulation' in error_message.lower():
+                    error_type = 'simulation_failure'
+                
+                error_id = self.error_tracker.log_error(
+                    description=description,
+                    error_type=error_type,
+                    error_message=error_message,
+                    context={
+                        'attempt': attempt + 1,
+                        'design_type': result.get('metadata', {}).get('component_type', 'unknown')
+                    },
+                    generated_code=result.get('rtl_code'),
+                    verification_results=result.get('verification')
+                )
+                
+                learning_info['errors_encountered'].append({
+                    'attempt': attempt + 1,
+                    'error_id': error_id,
+                    'error_type': error_type,
+                })
+                
+                if result.get('rtl_code'):
+                    self.learning_engine.learn_from_failure(
+                        description=description,
+                        code=result['rtl_code'],
+                        error_type=error_type,
+                        error_message=error_message
+                    )
+                
+                suggestions = self.learning_engine.suggest_improvements()
+                learning_info['improvements_applied'].extend(suggestions)
+        
+        if result:
+            result['learning_info'] = learning_info
+        return result
+
+    def get_learning_statistics(self) -> Dict:
+        """Get learning engine statistics."""
+        if not getattr(self, 'enable_learning', False):
+            return {'learning_enabled': False}
+        
+        return {
+            'learning_enabled': True,
+            'error_tracking': self.error_tracker.get_statistics(),
+            'learning_progress': self.learning_engine.get_learning_report(),
+        }
+
+    def print_learning_report(self):
+        """Print learning progress report."""
+        if not getattr(self, 'enable_learning', False):
+            print("Learning is not enabled")
+            return
+        
+        print("\n" + "=" * 70)
+        print("LEARNING STATISTICS")
+        print("=" * 70)
+        
+        self.error_tracker.print_report()
+        print()
+        self.learning_engine.print_learning_report()
+
     def get_stats(self) -> Dict:
         """Get generation statistics."""
         return {

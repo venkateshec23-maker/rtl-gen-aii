@@ -1,0 +1,2 @@
+[console_scripts]
+rtl-gen = python.__main__:main

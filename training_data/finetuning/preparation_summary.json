@@ -1,0 +1,19 @@
+{
+  "created_at": "2026-03-19T13:47:31.999812",
+  "total_designs": 198,
+  "train_size": 158,
+  "val_size": 19,
+  "test_size": 21,
+  "formats": [
+    "claude",
+    "gpt4",
+    "llama"
+  ],
+  "files": {
+    "claude": "training_data\\finetuning\\claude_finetuning_20260319.jsonl",
+    "gpt4": "training_data\\finetuning\\gpt4_finetuning_20260319.jsonl",
+    "llama": "training_data\\finetuning\\llama_finetuning_20260319.jsonl",
+    "validation": "training_data\\finetuning\\validation_set.jsonl",
+    "test": "training_data\\finetuning\\test_set.jsonl"
+  }
+}

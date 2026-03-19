@@ -1,0 +1,19 @@
+{
+  "coding_style": "verbose",
+  "indentation": 2,
+  "comment_density": "medium",
+  "naming_convention": "snake_case",
+  "verification_level": "full",
+  "testbench_complexity": "comprehensive",
+  "auto_refinement": true,
+  "max_refinement_attempts": 2,
+  "include_documentation": true,
+  "include_synthesis_hints": false,
+  "output_format": "verilog",
+  "show_progress": true,
+  "show_intermediate_steps": false,
+  "notification_level": "normal",
+  "enable_learning": true,
+  "enable_caching": true,
+  "context_aware": true
+}

@@ -28,6 +28,19 @@ from python.simulation_runner import SimulationRunner
 from python.results_parser import ResultsParser
 from python.config import DEBUG_MODE
 
+# Import synthesis and timing modules if available
+try:
+    from python.synthesis_engine import SynthesisEngine
+    SYNTHESIS_AVAILABLE = True
+except ImportError:
+    SYNTHESIS_AVAILABLE = False
+
+try:
+    from python.timing_analyzer import TimingAnalyzer
+    TIMING_AVAILABLE = True
+except ImportError:
+    TIMING_AVAILABLE = False
+
 
 class VerificationEngine:
     """
@@ -57,6 +70,17 @@ class VerificationEngine:
         self.compiler = CompilationManager(debug=self.debug)
         self.simulator = SimulationRunner(debug=self.debug)
         self.parser = ResultsParser(debug=self.debug)
+        
+        # Initialize synthesis and timing engines if available
+        if SYNTHESIS_AVAILABLE:
+            self.synthesis_engine = SynthesisEngine()
+        else:
+            self.synthesis_engine = None
+        
+        if TIMING_AVAILABLE:
+            self.timing_analyzer = TimingAnalyzer()
+        else:
+            self.timing_analyzer = None
         
         # Statistics
         self.stats = {
@@ -282,6 +306,145 @@ class VerificationEngine:
         module_name = rtl_file.stem
         
         return self.verify(rtl_code, tb_code, module_name)
+    
+    def verify_with_synthesis(
+        self,
+        rtl_code: str,
+        testbench_code: str,
+        module_name: str,
+        synthesize: bool = True,
+        analyze_timing: bool = True,
+        clock_period_ns: float = 10.0
+    ) -> Dict:
+        """
+        Verify with synthesis and timing analysis.
+        
+        Args:
+            rtl_code: RTL code
+            testbench_code: Testbench code
+            module_name: Module name
+            synthesize: Whether to synthesize
+            analyze_timing: Whether to analyze timing
+            clock_period_ns: Target clock period
+            
+        Returns:
+            dict: Complete verification results
+        """
+        print(f"\n{'='*70}")
+        print(f"COMPLETE VERIFICATION: {module_name}")
+        print(f"{'='*70}")
+        
+        results = {
+            'module_name': module_name,
+            'passed': False,
+        }
+        
+        # Step 1: Syntax verification
+        print("\n[1/4] Syntax Verification...")
+        syntax_result = self.verify_syntax(rtl_code, module_name)
+        results['syntax'] = syntax_result
+        
+        if not syntax_result['passed']:
+            results['message'] = 'Syntax verification failed'
+            return results
+        
+        print("  ✓ Syntax check passed")
+        
+        # Step 2: Simulation
+        print("\n[2/4] Functional Simulation...")
+        sim_result = self.verify(rtl_code, testbench_code, module_name)
+        results['simulation'] = sim_result
+        
+        if not sim_result['passed']:
+            results['message'] = 'Simulation failed'
+            return results
+        
+        print("  ✓ Simulation passed")
+        
+        # Step 3: Synthesis
+        if synthesize and self.synthesis_engine:
+            print("\n[3/4] Logic Synthesis...")
+            synth_result = self.synthesis_engine.synthesize(rtl_code, module_name)
+            results['synthesis'] = synth_result
+            
+            if synth_result['success']:
+                print("  ✓ Synthesis successful")
+                
+                # Area estimation
+                area = self.synthesis_engine.estimate_area(synth_result['gate_count'])
+                results['area'] = area
+                print(f"  Gate count: {synth_result['gate_count']}")
+                print(f"  Area: {area['area_um2']:.2f} µm²")
+                
+                # Power estimation
+                power = self.synthesis_engine.estimate_power(
+                    synth_result['gate_count'],
+                    frequency_mhz=1000.0 / clock_period_ns
+                )
+                results['power'] = power
+                print(f"  Power: {power['total_power_mw']:.4f} mW")
+            else:
+                print(f"  ⚠ Synthesis failed: {synth_result.get('message', 'Unknown')}")
+        else:
+            print("\n[3/4] Logic Synthesis... SKIPPED")
+        
+        # Step 4: Timing Analysis
+        if analyze_timing and self.timing_analyzer:
+            print("\n[4/4] Timing Analysis...")
+            timing_result = self.timing_analyzer.analyze_timing(
+                rtl_code,
+                module_name,
+                clock_period_ns=clock_period_ns
+            )
+            results['timing'] = timing_result
+            
+            if timing_result['timing_met']:
+                print("  ✓ Timing constraints met")
+            else:
+                print(f"  ⚠ Timing violation: {timing_result['slack_ns']:.2f} ns")
+        else:
+            print("\n[4/4] Timing Analysis... SKIPPED")
+        
+        # Overall pass/fail
+        results['passed'] = (
+            results['syntax']['passed'] and
+            results['simulation']['passed'] and
+            (not synthesize or results.get('synthesis', {}).get('success', False)) and
+            (not analyze_timing or results.get('timing', {}).get('timing_met', False))
+        )
+        
+        print(f"\n{'='*70}")
+        if results['passed']:
+            print("✓ ALL VERIFICATION PASSED")
+        else:
+            print("✗ VERIFICATION FAILED")
+        print(f"{'='*70}")
+        
+        return results
+    
+    def verify_syntax(self, rtl_code: str, module_name: str) -> Dict:
+        """
+        Verify syntax only (no simulation).
+        
+        Args:
+            rtl_code: RTL code
+            module_name: Module name
+            
+        Returns:
+            dict: Syntax verification result
+        """
+        compile_result = self.compiler.compile(
+            rtl_code,
+            testbench_code=None,
+            output_name=module_name
+        )
+        
+        return {
+            'passed': compile_result['success'],
+            'errors': compile_result['errors'],
+            'warnings': compile_result['warnings'],
+            'output': compile_result['output'],
+        }
     
     def get_stats(self) -> Dict:
         """Get verification statistics."""
