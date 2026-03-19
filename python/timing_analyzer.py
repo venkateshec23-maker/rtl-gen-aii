@@ -197,9 +197,9 @@ class TimingAnalyzer:
         print(f"  Slack: {results['slack_ns']:.2f} ns")
 
         if results['timing_met']:
-            print(f"  Status: ✓ TIMING MET")
+            print(f"  Status: [PASS] TIMING MET")
         else:
-            print(f"  Status: ✗ TIMING VIOLATION")
+            print(f"  Status: [FAIL] TIMING VIOLATION")
 
         print(f"\nCritical Path Components:")
         for component in results['critical_path']['components']:
@@ -292,12 +292,12 @@ endmodule
     result = analyzer.analyze_timing(rtl_code, 'counter_8bit', clock_period_ns=10.0)
 
     if result['timing_met']:
-        print("\n✓ Timing constraints met")
+        print("\n[PASS] Timing constraints met")
     else:
-        print("\n✗ Timing violation")
+        print("\n[FAIL] Timing violation")
 
     # Calculate max frequency
     max_freq = analyzer.calculate_max_frequency(result['critical_path_delay_ns'])
     print(f"\nMaximum frequency: {max_freq['max_frequency_mhz']:.2f} MHz")
 
-    print("\n✓ Self-test complete")
+    print("\n[PASS] Self-test complete")

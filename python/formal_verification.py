@@ -221,11 +221,11 @@ if __name__ == "__main__":
 
     print("Available tools:")
     for tool, available in verifier.tools_available.items():
-        status = "✓" if available else "✗"
+        status = "[PASS]" if available else "[FAIL]"
         print(f"  {status} {tool}")
 
     if not any(verifier.tools_available.values()):
         print("\n⚠ No formal verification tools available")
         print("Install SymbiYosys: pip install symbiyosys")
 
-    print("\n✓ Self-test complete")
+    print("\n[PASS] Self-test complete")

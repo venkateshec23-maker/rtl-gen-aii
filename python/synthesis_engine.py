@@ -180,7 +180,7 @@ write_verilog {output_file}
                     'log_file': str(log_file),
                 }
 
-            print(f"  ✓ Synthesis complete")
+            print(f"  [PASS] Synthesis complete")
 
             # Parse results
             results = self._parse_synthesis_results(result.stdout, work_subdir)
@@ -328,7 +328,7 @@ endmodule
     result = engine.synthesize(rtl_code, 'adder_4bit')
 
     if result['success']:
-        print("\n✓ Synthesis successful")
+        print("\n[PASS] Synthesis successful")
 
         # Test area estimation
         area = engine.estimate_area(result['gate_count'])
@@ -343,6 +343,6 @@ endmodule
         print(f"  Leakage: {power['leakage_power_mw']:.4f} mW")
         print(f"  Total: {power['total_power_mw']:.4f} mW")
     else:
-        print(f"\n✗ Synthesis failed: {result.get('message', 'Unknown error')}")
+        print(f"\n[FAIL] Synthesis failed: {result.get('message', 'Unknown error')}")
 
-    print("\n✓ Self-test complete")
+    print("\n[PASS] Self-test complete")

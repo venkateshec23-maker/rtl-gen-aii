@@ -322,7 +322,7 @@ class CoverageAnalyzer:
         }
 
         for name, (actual, goal) in goals.items():
-            status = "✓" if actual >= goal else "✗"
+            status = "[PASS]" if actual >= goal else "[FAIL]"
             print(f"  {status} {name}: {actual:.1f}% (goal: {goal}%)")
 
     def generate_coverage_report(
@@ -358,13 +358,13 @@ class CoverageAnalyzer:
 
 | Metric | Coverage | Status |
 |--------|----------|--------|
-| Line Coverage | {results['overall']['line_coverage_percent']:.2f}% | {'✓ Pass' if results['overall']['line_coverage_percent'] >= 95 else '✗ Fail'} (Goal: 95%) |
-| Branch Coverage | {results['overall']['branch_coverage_percent']:.2f}% | {'✓ Pass' if results['overall']['branch_coverage_percent'] >= 90 else '✗ Fail'} (Goal: 90%) |
-| Toggle Coverage | {results['overall']['toggle_coverage_percent']:.2f}% | {'✓ Pass' if results['overall']['toggle_coverage_percent'] >= 85 else '✗ Fail'} (Goal: 85%) |
+| Line Coverage | {results['overall']['line_coverage_percent']:.2f}% | {'[PASS] Pass' if results['overall']['line_coverage_percent'] >= 95 else '[FAIL] Fail'} (Goal: 95%) |
+| Branch Coverage | {results['overall']['branch_coverage_percent']:.2f}% | {'[PASS] Pass' if results['overall']['branch_coverage_percent'] >= 90 else '[FAIL] Fail'} (Goal: 90%) |
+| Toggle Coverage | {results['overall']['toggle_coverage_percent']:.2f}% | {'[PASS] Pass' if results['overall']['toggle_coverage_percent'] >= 85 else '[FAIL] Fail'} (Goal: 85%) |
 """
 
         if results['overall']['fsm_coverage_percent'] is not None:
-            report += f"| FSM Coverage | {results['overall']['fsm_coverage_percent']:.2f}% | {'✓ Pass' if results['overall']['fsm_coverage_percent'] >= 90 else '✗ Fail'} (Goal: 90%) |\n"
+            report += f"| FSM Coverage | {results['overall']['fsm_coverage_percent']:.2f}% | {'[PASS] Pass' if results['overall']['fsm_coverage_percent'] >= 90 else '[FAIL] Fail'} (Goal: 90%) |\n"
 
         # Line coverage details
         line_cov = results['line_coverage']
@@ -446,12 +446,12 @@ class CoverageAnalyzer:
             report += "- Improve toggle coverage by ensuring all signals transition between 0 and 1\n"
 
         if results['overall']['overall_coverage_percent'] >= 90:
-            report += "- ✓ Excellent coverage achieved!\n"
+            report += "- [PASS] Excellent coverage achieved!\n"
 
         # Save report
         output_file.write_text(report)
 
-        print(f"\n✓ Coverage report saved: {output_file}")
+        print(f"\n[PASS] Coverage report saved: {output_file}")
 
         return str(output_file)
 
@@ -508,4 +508,4 @@ endmodule
     # Generate report
     report_file = analyzer.generate_coverage_report(results)
 
-    print("\n✓ Self-test complete")
+    print("\n[PASS] Self-test complete")
