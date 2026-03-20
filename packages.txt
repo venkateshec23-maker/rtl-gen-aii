@@ -1,0 +1,5 @@
+# System packages for Streamlit Cloud
+# Required for matplotlib and other visualization libraries
+
+build-essential
+libpq-dev
