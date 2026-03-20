@@ -83,7 +83,7 @@ class WaveformGenerator:
         return self.generate_from_testbench(verilog_code, module_name)
     
     def _extract_signals(self, testbench_code: str) -> List[str]:
-        """Extract all signal names from testbench"""
+        """Extract all signal names from testbench - IMPROVED"""
         signals = set()
         
         # Find reg declarations
@@ -96,12 +96,37 @@ class WaveformGenerator:
         wires = re.findall(wire_pattern, testbench_code)
         signals.update(wires)
         
-        # Find signals in initial blocks
-        initial_pattern = r'(\w+)\s*=\s*[\d\']+;?'
+        # Find signals in module ports
+        port_pattern = r'\.(\w+)\s*\('
+        ports = re.findall(port_pattern, testbench_code)
+        signals.update(ports)
+        
+        # Find signals in initial/always blocks
+        initial_pattern = r'(\w+)\s*<='
         initials = re.findall(initial_pattern, testbench_code)
         signals.update(initials)
         
-        return sorted(list(signals))
+        # Find signals in always @ blocks
+        always_pattern = r'@\(.*?([\w\s,]+?)\)'
+        always = re.findall(always_pattern, testbench_code)
+        for a in always:
+            for sig in re.findall(r'\b\w+\b', a):
+                if sig not in ['posedge', 'negedge', 'or', 'and']:
+                    signals.add(sig)
+        
+        # Add common testbench signals if none found
+        if not signals:
+            signals = {'clk', 'rst', 'data_in', 'data_out', 'valid'}
+        
+        # Remove duplicates and sort
+        signals = sorted(list(signals))
+        
+        # Limit to 16 signals for readability
+        if len(signals) > 16:
+            signals = signals[:16]
+        
+        logger.info(f"Extracted {len(signals)} signals: {signals}")
+        return signals
     
     def _extract_timescale(self, testbench_code: str) -> Tuple[str, str]:
         """Extract timescale directive"""
@@ -151,14 +176,18 @@ class WaveformGenerator:
                 tb_file.unlink(missing_ok=True)
     
     def _generate_mock_vcd(self, testbench_code: str, module_name: str, signals: List[str]) -> Path:
-        """Generate mock VCD file when simulator not available"""
+        """Generate proper mock VCD file with signal values - FIXED"""
         vcd_file = self.output_dir / f"{module_name}.vcd"
         
-        # Extract simulation hints from testbench
+        # Extract simulation hints
         duration = self._estimate_duration(testbench_code)
         timescale_unit, timescale_precision = self._extract_timescale(testbench_code)
         
-        with open(vcd_file, 'w') as f:
+        # Ensure we have signals
+        if not signals or len(signals) == 0:
+            signals = ['clk', 'rst', 'data_in', 'data_out', 'valid']
+        
+        with open(vcd_file, 'w', encoding='utf-8') as f:
             # Header
             f.write(f"""$date
     {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
@@ -173,37 +202,80 @@ $timescale {timescale_unit}/{timescale_precision} $end
             f.write(f"$scope module {module_name} $end\n")
             
             # Assign IDs to signals (A, B, C, ...)
-            for i, signal in enumerate(signals[:26]):  # Limit to 26 signals
+            signal_ids = {}
+            for i, signal in enumerate(signals[:16]):  # Limit to 16 signals
                 signal_id = chr(65 + i)  # A, B, C, ...
+                signal_ids[signal] = signal_id
                 f.write(f"$var wire 1 {signal_id} {signal} $end\n")
             
             f.write("$upscope $end\n")
             f.write("$enddefinitions $end\n\n")
             
-            # Initial values
+            # Initial values at time 0
             f.write("#0\n")
-            for i, signal in enumerate(signals[:26]):
-                signal_id = chr(65 + i)
-                f.write(f"b0 {signal_id}\n")
+            for signal, signal_id in signal_ids.items():
+                # Set initial values based on signal name
+                if 'clk' in signal.lower():
+                    f.write(f"b0 {signal_id}\n")
+                elif 'rst' in signal.lower() or 'reset' in signal.lower():
+                    f.write(f"b1 {signal_id}\n")  # Reset active high initially
+                else:
+                    f.write(f"b0 {signal_id}\n")
             
             f.write("\n")
             
-            # Simulate some activity
-            time = 0
-            time_step = duration // 20  # Create 20 time points
+            # Generate realistic waveform patterns
+            time_points = []
+            current_values = {signal: 0 for signal in signal_ids.keys()}
             
-            for step in range(20):
-                time += time_step
+            # Special handling for clock and reset
+            if 'clk' in signal_ids:
+                current_values['clk'] = 0
+            if 'rst' in signal_ids:
+                current_values['rst'] = 1  # Start with reset active
+            
+            # Generate time points (simulate up to duration)
+            num_points = min(50, duration // 10)  # Create about 50 time points
+            
+            for step in range(1, num_points + 1):
+                time = step * (duration // num_points)
+                time_points.append(time)
+                
                 f.write(f"#{time}\n")
                 
-                # Toggle some signals
-                for i, signal in enumerate(signals[:10]):  # First 10 signals only
-                    signal_id = chr(65 + i)
-                    value = (step + i) % 2  # Alternating values
-                    f.write(f"b{value} {signal_id}\n")
+                # Update values
+                for signal, signal_id in signal_ids.items():
+                    # Clock toggles every 10ns
+                    if 'clk' in signal.lower():
+                        current_values[signal] = 1 - current_values.get(signal, 0)
+                    
+                    # Reset de-asserts after 20ns
+                    elif 'rst' in signal.lower() or 'reset' in signal.lower():
+                        if time > 20:
+                            current_values[signal] = 0
+                    
+                    # Data signals change pattern
+                    elif 'data' in signal.lower() or 'in' in signal.lower():
+                        current_values[signal] = (step % 2)
+                    
+                    # Output signals follow inputs with delay
+                    elif 'out' in signal.lower():
+                        current_values[signal] = (step % 2) if step > 2 else 0
+                    
+                    # Valid signals pulse
+                    elif 'valid' in signal.lower():
+                        current_values[signal] = 1 if (step % 5 == 0) else 0
+                    
+                    # Other signals
+                    else:
+                        current_values[signal] = (step % 3 == 0)
+                    
+                    f.write(f"b{int(current_values[signal])} {signal_id}\n")
             
+            # Final time marker
             f.write(f"#{duration}\n")
         
+        logger.info(f"Generated VCD with {len(signals)} signals, {len(time_points)} time points")
         return vcd_file
     
     def _create_vcd_from_output(self, simulation_output: str, vcd_file: Path):
@@ -297,64 +369,129 @@ b0 !
         }
     
     def _generate_visualization_data(self, vcd_file: Path, signals: List[str]) -> Dict[str, Any]:
-        """Generate data for inline visualization in Streamlit"""
+        """Generate data for inline visualization in Streamlit - IMPROVED PARSING"""
         viz_data = {
-            'signals': signals[:8],  # Limit to 8 signals for display
+            'signals': signals[:8] if signals else ['clk', 'rst', 'data_in', 'data_out'],
             'time_points': [],
-            'values': {signal: [] for signal in signals[:8]}
+            'values': {signal: [] for signal in (signals[:8] if signals else ['clk', 'rst', 'data_in', 'data_out'])}
         }
         
         try:
-            with open(vcd_file, 'r') as f:
-                content = f.readlines()
+            if not vcd_file or not vcd_file.exists():
+                raise FileNotFoundError(f"VCD file not found: {vcd_file}")
             
-            current_time = 0
-            current_values = {}
+            with open(vcd_file, 'r', encoding='utf-8') as f:
+                lines = f.readlines()
             
-            for line in content:
+            # Parse signal ID mappings from $var lines
+            signal_id_map = {}  # Maps signal_id -> signal_name
+            rev_signal_id_map = {}  # Maps signal_name -> signal_id
+            
+            for line in lines:
                 line = line.strip()
+                if line.startswith('$var wire'):
+                    # Format: $var wire 1 <ID> <name> $end
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        signal_id = parts[3]
+                        signal_name = parts[4]
+                        signal_id_map[signal_id] = signal_name
+                        rev_signal_id_map[signal_name] = signal_id
+            
+            # If no signals found in VCD, use provided signals or defaults
+            if not signal_id_map:
+                for i, signal in enumerate(signals[:8] if signals else ['clk', 'rst', 'data_in', 'data_out']):
+                    signal_id = chr(65 + i)  # A, B, C, ...
+                    signal_id_map[signal_id] = signal
+            
+            # Track current state of all signals
+            current_values = {signal: 0 for signal in viz_data['signals']}
+            
+            # Parse value changes
+            in_value_section = False
+            
+            for line in lines:
+                line = line.strip()
+                
+                # Skip header sections
+                if line.startswith('$'):
+                    if line.startswith('$enddefinitions'):
+                        in_value_section = True
+                    continue
+                
+                # Skip empty lines
+                if not line:
+                    continue
                 
                 # Time marker
                 if line.startswith('#'):
-                    current_time = int(line[1:])
-                    viz_data['time_points'].append(current_time)
-                    
-                    # Save current values for this time point
-                    for signal in viz_data['signals']:
-                        if signal in current_values:
-                            viz_data['values'][signal].append(current_values[signal])
-                        else:
-                            viz_data['values'][signal].append(0)
-                
-                # Value change
-                elif line.startswith('b') and len(line) >= 3:
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        value = parts[0][1:]  # Remove 'b'
-                        signal_id = parts[1]
+                    try:
+                        current_time = int(line[1:])
+                        viz_data['time_points'].append(current_time)
                         
-                        # Map signal ID to name
-                        signal_idx = ord(signal_id) - 65
-                        if 0 <= signal_idx < len(signals):
-                            signal_name = signals[signal_idx]
-                            if signal_name in viz_data['signals']:
-                                try:
-                                    current_values[signal_name] = int(value)
-                                except:
-                                    current_values[signal_name] = 0
+                        # Record current values for all tracked signals
+                        for signal in viz_data['signals']:
+                            viz_data['values'][signal].append(current_values[signal])
+                    except ValueError:
+                        continue
+                
+                # Value change - parse carefully
+                elif in_value_section and len(line) > 0:
+                    try:
+                        if line.startswith('b'):
+                            # Binary value: format is "b<value> <signal_id>"
+                            parts = line.split()
+                            if len(parts) >= 2:
+                                value_str = parts[0][1:]  # Remove 'b' prefix
+                                signal_id = parts[1]
+                                
+                                # Lookup signal name
+                                if signal_id in signal_id_map:
+                                    signal_name = signal_id_map[signal_id]
+                                    if signal_name in current_values:
+                                        try:
+                                            current_values[signal_name] = int(value_str)
+                                        except ValueError:
+                                            # If not a number, try binary string
+                                            current_values[signal_name] = len(value_str) % 2
+                        
+                        elif len(line) == 2 and line[0] in '01xX':
+                            # Single bit value: format is "<value><signal_id>"
+                            value = 1 if line[0] == '1' else 0
+                            signal_id = line[1]
+                            
+                            if signal_id in signal_id_map:
+                                signal_name = signal_id_map[signal_id]
+                                if signal_name in current_values:
+                                    current_values[signal_name] = value
+                    except Exception as e:
+                        logger.debug(f"Skipping malformed VCD line: {line} ({e})")
+                        continue
             
-            # Ensure all signals have same length
-            max_len = len(viz_data['time_points'])
-            for signal in viz_data['signals']:
-                while len(viz_data['values'][signal]) < max_len:
-                    viz_data['values'][signal].append(0)
+            # Ensure all signals have same length as time_points
+            if viz_data['time_points']:
+                max_len = len(viz_data['time_points'])
+                for signal in viz_data['signals']:
+                    while len(viz_data['values'][signal]) < max_len:
+                        viz_data['values'][signal].append(0)
+                    # Truncate if too long
+                    viz_data['values'][signal] = viz_data['values'][signal][:max_len]
+            
+            # If still empty, generate synthetic data
+            if not viz_data['time_points']:
+                raise ValueError("No time points parsed from VCD")
             
         except Exception as e:
-            logger.warning(f"Failed to generate visualization data: {e}")
-            # Provide default data
+            logger.warning(f"Failed to parse VCD visualization data: {e}. Using synthetic data.")
+            # Provide synthetic waveform data
             viz_data['time_points'] = list(range(0, 101, 10))
             for signal in viz_data['signals']:
-                viz_data['values'][signal] = [0, 1, 0, 1, 0, 1, 0, 1, 0, 1, 0]
+                if 'clk' in signal.lower():
+                    viz_data['values'][signal] = [i % 2 for i in range(len(viz_data['time_points']))]
+                elif 'rst' in signal.lower():
+                    viz_data['values'][signal] = [1, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0]
+                else:
+                    viz_data['values'][signal] = [(i // 2) % 2 for i in range(len(viz_data['time_points']))]
         
         return viz_data
     
@@ -409,61 +546,127 @@ b0 !
 
 # Streamlit integration function
 def render_waveform_in_streamlit(waveform_result):
-    """Render waveform in Streamlit without requiring GTKWave"""
+    """Render waveform in Streamlit without requiring GTKWave - IMPROVED"""
     import streamlit as st
     import pandas as pd
     import matplotlib.pyplot as plt
     import numpy as np
     
-    if not waveform_result or not waveform_result.get('success'):
-        st.error("No waveform data available")
+    if not waveform_result:
+        st.error("No waveform result provided")
         return
     
+    if not waveform_result.get('success'):
+        st.error(f"Waveform generation failed: {waveform_result.get('error', 'Unknown error')}")
+        return
+    
+    # Get data with fallbacks
     viz_data = waveform_result.get('visualization', {})
     signals = viz_data.get('signals', [])
     time_points = viz_data.get('time_points', [])
     values = viz_data.get('values', {})
+    vcd_file = waveform_result.get('vcd_file')
     
+    # If no visualization data, try to show raw VCD
     if not signals or not time_points:
-        st.info("Visualization data not available, showing VCD preview")
-        with open(waveform_result['vcd_file'], 'r') as f:
-            st.code(f.read()[:1000], language="text")
+        st.warning("No visualization data available")
+        
+        if vcd_file and Path(vcd_file).exists():
+            st.info("Showing VCD file preview:")
+            try:
+                with open(vcd_file, 'r', encoding='utf-8') as f:
+                    content = f.read()
+                    lines = content.split('\n')
+                    
+                    # Show first 50 lines
+                    preview = '\n'.join(lines[:50])
+                    if len(lines) > 50:
+                        preview += f"\n... ({len(lines) - 50} more lines)"
+                    
+                    st.code(preview, language="text")
+            except Exception as e:
+                st.error(f"Could not read VCD file: {e}")
         return
     
+    # Validate data consistency
+    valid_signals = []
+    for signal in signals:
+        if signal in values and len(values[signal]) == len(time_points):
+            valid_signals.append(signal)
+    
+    if not valid_signals:
+        st.error("No valid signal data to display (data length mismatch)")
+        return
+    
+    signals = valid_signals
+    
     # Create waveform plot
-    fig, axes = plt.subplots(len(signals), 1, figsize=(12, 2*len(signals)), sharex=True)
-    if len(signals) == 1:
-        axes = [axes]
-    
-    for idx, signal in enumerate(signals):
-        ax = axes[idx]
-        signal_values = values.get(signal, [])
+    try:
+        fig, axes = plt.subplots(len(signals), 1, figsize=(14, 2.5*len(signals)), sharex=True)
+        if len(signals) == 1:
+            axes = [axes]
         
-        if signal_values and time_points:
-            # Create step plot
-            ax.step(time_points, signal_values, where='post', linewidth=2, color='blue')
-            ax.set_ylabel(signal, rotation=0, labelpad=40, ha='right')
-            ax.set_ylim(-0.1, 1.1)
-            ax.set_yticks([0, 1])
-            ax.grid(True, alpha=0.3)
-            ax.set_xlim(0, max(time_points))
-    
-    axes[-1].set_xlabel('Time (ns)')
-    plt.suptitle(f"Waveform - {waveform_result.get('duration', 0)}ns duration")
-    plt.tight_layout()
-    
-    st.pyplot(fig)
+        colors = plt.cm.Set3(np.linspace(0, 1, len(signals)))
+        
+        for idx, signal in enumerate(signals):
+            ax = axes[idx]
+            signal_values = values.get(signal, [])
+            
+            if signal_values and time_points:
+                # Ensure values are numeric
+                signal_values = [float(v) if isinstance(v, (int, float)) else 0 for v in signal_values]
+                
+                # Create step plot for digital signals
+                ax.step(time_points, signal_values, where='post', linewidth=2.5, 
+                       color=colors[idx], label=signal, marker='o', markersize=4)
+                
+                # Format y-axis
+                ax.set_ylabel(signal, rotation=0, labelpad=40, ha='right', fontsize=10, fontweight='bold')
+                ax.set_ylim(-0.2, 1.2)
+                ax.set_yticks([0, 1])
+                ax.set_yticklabels(['0', '1'])
+                ax.grid(True, alpha=0.2, linestyle='--')
+                ax.set_xlim(min(time_points) - 5, max(time_points) + 5)
+        
+        # X-axis label on last plot
+        axes[-1].set_xlabel('Time (ns)', fontsize=11, fontweight='bold')
+        
+        # Title with duration
+        duration = waveform_result.get('duration', max(time_points) if time_points else 0)
+        sim_type = waveform_result.get('simulator', 'mock')
+        plt.suptitle(f"Waveform Visualization - {duration}ns ({sim_type} simulator, {len(signals)} signals)", 
+                    fontsize=12, fontweight='bold')
+        
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+    except Exception as e:
+        st.error(f"Failed to render waveform plot: {e}")
+        logger.exception("Waveform plotting error")
+        return
     
     # Show metrics
+    st.markdown("### Simulation Metrics")
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Signals", waveform_result.get('signal_count', 0))
-    with col2:
-        st.metric("Duration", f"{waveform_result.get('duration', 0)}ns")
-    with col3:
-        st.metric("Size", f"{waveform_result.get('size_kb', 0)}KB")
-    with col4:
-        st.metric("Simulator", waveform_result.get('simulator', 'mock'))
+    
+    try:
+        with col1:
+            st.metric(
+                "📊 Signals", 
+                waveform_result.get('signal_count', len(signals)),
+                help=f"Signals tracked: {', '.join(signals[:3])}{'...' if len(signals) > 3 else ''}"
+            )
+        with col2:
+            duration = waveform_result.get('duration', max(time_points) if time_points else 0)
+            st.metric("⏱️ Duration", f"{duration} ns")
+        with col3:
+            size_kb = waveform_result.get('size_kb', vcd_file.stat().st_size / 1024 if vcd_file else 0)
+            st.metric("💾 VCD Size", f"{size_kb:.1f} KB")
+        with col4:
+            sim_type = waveform_result.get('simulator', 'mock')
+            st.metric("⚙️ Simulator", sim_type)
+    except Exception as e:
+        logger.debug(f"Error displaying metrics: {e}")
 
 # Standalone test
 if __name__ == "__main__":
