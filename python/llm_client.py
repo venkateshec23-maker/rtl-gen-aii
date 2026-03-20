@@ -510,53 +510,82 @@ endmodule
         return response
 
     def extract_code(self, response):
-        """Extract code blocks from LLM response content.
+        """Extract code blocks from LLM response - IMPROVED with multiple patterns.
         
         Handles:
-        - Markdown code blocks (```language ... ```)
-        - Raw code if no blocks found
+        - Markdown code blocks (```verilog ... ```)
+        - Raw module declarations
+        - Multiple code blocks in single response
         - Failed responses
         """
-        if not response.get('success'):
+        if not response.get('success') and not response.get('content'):
             return []
         
         content = response.get('content', '')
         if not content:
             return []
         
-        blocks = []
-        in_block = False
-        current = []
-        block_lang = ''
+        import re
         
-        for line in content.split('\n'):
-            # Check if line contains code fence markers
-            if '```' in line:
-                if not in_block:
-                    # Starting a code block
-                    in_block = True
-                    current = []
-                    block_lang = line.replace('```', '').strip()
-                else:
-                    # Ending a code block
-                    in_block = False
-                    if current:
-                        code = '\n'.join(current).strip()
-                        if code:  # Only add non-empty blocks
-                            blocks.append(code)
-                    current = []
-                    block_lang = ''
-            elif in_block:
-                current.append(line)
+        # Try multiple patterns in order of preference
+        patterns = [
+            # Pattern 1: Standard markdown with verilog tag and newline
+            r'```(?:verilog)?\s*\n(.*?)```',
+            
+            # Pattern 2: Markdown with spaces after backticks
+            r'```\s*verilog\s*\n(.*?)```',
+            
+            # Pattern 3: Code blocks without language specification
+            r'```\s*\n(.*?)```',
+            
+            # Pattern 4: Markdown with just backticks (flexible)
+            r'```(.*?)```',
+        ]
         
-        # If no code blocks found but content exists, return all content as single block
-        if not blocks and content.strip():
-            # Try to extract Verilog-like code if no markdown blocks found
-            lines = [l for l in content.split('\n') if l.strip()]
-            if lines:
-                blocks.append('\n'.join(lines))
+        for pattern in patterns:
+            matches = re.findall(pattern, content, re.DOTALL | re.IGNORECASE)
+            if matches:
+                # Clean up each match
+                cleaned = []
+                for m in matches:
+                    # Remove any remaining backticks
+                    m = re.sub(r'```+$', '', m.strip())
+                    m = re.sub(r'^```+', '', m)
+                    cleaned_code = m.strip()
+                    if cleaned_code:  # Only add non-empty blocks
+                        cleaned.append(cleaned_code)
+                if cleaned:
+                    return cleaned
         
-        return blocks
+        # Pattern 5: Look for explicit module declarations
+        modules = []
+        module_pattern = r'module\s+\w+'
+        positions = [m.start() for m in re.finditer(module_pattern, content, re.IGNORECASE)]
+        
+        if positions:
+            for i, pos in enumerate(positions):
+                start = pos
+                # Find end position (next module or end of content)
+                end = positions[i+1] if i+1 < len(positions) else len(content)
+                module_text = content[start:end]
+                
+                # Find the matching endmodule
+                endmodule_match = re.search(r'endmodule\s*', module_text, re.IGNORECASE)
+                if endmodule_match:
+                    module_text = module_text[:endmodule_match.end()]
+                    cleaned_code = module_text.strip()
+                    if cleaned_code:
+                        modules.append(cleaned_code)
+            
+            if modules:
+                return modules
+        
+        # Last resort: if content looks like code, return it
+        if 'module' in content.lower() or 'always' in content.lower() or 'endmodule' in content.lower():
+            return [content.strip()]
+        
+        # If nothing found but response was successful, return empty list
+        return []
 
     def get_stats(self):
         """Get combined client statistics."""
