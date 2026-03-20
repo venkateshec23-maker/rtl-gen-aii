@@ -1,6 +1,2 @@
-# System packages for Streamlit Cloud
-# Most are pre-installed, these are extras
 
-# Only if needed for specific features:
-# graphviz
 

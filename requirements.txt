@@ -9,7 +9,7 @@ requests==2.31.0
 # Web Framework (Streamlit Cloud)
 streamlit==1.31.1
 
-# Visualization
+# Visualization - REQUIRED for waveforms and synthesis
 matplotlib==3.7.2
 numpy==1.24.3
 
@@ -25,9 +25,6 @@ sqlalchemy==2.0.23
 # Performance Monitoring
 psutil==5.9.8
 
-# ============================================================================
-# Development Dependencies (Install separately: pip install -r requirements-dev.txt)
-# ============================================================================
-# pytest==7.4.0
-# pytest-cov==4.1.0
-# flake8==6.0.0
+# Testing (optional, removed from production but including for compatibility)
+pytest==7.4.0
+pytest-cov==4.1.0
