@@ -54,21 +54,28 @@ with st.sidebar:
     
     provider = st.selectbox(
         "Select Provider",
-        ["mock", "anthropic", "deepseek"],
-        help="Mock = Free (no API key), Anthropic = Claude, DeepSeek = Free tier"
+        ["mock", "grok", "anthropic", "deepseek"],
+        help="Mock = Free (no API), Grok = Fast & Free, Anthropic = Claude, DeepSeek = Free tier"
     )
     
     api_key = None
     if provider != "mock":
         api_key = st.text_input(
             f"Enter {provider.title()} API Key",
-            type="password"
+            type="password",
+            help=f"Get your key from {provider}.com"
         )
     
     if provider == "anthropic":
         model = st.selectbox(
             "Claude Model",
             ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-sonnet-20241022"]
+        )
+    elif provider == "grok":
+        model = st.selectbox(
+            "Grok Model",
+            ["mixtral-8x7b-32768", "llama-3.1-70b-versatile", "llama-3.1-8b-instant"],
+            help="Mixtral is fastest, Llama 70B is most accurate"
         )
     else:
         model = "deepseek-chat" if provider == "deepseek" else None

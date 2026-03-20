@@ -98,6 +98,8 @@ class LLMClient:
         """Initialize the appropriate LLM client based on provider."""
         if self.provider == 'anthropic':
             self._init_anthropic()
+        elif self.provider == 'grok':
+            self._init_grok()
         elif self.provider == 'deepseek':
             self._init_deepseek()
         else:
@@ -118,6 +120,22 @@ class LLMClient:
             )
         
         self.client = Anthropic(api_key=self.api_key)
+    
+    def _init_grok(self):
+        """Initialize Grok (Groq) client."""
+        try:
+            from groq import Groq
+        except ImportError:
+            raise ImportError("groq package required. Run: pip install groq")
+        
+        if not self.api_key:
+            raise ValueError(
+                "Grok API key required. Provide via api_key parameter or "
+                "set GROK_API_KEY environment variable. "
+                "Get key at: https://console.groq.com"
+            )
+        
+        self.client = Groq(api_key=self.api_key)
     
     def _init_deepseek(self):
         """Initialize DeepSeek API client."""
@@ -232,6 +250,9 @@ class LLMClient:
             if self.provider == 'anthropic':
                 return self._generate_anthropic(prompt, system_prompt,
                                                temperature, max_tokens, cache_kwargs)
+            elif self.provider == 'grok':
+                return self._generate_grok(prompt, system_prompt,
+                                          temperature, max_tokens, cache_kwargs)
             else:
                 return self._generate_openai_compatible(prompt, system_prompt,
                                                        temperature, max_tokens, cache_kwargs)
@@ -281,6 +302,54 @@ class LLMClient:
             
             if DEBUG_MODE:
                 print(f"Anthropic success. Tokens: {usage['total_tokens']}")
+            return result
+        
+        except Exception as e:
+            error_msg = str(e)
+            self.tracker.log_usage(self.model, 0, 0,
+                                   success=False, error=error_msg)
+            return {'success': False, 'error': error_msg, 'cached': False}
+    
+    def _generate_grok(self, prompt, system_prompt, temperature,
+                       max_tokens, cache_kwargs):
+        """Generate response using Grok (Groq) API."""
+        try:
+            self._rate_limit()
+            
+            response = self.client.chat.completions.create(
+                model=self.model or "mixtral-8x7b-32768",
+                max_tokens=max_tokens,
+                system=system_prompt or "You are an expert Verilog RTL designer.",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=temperature
+            )
+            
+            content = response.choices[0].message.content
+            usage = {
+                'prompt_tokens': response.usage.prompt_tokens,
+                'completion_tokens': response.usage.completion_tokens,
+                'total_tokens': response.usage.total_tokens
+            }
+            
+            self.tracker.log_usage(self.model,
+                                   usage['prompt_tokens'],
+                                   usage['completion_tokens'])
+            
+            result = {
+                'success': True,
+                'content': content,
+                'usage': usage,
+                'cached': False,
+                'model': self.model
+            }
+            self.cache.set(prompt, result,
+                           tokens_saved=usage['total_tokens'],
+                           **cache_kwargs)
+            
+            if DEBUG_MODE:
+                print(f"Grok success. Tokens: {usage['total_tokens']}")
             return result
         
         except Exception as e:
