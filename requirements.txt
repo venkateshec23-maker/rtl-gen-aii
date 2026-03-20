@@ -1,47 +1,33 @@
 # ============================================================================
-# RTL-Gen AI - Python Dependencies
+# RTL-Gen AI - Production Dependencies (Streamlit Cloud Compatible)
 # ============================================================================
 
 # Core Dependencies
-# ============================================================================
-python-dotenv>=1.0.0          # Environment variable management
+python-dotenv==1.0.0
+requests==2.31.0
 
-# LLM & AI
-# ============================================================================
-anthropic>=0.18.0             # Anthropic Claude API
-
-# HTTP & Networking
-# ============================================================================
-requests>=2.31.0              # HTTP library
-
-# Web Framework
-# ============================================================================
-streamlit>=1.31.0             # Web UI framework
+# Web Framework (Streamlit Cloud)
+streamlit==1.31.1
 
 # Visualization
-# ============================================================================
-matplotlib>=3.7.0             # Plotting library for waveforms
+matplotlib==3.7.2
+numpy==1.24.3
+
+# LLM & AI Integration
+anthropic==0.18.1
 
 # CLI Framework
-# ============================================================================
-click>=8.1.7                  # Command-line interface framework
+click==8.1.7
 
-# Database
-# ============================================================================
-sqlalchemy>=2.0.0             # SQL toolkit and ORM
-psycopg2-binary>=2.9.0        # PostgreSQL adapter for Python
-
-# Testing
-# ============================================================================
-pytest>=7.4.0                 # Testing framework
-pytest-cov>=4.1.0             # Coverage plugin for pytest
+# Database Support (Optional - for cloud persistence)
+sqlalchemy==2.0.23
 
 # Performance Monitoring
-# ============================================================================
-psutil>=5.9.8                 # System and process utilities
+psutil==5.9.8
 
 # ============================================================================
-# Version Compatibility
+# Development Dependencies (Install separately: pip install -r requirements-dev.txt)
 # ============================================================================
-# Python 3.9+ required
-# Tested on Python 3.9, 3.10, 3.11
+# pytest==7.4.0
+# pytest-cov==4.1.0
+# flake8==6.0.0
