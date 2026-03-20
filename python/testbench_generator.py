@@ -1,30 +1,227 @@
 """
 Testbench Generator for RTL-Gen AI
-Main orchestration class for automatic testbench generation.
-
-Features:
-1. Analyze RTL module
-2. Select appropriate testing strategy
-3. Generate test vectors
-4. Build complete testbench
-
-Usage:
-    generator = TestbenchGenerator()
-    testbench = generator.generate(rtl_code)
-    print(testbench)
+Creates testbenches from RTL modules
 """
 
+import re
 from typing import Dict, List, Optional
 
-from python.port_analyzer import PortAnalyzer, Port
-from python.test_vector_generator import TestVectorGenerator
-from python.testbench_templates import (
-    get_combinational_template,
-    get_sequential_template,
-    get_clock_generation,
-    get_reset_sequence,
-)
-from python.config import DEBUG_MODE
+class SimpleTestbenchGenerator:
+    """Simple, standalone testbench generator without external dependencies"""
+    
+    def __init__(self):
+        self.template = """
+`timescale 1ns/1ps
+module {module_name}_tb;
+
+    // Testbench signals
+{signal_declarations}
+
+    // Instantiate DUT
+{module_name} dut (
+{port_connections}
+);
+
+    // Clock generation (if needed)
+{clock_gen}
+
+    // Stimulus
+    initial begin
+        $dumpfile("{module_name}_tb.vcd");
+        $dumpvars(0, {module_name}_tb);
+        
+        // Initialize
+{init_values}
+        
+        // Apply stimulus
+{stimulus}
+        
+        #100 $finish;
+    end
+
+    // Monitor
+{monitor}
+
+endmodule
+"""
+    
+    def generate(self, rtl_code: str) -> Optional[str]:
+        """Generate testbench from RTL module"""
+        # Extract module info
+        module_info = self._parse_module(rtl_code)
+        if not module_info:
+            return None
+        
+        name = module_info['name']
+        ports = module_info['ports']
+        
+        # Generate testbench
+        tb = self.template.format(
+            module_name=name,
+            signal_declarations=self._generate_signals(ports),
+            port_connections=self._generate_connections(name, ports),
+            clock_gen=self._generate_clock(ports),
+            init_values=self._generate_init(ports),
+            stimulus=self._generate_stimulus(ports),
+            monitor=self._generate_monitor(ports)
+        )
+        
+        return self._cleanup(tb)
+    
+    def _parse_module(self, rtl_code: str) -> Optional[Dict]:
+        """Parse module to extract name and ports"""
+        # Find module declaration
+        module_match = re.search(r'module\s+(\w+)\s*\((.*?)\);', rtl_code, re.DOTALL)
+        if not module_match:
+            return None
+        
+        name = module_match.group(1)
+        ports_text = module_match.group(2)
+        
+        # Parse ports
+        ports = []
+        for port in ports_text.split(','):
+            port = port.strip()
+            if not port:
+                continue
+            
+            # Try to find direction and width
+            direction = self._find_direction(port, rtl_code)
+            width = self._find_width(port, rtl_code)
+            
+            ports.append({
+                'name': port.split()[-1] if ' ' in port else port,
+                'direction': direction,
+                'width': width
+            })
+        
+        return {'name': name, 'ports': ports}
+    
+    def _find_direction(self, port_name: str, rtl_code: str) -> str:
+        """Find port direction (input/output/inout)"""
+        # Look for declaration
+        patterns = [
+            (r'input\s+(?:\[\d+:\d+\]\s+)?' + port_name, 'input'),
+            (r'output\s+(?:\[\d+:\d+\]\s+)?reg\s+' + port_name, 'output'),
+            (r'output\s+(?:\[\d+:\d+\]\s+)?' + port_name, 'output'),
+            (r'inout\s+(?:\[\d+:\d+\]\s+)?' + port_name, 'inout')
+        ]
+        
+        for pattern, direction in patterns:
+            if re.search(pattern, rtl_code):
+                return direction
+        
+        return 'wire'  # Default
+    
+    def _find_width(self, port_name: str, rtl_code: str) -> str:
+        """Find port width"""
+        pattern = r'(?:input|output|inout)\s+\[(\d+:\d+)\]\s+' + port_name
+        match = re.search(pattern, rtl_code)
+        if match:
+            return match.group(1)
+        return ''  # Single bit
+    
+    def _generate_signals(self, ports: List[Dict]) -> str:
+        """Generate signal declarations"""
+        signals = []
+        for port in ports:
+            if port['direction'] == 'output':
+                signals.append(f"    wire{self._width_str(port['width'])} {port['name']};")
+            else:
+                signals.append(f"    reg{self._width_str(port['width'])} {port['name']};")
+        
+        return '\n'.join(signals)
+    
+    def _width_str(self, width: str) -> str:
+        """Convert width to string format"""
+        return f' [{width}]' if width else ''
+    
+    def _generate_connections(self, module_name: str, ports: List[Dict]) -> str:
+        """Generate port connections"""
+        connections = []
+        for port in ports:
+            connections.append(f"        .{port['name']}({port['name']})")
+        
+        return ',\n'.join(connections)
+    
+    def _generate_clock(self, ports: List[Dict]) -> str:
+        """Generate clock if needed"""
+        for port in ports:
+            if 'clk' in port['name'].lower():
+                return """
+    // Clock generation
+    always #5 clk = ~clk;
+"""
+        return "    // No clock signal detected"
+    
+    def _generate_init(self, ports: List[Dict]) -> str:
+        """Generate initialization values"""
+        inits = []
+        for port in ports:
+            if port['direction'] == 'input' or port['direction'] == 'inout':
+                inits.append(f"        {port['name']} = 0;")
+        
+        return '\n'.join(inits) if inits else "        // No inputs to initialize"
+    
+    def _generate_stimulus(self, ports: List[Dict]) -> str:
+        """Generate test stimulus"""
+        # Simple stimulus - toggling inputs
+        stimulus = []
+        for port in ports:
+            if port['direction'] == 'input':
+                stimulus.append(f"        #10 {port['name']} = 1;")
+                stimulus.append(f"        #20 {port['name']} = 0;")
+        
+        return '\n'.join(stimulus) if stimulus else "        // No inputs to stimulate"
+    
+    def _generate_monitor(self, ports: List[Dict]) -> str:
+        """Generate monitor"""
+        monitor_ports = [p for p in ports if p['direction'] != 'input']
+        if not monitor_ports:
+            return "    // No outputs to monitor"
+        
+        monitors = []
+        for port in monitor_ports:
+            monitors.append(f"{port['name']} = %d")
+        
+        format_str = ', '.join(monitors)
+        var_str = ', '.join(port['name'] for port in monitor_ports)
+        
+        return f'    always @(*) begin\n        $display("{format_str}", {var_str});\n    end'
+    
+    def _cleanup(self, tb: str) -> str:
+        """Clean up generated testbench"""
+        # Remove multiple blank lines
+        tb = re.sub(r'\n\s*\n\s*\n', '\n\n', tb)
+        return tb.strip()
+
+
+# Wrapper function for easy access
+def generate_testbench(rtl_code: str) -> Optional[str]:
+    """Generate testbench from RTL code - standalone function"""
+    gen = SimpleTestbenchGenerator()
+    return gen.generate(rtl_code)
+
+
+# ============================================================================
+# ORIGINAL IMPLEMENTATION (kept for compatibility)
+# ============================================================================
+
+from typing import Dict as DictType
+
+try:
+    from python.port_analyzer import PortAnalyzer, Port
+    from python.test_vector_generator import TestVectorGenerator
+    from python.testbench_templates import (
+        get_combinational_template,
+        get_sequential_template,
+        get_clock_generation,
+        get_reset_sequence,
+    )
+    from python.config import DEBUG_MODE
+    FULL_IMPORTS_AVAILABLE = True
+except ImportError:
+    FULL_IMPORTS_AVAILABLE = False
 
 
 class TestbenchGenerator:
@@ -50,15 +247,20 @@ class TestbenchGenerator:
         Args:
             debug: Enable debug output
         """
-        self.debug = debug if debug is not None else DEBUG_MODE
-        
-        self.port_analyzer = PortAnalyzer(debug=self.debug)
-        self.vector_generator = TestVectorGenerator(debug=self.debug)
+        if FULL_IMPORTS_AVAILABLE:
+            self.debug = debug if debug is not None else DEBUG_MODE
+            self.port_analyzer = PortAnalyzer(debug=self.debug)
+            self.vector_generator = TestVectorGenerator(debug=self.debug)
+            self.use_simple = False
+        else:
+            self.debug = debug if debug is not None else False
+            self.simple_gen = SimpleTestbenchGenerator()
+            self.use_simple = True
         
         if self.debug:
             print("TestbenchGenerator initialized")
     
-    def generate(self, rtl_code: str, design_type: str = 'auto') -> Dict:
+    def generate(self, rtl_code: str, design_type: str = 'auto') -> DictType:
         """
         Generate testbench for RTL code.
         
@@ -75,6 +277,28 @@ class TestbenchGenerator:
                 'errors': list,
             }
         """
+        # Use simple generator if full imports not available
+        if self.use_simple:
+            tb_code = self.simple_gen.generate(rtl_code)
+            if tb_code:
+                return {
+                    'success': True,
+                    'testbench_code': tb_code,
+                    'module_name': self._extract_module_name(rtl_code),
+                    'testbench_name': f"{self._extract_module_name(rtl_code)}_tb",
+                    'test_count': 1,
+                    'errors': [],
+                }
+            return {
+                'success': False,
+                'testbench_code': "",
+                'module_name': "",
+                'testbench_name': "",
+                'test_count': 0,
+                'errors': ["Failed to generate testbench"],
+            }
+        
+        # Full implementation with complex analysis
         if self.debug:
             print("\n" + "=" * 70)
             print("GENERATING TESTBENCH")
@@ -294,6 +518,13 @@ class TestbenchGenerator:
             test_code_lines.append("")
         
         return "\n".join(test_code_lines)
+    
+    def _extract_module_name(self, rtl_code: str) -> str:
+        """Extract module name from RTL code"""
+        match = re.search(r'module\s+(\w+)\s*\(', rtl_code)
+        if match:
+            return match.group(1)
+        return "module"
 
 
 # ============================================================================

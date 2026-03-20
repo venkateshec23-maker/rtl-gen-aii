@@ -1,0 +1,130 @@
+name: Deploy RTL-Gen AI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+env:
+  AWS_REGION: us-east-1
+  ECR_REPOSITORY: rtl-gen-ai
+  IMAGE_TAG: ${{ github.sha }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    strategy:
+      matrix:
+        python-version: ['3.11', '3.12']
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python ${{ matrix.python-version }}
+      uses: actions/setup-python@v4
+      with:
+        python-version: ${{ matrix.python-version }}
+        cache: 'pip'
+    
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov flake8
+    
+    - name: Lint with flake8
+      run: |
+        # Stop build on syntax errors
+        flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+        # Exit-zero treats all errors as warnings
+        flake8 . --count --exit-zero --max-complexity=10 --max-line-length=127 --statistics
+    
+    - name: Run tests with pytest
+      run: |
+        pytest tests/ -v --cov=python --cov-report=xml --cov-report=html
+    
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        files: ./coverage.xml
+        flags: unittests
+        name: codecov-umbrella
+        fail_ci_if_error: false
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    
+    permissions:
+      contents: read
+      id-token: write
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+    
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/GitHubActionsRole
+        aws-region: ${{ env.AWS_REGION }}
+    
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+    
+    - name: Build and push Docker image to ECR
+      uses: docker/build-push-action@v4
+      with:
+        context: .
+        push: true
+        tags: |
+          ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+          ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ env.IMAGE_TAG }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+    
+    - name: Update ECS service with new image
+      run: |
+        aws ecs update-service \
+          --cluster rtl-gen-cluster \
+          --service rtl-gen-service \
+          --force-new-deployment
+      continue-on-error: true
+    
+    - name: Deploy to DigitalOcean (optional)
+      if: secrets.DIGITALOCEAN_ACCESS_TOKEN != ''
+      env:
+        DIGITALOCEAN_ACCESS_TOKEN: ${{ secrets.DIGITALOCEAN_ACCESS_TOKEN }}
+      run: |
+        # Install doctl
+        cd ~
+        wget https://github.com/digitalocean/doctl/releases/download/v1.97.1/doctl-1.97.1-linux-x64.tar.gz
+        tar xf ~/doctl-1.97.1-linux-x64.tar.gz
+        sudo mv ~/doctl /usr/local/bin
+        
+        # Push update to DigitalOcean (requires app spec configured)
+        # doctl apps update <app-id> --spec deploy/digitalocean/app.yaml --skip-validate
+      continue-on-error: true
+
+  deploy-notification:
+    needs: [ test, build ]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+    - name: Check deployment status
+      run: |
+        if [ "${{ needs.build.result }}" = "success" ]; then
+          echo "✅ Deployment successful!"
+          echo "Check your services:"
+          echo "- AWS: ecs://rtl-gen-cluster/rtl-gen-service"
+          echo "- DigitalOcean: doctl apps list"
+        else
+          echo "❌ Deployment failed or skipped (pull request)"
+        fi

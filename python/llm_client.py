@@ -24,31 +24,121 @@ from python.mock_llm import MockLLM, get_mock_llm
 
 class LLMClient:
     """
-    Client for DeepSeek-V3.2 via NVIDIA API.
+    Multi-provider LLM Client supporting Mock, Anthropic, DeepSeek.
 
     Usage:
+        # Mock mode
         client = LLMClient(use_mock=True)
+        
+        # Anthropic (Claude)
+        client = LLMClient(provider='anthropic', api_key='your-key-here', 
+                          model='claude-sonnet-4-20250514')
+        
+        # DeepSeek direct API
+        client = LLMClient(provider='deepseek', api_key='your-key-here', 
+                          model='deepseek-chat')
+        
         response = client.generate("Generate an 8-bit adder")
         if response['success']:
             code_blocks = client.extract_code(response)
     """
 
-    def __init__(self, use_mock=None, cache_manager=None, token_tracker=None):
-        self.use_mock = use_mock if use_mock is not None else ENABLE_MOCK_LLM
+    def __init__(self, use_mock=None, cache_manager=None, token_tracker=None,
+                 api_key=None, model=None, provider=None):
+        """
+        Initialize LLM Client with multi-provider support.
+        
+        Args:
+            use_mock: Boolean to enable mock mode (backward compat)
+            cache_manager: Custom cache manager instance
+            token_tracker: Custom token tracker instance
+            api_key: API key for Anthropic or DeepSeek provider
+            model: Specific model to use (depends on provider)
+            provider: Provider name ('mock', 'anthropic', 'deepseek', or None for auto)
+        """
         self.cache = cache_manager or get_cache_manager()
         self.tracker = token_tracker or get_token_tracker()
-        self.mock = get_mock_llm(delay=0.1) if self.use_mock else None
         self.last_request_time = 0
         self.request_count = 0
-        self.model = NVIDIA_MODEL
-
+        
+        # Detect provider from parameters or use_mock flag
+        if provider:
+            self.provider = provider.lower()
+        elif use_mock is True:
+            self.provider = 'mock'
+        else:
+            self.provider = 'anthropic' if api_key else 'nvidia'
+        
+        self.api_key = api_key
+        self.use_mock = self.provider == 'mock'
+        
+        # Set model based on provider
+        if model:
+            self.model = model
+        elif self.provider == 'anthropic':
+            self.model = 'claude-sonnet-4-20250514'  # Default Anthropic model
+        elif self.provider == 'deepseek':
+            self.model = 'deepseek-chat'
+        else:
+            self.model = NVIDIA_MODEL
+        
+        # Initialize mock if needed
+        self.mock = None
+        if self.use_mock:
+            self.mock = get_mock_llm(delay=0.1)
+        
+        # Initialize real client if not mock
         if not self.use_mock:
             self._init_real_client()
 
         if DEBUG_MODE:
-            print(f"LLMClient initialized (mock={self.use_mock})")
+            print(f"LLMClient initialized (provider={self.provider}, model={self.model})")
 
     def _init_real_client(self):
+        """Initialize the appropriate LLM client based on provider."""
+        if self.provider == 'anthropic':
+            self._init_anthropic()
+        elif self.provider == 'deepseek':
+            self._init_deepseek()
+        else:
+            self._init_nvidia()
+    
+    def _init_anthropic(self):
+        """Initialize Anthropic Claude client."""
+        try:
+            from anthropic import Anthropic
+        except ImportError:
+            raise ImportError("anthropic package required. Run: pip install anthropic")
+        
+        if not self.api_key:
+            raise ValueError(
+                "Anthropic API key required. Provide via api_key parameter or "
+                "set ANTHROPIC_API_KEY environment variable. "
+                "Get key at: https://console.anthropic.com"
+            )
+        
+        self.client = Anthropic(api_key=self.api_key)
+    
+    def _init_deepseek(self):
+        """Initialize DeepSeek API client."""
+        try:
+            from openai import OpenAI
+        except ImportError:
+            raise ImportError("openai package required. Run: pip install openai")
+        
+        if not self.api_key:
+            raise ValueError(
+                "DeepSeek API key required. Provide via api_key parameter. "
+                "Get key at: https://platform.deepseek.com"
+            )
+        
+        self.client = OpenAI(
+            api_key=self.api_key,
+            base_url="https://api.deepseek.com"
+        )
+    
+    def _init_nvidia(self):
+        """Initialize NVIDIA-hosted DeepSeek client."""
         if openai is None:
             raise ImportError("openai package required. Run: pip install openai")
         if not NVIDIA_API_KEY:
@@ -137,6 +227,71 @@ class LLMClient:
 
     def _generate_real(self, prompt, system_prompt, temperature,
                        max_tokens, cache_kwargs):
+        """Generate using the real LLM provider."""
+        try:
+            if self.provider == 'anthropic':
+                return self._generate_anthropic(prompt, system_prompt,
+                                               temperature, max_tokens, cache_kwargs)
+            else:
+                return self._generate_openai_compatible(prompt, system_prompt,
+                                                       temperature, max_tokens, cache_kwargs)
+        except Exception as e:
+            error_msg = str(e)
+            self.tracker.log_usage(self.model, 0, 0,
+                                   success=False, error=error_msg)
+            return {'success': False, 'error': error_msg, 'cached': False}
+    
+    def _generate_anthropic(self, prompt, system_prompt, temperature,
+                           max_tokens, cache_kwargs):
+        """Generate response using Anthropic Claude."""
+        try:
+            self._rate_limit()
+            
+            response = self.client.messages.create(
+                model=self.model,
+                max_tokens=max_tokens,
+                system=system_prompt or "",
+                messages=[
+                    {"role": "user", "content": prompt}
+                ],
+                temperature=temperature
+            )
+            
+            content = response.content[0].text
+            usage = {
+                'prompt_tokens': response.usage.input_tokens,
+                'completion_tokens': response.usage.output_tokens,
+                'total_tokens': response.usage.input_tokens + response.usage.output_tokens
+            }
+            
+            self.tracker.log_usage(self.model,
+                                   usage['prompt_tokens'],
+                                   usage['completion_tokens'])
+            
+            result = {
+                'success': True,
+                'content': content,
+                'usage': usage,
+                'cached': False,
+                'model': self.model
+            }
+            self.cache.set(prompt, result,
+                           tokens_saved=usage['total_tokens'],
+                           **cache_kwargs)
+            
+            if DEBUG_MODE:
+                print(f"Anthropic success. Tokens: {usage['total_tokens']}")
+            return result
+        
+        except Exception as e:
+            error_msg = str(e)
+            self.tracker.log_usage(self.model, 0, 0,
+                                   success=False, error=error_msg)
+            return {'success': False, 'error': error_msg, 'cached': False}
+    
+    def _generate_openai_compatible(self, prompt, system_prompt, temperature,
+                                   max_tokens, cache_kwargs):
+        """Generate response using OpenAI-compatible API (DeepSeek or NVIDIA)."""
         try:
             self._rate_limit()
 
@@ -201,24 +356,52 @@ class LLMClient:
         return response
 
     def extract_code(self, response):
-        """Extract code blocks from LLM response content."""
+        """Extract code blocks from LLM response content.
+        
+        Handles:
+        - Markdown code blocks (```language ... ```)
+        - Raw code if no blocks found
+        - Failed responses
+        """
         if not response.get('success'):
             return []
-        content = response['content']
+        
+        content = response.get('content', '')
+        if not content:
+            return []
+        
         blocks = []
         in_block = False
         current = []
+        block_lang = ''
+        
         for line in content.split('\n'):
-            if line.startswith('```'):
+            # Check if line contains code fence markers
+            if '```' in line:
                 if not in_block:
+                    # Starting a code block
                     in_block = True
                     current = []
+                    block_lang = line.replace('```', '').strip()
                 else:
+                    # Ending a code block
                     in_block = False
                     if current:
-                        blocks.append('\n'.join(current))
+                        code = '\n'.join(current).strip()
+                        if code:  # Only add non-empty blocks
+                            blocks.append(code)
+                    current = []
+                    block_lang = ''
             elif in_block:
                 current.append(line)
+        
+        # If no code blocks found but content exists, return all content as single block
+        if not blocks and content.strip():
+            # Try to extract Verilog-like code if no markdown blocks found
+            lines = [l for l in content.split('\n') if l.strip()]
+            if lines:
+                blocks.append('\n'.join(lines))
+        
         return blocks
 
     def get_stats(self):
@@ -231,13 +414,13 @@ class LLMClient:
         }
 
 
-def get_llm_client(use_mock=None):
-    return LLMClient(use_mock=use_mock)
+def get_llm_client(use_mock=None, api_key=None, model=None, provider=None):
+    return LLMClient(use_mock=use_mock, api_key=api_key, model=model, provider=provider)
 
 
-def quick_generate(prompt, use_mock=True):
+def quick_generate(prompt, use_mock=True, api_key=None, model=None, provider=None):
     """Quick one-shot generation. Returns first code block or error."""
-    client = LLMClient(use_mock=use_mock)
+    client = LLMClient(use_mock=use_mock, api_key=api_key, model=model, provider=provider)
     response = client.generate(prompt)
     if response['success']:
         blocks = client.extract_code(response)

@@ -1,279 +1,356 @@
 """
-RTL-Gen AI Web Application
-Main Streamlit interface for RTL code generation.
-
-Run with: streamlit run app.py
+RTL-Gen AI - Complete Production Version
+Phases 1-3: LLM + Waveforms + Synthesis
 """
 
 import streamlit as st
+import sys
 from pathlib import Path
+import tempfile
+import base64
+
+# Add python directory to path
+sys.path.append(str(Path(__file__).parent))
+
+# Phase 1: LLM
+from python.llm_client import LLMClient
+
+# Phase 2: Waveforms
+from python.waveform_generator import WaveformGenerator
+from python.testbench_generator import TestbenchGenerator
+
+# Phase 3: Synthesis
+from python.synthesis_engine import SynthesisEngine
+from python.synthesis_visualizer import SynthesisVisualizer
 
 # Page config
 st.set_page_config(
-    page_title="RTL-Gen AI",
-    page_icon="🔧",
-    layout="wide",
-    initial_sidebar_state="expanded"
+    page_title="RTL-Gen AI - Complete",
+    page_icon="🔷",
+    layout="wide"
 )
 
-# Custom CSS
-st.markdown("""
-<style>
-    .main-header {
-        font-size: 3rem;
-        font-weight: bold;
-        color: #1f77b4;
-        text-align: center;
-        margin-bottom: 2rem;
-    }
-    .stButton>button {
-        width: 100%;
-        background-color: #1f77b4;
-        color: white;
-        font-size: 1.2rem;
-        padding: 0.75rem;
-    }
-    .success-box {
-        padding: 1rem;
-        background-color: #d4edda;
-        border: 1px solid #c3e6cb;
-        border-radius: 0.25rem;
-        color: #155724;
-    }
-    .error-box {
-        padding: 1rem;
-        background-color: #f8d7da;
-        border: 1px solid #f5c6cb;
-        border-radius: 0.25rem;
-        color: #721c24;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Title
-st.markdown('<div class="main-header">🔧 RTL-Gen AI</div>', unsafe_allow_html=True)
-st.markdown('<p style="text-align: center; font-size: 1.2rem; color: #666;">Generate Professional Verilog Code from Natural Language</p>', unsafe_allow_html=True)
+# Initialize session state
+if 'generated_code' not in st.session_state:
+    st.session_state.generated_code = None
+if 'testbench_code' not in st.session_state:
+    st.session_state.testbench_code = None
+if 'waveform_result' not in st.session_state:
+    st.session_state.waveform_result = None
+if 'synthesis_result' not in st.session_state:
+    st.session_state.synthesis_result = None
+if 'synthesis_report' not in st.session_state:
+    st.session_state.synthesis_report = None
 
 # Sidebar
 with st.sidebar:
-    st.header("⚙️ Settings")
+    st.title("🔧 RTL-Gen AI")
+    st.markdown("### Production Ready v1.0")
     
-    # LLM Settings
-    st.subheader("LLM Configuration")
-    use_mock = st.checkbox("Use Mock LLM (Free)", value=True, help="Use mock LLM for testing without API costs")
+    st.divider()
     
-    if not use_mock:
-        api_key = st.text_input("Anthropic API Key", type="password", help="Your Anthropic API key")
-        model = st.selectbox("Model", ["claude-sonnet-4-20250514", "claude-opus-4-20250514"])
+    # Phase 1: LLM Configuration
+    st.subheader("🤖 Phase 1: LLM Provider")
     
-    # Verification Settings
-    st.subheader("Verification")
-    enable_verification = st.checkbox("Enable Verification", value=True, help="Compile and simulate generated code")
-    enable_waveforms = st.checkbox("Generate Waveforms", value=True, help="Create VCD waveform files")
+    provider = st.selectbox(
+        "Select Provider",
+        ["mock", "anthropic", "deepseek"],
+        help="Mock = Free (no API key), Anthropic = Claude, DeepSeek = Free tier"
+    )
     
-    # Advanced Settings
-    with st.expander("🔬 Advanced"):
-        temperature = st.slider("Temperature", 0.0, 1.0, 0.2, 0.1, help="LLM creativity (lower = more consistent)")
-        max_tokens = st.slider("Max Tokens", 1000, 8000, 4000, 500, help="Maximum response length")
-        auto_generate_tb = st.checkbox("Auto-generate Testbench", value=True, help="Generate testbench if LLM doesn't provide one")
+    api_key = None
+    if provider != "mock":
+        api_key = st.text_input(
+            f"Enter {provider.title()} API Key",
+            type="password"
+        )
+    
+    if provider == "anthropic":
+        model = st.selectbox(
+            "Claude Model",
+            ["claude-sonnet-4-20250514", "claude-opus-4-20250514", "claude-3-5-sonnet-20241022"]
+        )
+    else:
+        model = "deepseek-chat" if provider == "deepseek" else None
+    
+    st.divider()
+    
+    # Phase 2: Waveform Settings
+    st.subheader("📊 Phase 2: Waveforms")
+    generate_waveforms = st.checkbox("Auto-generate waveforms", value=True)
+    
+    st.divider()
+    
+    # Phase 3: Synthesis Settings
+    st.subheader("🔧 Phase 3: Synthesis")
+    enable_synthesis = st.checkbox("Enable synthesis", value=True)
+    
+    tech_library = st.selectbox(
+        "Target Technology",
+        ["asic", "fpga"],
+        help="ASIC = Standard cells, FPGA = LUTs/FFs"
+    )
+    
+    st.divider()
+    
+    # Quick Info
+    st.markdown("""
+    ### ✅ System Ready
+    - Phase 1: LLM Providers
+    - Phase 2: Waveforms
+    - Phase 3: Synthesis
+    
+    [Documentation](docs/)
+    """)
 
-# Main content area
-col1, col2 = st.columns([1, 1])
+# Main content
+st.title("🔷 RTL-Gen AI - Complete")
+st.markdown("### Generate → Simulate → Synthesize")
 
+# Input section
+col1, col2 = st.columns([3, 1])
 with col1:
-    st.subheader("📝 Describe Your Design")
-    
-    # Input methods
-    input_method = st.radio("Input Method", ["Text Description", "Load Example", "Upload Specification"])
-    
-    if input_method == "Text Description":
-        description = st.text_area(
-            "Design Description",
-            placeholder="Example: Create an 8-bit ALU with ADD, SUB, AND, OR, XOR operations...",
-            height=200,
-            help="Describe your digital circuit in natural language"
-        )
-    
-    elif input_method == "Load Example":
-        example = st.selectbox(
-            "Select Example",
-            ["4-bit Adder", "8-bit Counter", "4-bit ALU", "8-bit Register", "4-to-1 Multiplexer"]
-        )
-        
-        examples = {
-            "4-bit Adder": "Create a 4-bit adder with carry-in and carry-out",
-            "8-bit Counter": "Design an 8-bit counter with synchronous reset, enable, and load",
-            "4-bit ALU": "Build a 4-bit ALU with operations: ADD, SUB, AND, OR, XOR",
-            "8-bit Register": "Implement an 8-bit register with clock, reset, and enable",
-            "4-to-1 Multiplexer": "Create a 4-to-1 multiplexer with 8-bit data inputs"
-        }
-        
-        description = st.text_area("Design Description", value=examples[example], height=200)
-    
-    else:  # Upload
-        uploaded_file = st.file_uploader("Upload Specification (.txt, .md)", type=['txt', 'md'])
-        if uploaded_file:
-            description = uploaded_file.read().decode('utf-8')
-            st.text_area("Design Description", value=description, height=200)
-        else:
-            description = ""
-    
-    # Generate button
-    generate_button = st.button("🚀 Generate RTL Code", type="primary", use_container_width=True)
-
+    prompt = st.text_area(
+        "Describe your digital design:",
+        height=100,
+        placeholder="Example: Create an 8-bit adder with carry in and carry out",
+        help="Be specific about bit widths and features"
+    )
 with col2:
-    st.subheader("📊 Generation Status")
-    status_placeholder = st.empty()
-    progress_placeholder = st.empty()
+    st.markdown("### Examples")
+    if st.button("8-bit Adder"):
+        prompt = "Create an 8-bit adder with carry in and carry out"
+    if st.button("16-bit Counter"):
+        prompt = "Create a 16-bit counter with reset and enable"
+    if st.button("4-bit ALU"):
+        prompt = "Create a 4-bit ALU with add, sub, and, or operations"
 
-# Results area (below)
-if generate_button and description:
-    # Import here to avoid slow startup
-    from python.input_processor import InputProcessor
-    from python.prompt_builder import PromptBuilder
-    from python.llm_client import LLMClient
-    from python.extraction_pipeline import ExtractionPipeline
-    from python.verification_engine import VerificationEngine
-    
-    # Initialize components
-    processor = InputProcessor(debug=False)
-    builder = PromptBuilder(debug=False)
-    client = LLMClient(use_mock=use_mock)
-    extractor = ExtractionPipeline(debug=False)
-    
-    # Progress tracking
-    progress_bar = progress_placeholder.progress(0)
-    status_text = status_placeholder.empty()
-    
-    try:
-        # Step 1: Parse (20%)
-        status_text.info("🔍 Parsing description...")
-        progress_bar.progress(20)
-        parsed = processor.parse_description(description)
-        
-        if not parsed['valid']:
-            st.error(f"❌ Invalid description: {parsed['errors']}")
-            st.stop()
-        
-        # Step 2: Build prompt (40%)
-        status_text.info("📝 Building prompt...")
-        progress_bar.progress(40)
-        prompt = builder.build_prompt(parsed)
-        
-        # Step 3: Generate (60%)
-        status_text.info("🤖 Generating RTL code...")
-        progress_bar.progress(60)
-        response = client.generate(prompt)
-        
-        # Step 4: Extract (80%)
-        status_text.info("✂️ Extracting and formatting code...")
-        progress_bar.progress(80)
-        extraction = extractor.process(response['content'] if isinstance(response, dict) and 'content' in response else str(response), description=description)
-        
-        if not extraction['success']:
-            st.error(f"❌ Extraction failed: {extraction['errors']}")
-            st.stop()
-        
-        # Step 5: Verify (100%)
-        if enable_verification:
-            status_text.info("✔️ Verifying design...")
-            progress_bar.progress(90)
+# Generate button
+col1, col2 = st.columns([1, 5])
+with col1:
+    generate_clicked = st.button("🚀 Generate", type="primary", use_container_width=True)
+
+if generate_clicked and prompt:
+    with st.spinner("Generating RTL code..."):
+        try:
+            # Phase 1: LLM Generation
+            if provider == "mock" or not api_key:
+                client = LLMClient(use_mock=True)
+                st.info("Using Mock LLM (free, no API key)")
+            else:
+                client = LLMClient(
+                    provider=provider,
+                    api_key=api_key,
+                    model=model
+                )
             
-            verifier = VerificationEngine(debug=False)
-            verification = verifier.verify(
-                extraction['rtl_code'],
-                extraction['testbench_code'],
-                module_name=extraction['module_name']
+            response = client.generate(prompt)
+            code_blocks = client.extract_code(response)
+            
+            if code_blocks:
+                st.session_state.generated_code = code_blocks[0]
+                st.session_state.testbench_code = code_blocks[1] if len(code_blocks) > 1 else None
+                
+                # Phase 2: Auto-generate testbench if not present
+                if not st.session_state.testbench_code:
+                    tb_gen = TestbenchGenerator()
+                    st.session_state.testbench_code = tb_gen.generate(st.session_state.generated_code)
+                
+                st.success("✅ RTL code generated successfully!")
+            else:
+                st.error("No code blocks found in response")
+                st.code(response['content'], language='text')
+        
+        except Exception as e:
+            st.error(f"Generation failed: {str(e)}")
+
+# Display results with all 4 tabs
+if st.session_state.generated_code:
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "📄 RTL Code (Phase 1)",
+        "🧪 Testbench (Phase 2)", 
+        "📊 Waveforms (Phase 2)",
+        "🔧 Synthesis (Phase 3)"
+    ])
+    
+    # Tab 1: RTL Code
+    with tab1:
+        st.markdown("### Generated RTL Module")
+        st.code(st.session_state.generated_code, language="verilog")
+        
+        st.download_button(
+            label="📥 Download RTL",
+            data=st.session_state.generated_code,
+            file_name="rtl_module.v",
+            mime="text/plain"
+        )
+    
+    # Tab 2: Testbench
+    with tab2:
+        if st.session_state.testbench_code:
+            st.markdown("### Generated Testbench")
+            st.code(st.session_state.testbench_code, language="verilog")
+            
+            st.download_button(
+                label="📥 Download Testbench",
+                data=st.session_state.testbench_code,
+                file_name="testbench.v",
+                mime="text/plain"
             )
         else:
-            verification = None
-        
-        progress_bar.progress(100)
-        status_text.success("✅ Generation complete!")
-        
-        # Display results
-        st.markdown("---")
-        st.header("📦 Generated Design")
-        
-        # Tabs for different views
-        tab1, tab2, tab3, tab4 = st.tabs(["📄 RTL Code", "🧪 Testbench", "✔️ Verification", "📊 Details"])
-        
-        with tab1:
-            st.subheader(f"Module: {extraction['module_name']}")
-            st.code(extraction['rtl_code'], language='verilog')
-            st.download_button(
-                "⬇️ Download RTL",
-                extraction['rtl_code'],
-                file_name=f"{extraction['module_name']}.v",
-                mime="text/plain"
-            )
-        
-        with tab2:
-            st.subheader(f"Testbench: {extraction['testbench_name']}")
-            st.code(extraction['testbench_code'], language='verilog')
-            st.download_button(
-                "⬇️ Download Testbench",
-                extraction['testbench_code'],
-                file_name=f"{extraction['testbench_name']}.v",
-                mime="text/plain"
-            )
-        
-        with tab3:
-            if verification:
-                if verification['passed']:
-                    st.success("✅ Verification PASSED")
-                else:
-                    st.error("❌ Verification FAILED")
-                
-                c1, c2, c3 = st.columns(3)
-                with c1:
-                    st.metric("Compilation", "✓ Pass" if verification['compilation_passed'] else "✗ Fail")
-                with c2:
-                    st.metric("Simulation", "✓ Pass" if verification['simulation_passed'] else "✗ Fail")
-                with c3:
-                    st.metric("Tests", f"{verification['tests_passed']}/{verification['total_tests']}")
-                
-                if verification['errors']:
-                    with st.expander("❌ Errors", expanded=True):
-                        for error in verification['errors']:
-                            st.error(error)
-                
-                if getattr(extraction, 'warnings', []):
-                    with st.expander("⚠️ Warnings"):
-                        for warning in extraction['warnings']:
-                            st.warning(warning)
-                
-                if verification['simulation_output']:
-                    with st.expander("📋 Simulation Output"):
-                        st.code(verification['simulation_output'])
-                
-                if verification.get('waveform_file'):
-                    st.info(f"📊 Waveform: {verification['waveform_file']}")
-            else:
-                st.info("Verification disabled")
-        
-        with tab4:
-            st.json({
-                'module_name': extraction['module_name'],
-                'component_type': parsed.get('component_type', 'unknown'),
-                'bit_width': parsed.get('bit_width', 'unknown'),
-                'rtl_length': len(extraction['rtl_code']),
-                'tb_length': len(extraction['testbench_code']),
-                'has_warnings': len(extraction.get('warnings', [])) > 0,
-                'verified': verification['passed'] if verification else None,
-            })
+            st.info("No testbench generated")
     
-    except Exception as e:
-        status_text.error(f"❌ Error: {e}")
-        st.exception(e)
-
-elif generate_button:
-    st.warning("⚠️ Please enter a design description")
+    # Tab 3: Waveforms
+    with tab3:
+        st.markdown("### Waveform Generation")
+        
+        if generate_waveforms and st.session_state.testbench_code:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("🎬 Generate VCD Waveform", use_container_width=True):
+                    with st.spinner("Generating waveform..."):
+                        wf_gen = WaveformGenerator(output_dir='outputs/waveforms')
+                        result = wf_gen.generate_from_testbench(
+                            st.session_state.testbench_code,
+                            'design_tb'
+                        )
+                        st.session_state.waveform_result = result
+            
+            with col2:
+                if st.session_state.waveform_result and st.session_state.waveform_result.get('success'):
+                    with open(st.session_state.waveform_result['vcd_file'], 'rb') as f:
+                        st.download_button(
+                            label="📥 Download VCD",
+                            data=f,
+                            file_name=Path(st.session_state.waveform_result['vcd_file']).name,
+                            mime="text/plain",
+                            use_container_width=True
+                        )
+            
+            # Display waveform results
+            if st.session_state.waveform_result:
+                result = st.session_state.waveform_result
+                
+                if result['success']:
+                    st.success("✅ Waveform generated!")
+                    
+                    # Import and use the new render function
+                    from python.waveform_generator import render_waveform_in_streamlit
+                    
+                    # Render inline waveform with matplotlib
+                    render_waveform_in_streamlit(result)
+                    
+                    # Optional: Show raw VCD preview
+                    with st.expander("📄 Raw VCD Preview"):
+                        with open(result['vcd_file'], 'r') as f:
+                            st.code(f.read()[:2000], language="text")
+                    
+                else:
+                    st.error(f"Waveform failed: {result.get('error')}")
+        else:
+            st.info("Generate RTL code first to enable waveforms")
+    
+    # Tab 4: Synthesis
+    with tab4:
+        st.markdown("### RTL Synthesis")
+        
+        if enable_synthesis:
+            col1, col2 = st.columns(2)
+            
+            with col1:
+                if st.button("🔧 Run Synthesis", use_container_width=True):
+                    with st.spinner("Running synthesis..."):
+                        synth_engine = SynthesisEngine(
+                            output_dir='outputs/synthesis',
+                            tech_library=tech_library
+                        )
+                        st.session_state.synthesis_result = synth_engine.synthesize(
+                            st.session_state.generated_code
+                        )
+                        
+                        if st.session_state.synthesis_result.get('success'):
+                            viz = SynthesisVisualizer()
+                            st.session_state.synthesis_report = viz.generate_full_report(
+                                st.session_state.synthesis_result
+                            )
+            
+            with col2:
+                if st.session_state.synthesis_report:
+                    st.download_button(
+                        label="📥 Download HTML Report",
+                        data=st.session_state.synthesis_report,
+                        file_name="synthesis_report.html",
+                        mime="text/html",
+                        use_container_width=True
+                    )
+            
+            # Display synthesis results
+            if st.session_state.synthesis_result:
+                result = st.session_state.synthesis_result
+                
+                if result['success']:
+                    st.success("✅ Synthesis completed!")
+                    
+                    # Metrics
+                    stats = result.get('stats', {})
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        if 'area' in stats:
+                            unit = 'µm²' if tech_library == 'asic' else 'LUTs'
+                            st.metric("Area", f"{stats['area']:.1f} {unit}")
+                    
+                    with col2:
+                        if 'power' in stats:
+                            unit = 'µW/MHz' if tech_library == 'asic' else 'mW'
+                            st.metric("Power", f"{stats['power']:.3f} {unit}")
+                    
+                    with col3:
+                        if 'frequency' in stats:
+                            st.metric("Max Freq", f"{stats['frequency']:.1f} MHz")
+                    
+                    with col4:
+                        if 'total_cells' in stats:
+                            st.metric("Total Cells", stats['total_cells'])
+                    
+                    # Cell distribution
+                    if 'cells' in stats and stats['cells']:
+                        with st.expander("📊 Cell Distribution"):
+                            cells = stats['cells']
+                            for cell, count in cells.items():
+                                st.text(f"{cell}: {count}")
+                    
+                    # Netlist preview
+                    if result.get('netlist'):
+                        with st.expander("🔍 Netlist Preview"):
+                            st.code(result['netlist'][:1000] + "...", language="verilog")
+                            
+                            st.download_button(
+                                label="📥 Download Netlist",
+                                data=result['netlist'],
+                                file_name=f"{result['top_module']}_netlist.v",
+                                mime="text/plain"
+                            )
+                    
+                    # Simulator info
+                    st.info(f"⚡ Simulator: {result.get('simulator', 'unknown').upper()}")
+                    
+                else:
+                    st.error(f"Synthesis failed: {result.get('error')}")
+        else:
+            st.info("Enable synthesis in sidebar to generate gate-level netlists")
 
 # Footer
-st.markdown("---")
-st.markdown("""
-<div style='text-align: center; color: #666;'>
-    <p>RTL-Gen AI v1.0 | Built with ❤️ using Anthropic Claude (or Deepseek)</p>
-</div>
-""", unsafe_allow_html=True)
+st.divider()
+st.markdown(
+    """
+    <div style='text-align: center'>
+        <p>🚀 RTL-Gen AI v1.0 | All 3 Phases Complete | Production Ready ✅</p>
+        <p style='font-size: 0.8em; color: gray;'>
+            Phase 1: LLM • Phase 2: Waveforms • Phase 3: Synthesis
+        </p>
+    </div>
+    """,
+    unsafe_allow_html=True
+)

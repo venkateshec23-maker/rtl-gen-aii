@@ -15,9 +15,26 @@
     "mux"
   ],
   "api_settings": {
-    "provider": "nvidia",
-    "model": "deepseek-ai/deepseek-v3.2",
-    "temperature": 0.5,
-    "max_tokens": 4000
+    "default_provider": "grok",
+    "providers": {
+      "anthropic": {
+        "model": "claude-3-5-sonnet-20241022",
+        "temperature": 0.5,
+        "max_tokens": 4000,
+        "enabled": false
+      },
+      "grok": {
+        "model": "grok-2-vision-1212",
+        "temperature": 0.5,
+        "max_tokens": 4000,
+        "enabled": true
+      },
+      "deepseek": {
+        "model": "deepseek-ai/deepseek-v3.2",
+        "temperature": 0.5,
+        "max_tokens": 4000,
+        "enabled": false
+      }
+    }
   }
 }

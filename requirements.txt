@@ -22,6 +22,11 @@ streamlit>=1.31.0             # Web UI framework
 # ============================================================================
 click>=8.1.7                  # Command-line interface framework
 
+# Database
+# ============================================================================
+sqlalchemy>=2.0.0             # SQL toolkit and ORM
+psycopg2-binary>=2.9.0        # PostgreSQL adapter for Python
+
 # Testing
 # ============================================================================
 pytest>=7.4.0                 # Testing framework
