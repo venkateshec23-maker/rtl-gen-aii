@@ -312,25 +312,97 @@ class LLMClient:
     
     def _generate_grok(self, prompt, system_prompt, temperature,
                        max_tokens, cache_kwargs):
-        """Generate response using Grok (Groq) API."""
+        """Generate response using Grok (Groq) API - FIXED VERSION with debugging"""
+        
+        # Enhanced system prompt with Markdown formatting
+        grok_system = system_prompt or """You are an expert Verilog RTL designer. Generate Verilog code for digital circuits.
+
+IMPORTANT: Always output Verilog code in markdown code blocks with 'verilog' language tag.
+Format EXACTLY like this:
+```verilog
+module design_name (ports);
+    // implementation
+endmodule
+```
+
+If a testbench is appropriate, include it in a separate code block:
+```verilog
+module design_name_tb;
+    // testbench code
+endmodule
+```"""
+
         try:
-            self._rate_limit()
+            if DEBUG_MODE:
+                print(f"🔄 Calling Grok API with model: {self.model}")
             
+            # Make API call
             response = self.client.chat.completions.create(
                 model=self.model or "mixtral-8x7b-32768",
-                max_tokens=max_tokens,
-                system=system_prompt or "You are an expert Verilog RTL designer.",
                 messages=[
+                    {"role": "system", "content": grok_system},
                     {"role": "user", "content": prompt}
                 ],
-                temperature=temperature
+                temperature=temperature,
+                max_tokens=max_tokens
             )
             
-            content = response.choices[0].message.content
+            # Extract content safely from response
+            content = ""
+            
+            # Primary extraction method
+            if response and hasattr(response, 'choices') and len(response.choices) > 0:
+                choice = response.choices[0]
+                
+                if hasattr(choice, 'message') and hasattr(choice.message, 'content'):
+                    content = choice.message.content or ""
+                elif hasattr(choice, 'text'):
+                    content = choice.text or ""
+                else:
+                    # Fallback: try to convert to dict
+                    if hasattr(choice, '__dict__'):
+                        choice_dict = choice.__dict__
+                        if 'message' in choice_dict:
+                            message = choice_dict['message']
+                            if isinstance(message, dict):
+                                content = message.get('content', '')
+                            elif hasattr(message, 'content'):
+                                content = message.content
+            
+            if DEBUG_MODE:
+                print(f"✅ Got response: {len(content)} chars")
+                if content:
+                    print(f"First 200 chars: {content[:200]}")
+            
+            # Validate content
+            if not content or len(content.strip()) == 0:
+                error_msg = "No content in Grok response"
+                if DEBUG_MODE:
+                    print(f"❌ {error_msg}")
+                    print(f"Response object: {response}")
+                
+                self.tracker.log_usage(self.model, 0, 0,
+                                       success=False, error=error_msg)
+                return {
+                    'success': False,
+                    'content': "",
+                    'provider': 'grok',
+                    'model': self.model,
+                    'error': error_msg
+                }
+            
+            # Extract usage info safely
+            tokens = 0
+            if hasattr(response, 'usage') and response.usage:
+                if hasattr(response.usage, 'total_tokens'):
+                    tokens = response.usage.total_tokens
+                elif isinstance(response.usage, dict):
+                    tokens = response.usage.get('total_tokens', 0)
+            
             usage = {
-                'prompt_tokens': response.usage.prompt_tokens,
-                'completion_tokens': response.usage.completion_tokens,
-                'total_tokens': response.usage.total_tokens
+                'prompt_tokens': getattr(response.usage, 'prompt_tokens', 0) if hasattr(response, 'usage') else 0,
+                'completion_tokens': getattr(response.usage, 'completion_tokens', 0) if hasattr(response, 'usage') else 0,
+                'total_tokens': tokens
             }
             
             self.tracker.log_usage(self.model,
@@ -344,19 +416,32 @@ class LLMClient:
                 'cached': False,
                 'model': self.model
             }
+            
             self.cache.set(prompt, result,
                            tokens_saved=usage['total_tokens'],
                            **cache_kwargs)
             
             if DEBUG_MODE:
-                print(f"Grok success. Tokens: {usage['total_tokens']}")
+                print(f"✅ Grok success. Tokens: {usage['total_tokens']}")
+            
             return result
-        
+            
         except Exception as e:
             error_msg = str(e)
+            if DEBUG_MODE:
+                print(f"❌ Grok error: {error_msg}")
+                import traceback
+                traceback.print_exc()
+            
             self.tracker.log_usage(self.model, 0, 0,
                                    success=False, error=error_msg)
-            return {'success': False, 'error': error_msg, 'cached': False}
+            return {
+                'success': False,
+                'content': "",
+                'error': error_msg,
+                'provider': 'grok',
+                'model': self.model
+            }
     
     def _generate_openai_compatible(self, prompt, system_prompt, temperature,
                                    max_tokens, cache_kwargs):
