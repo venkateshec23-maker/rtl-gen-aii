@@ -108,7 +108,7 @@ Click: Add secret
 **Using Grok:**
 ```
 Name:  GROK_API_KEY
-Value: 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    (paste your Grok key)
+Value: gsk_... (your Grok key)
 
 Click: Add secret
 ```

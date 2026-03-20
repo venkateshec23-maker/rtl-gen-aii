@@ -1,6 +1,6 @@
 # 🚀 GitHub Actions Setup: Using Grok API
 
-**You have**: Grok API key (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)  
+**You have**: Grok API key (gsk_... - your actual key)  
 **Goal**: Deploy RTL-Gen AI with Grok instead of Claude  
 **Time**: 5 minutes
 
@@ -16,7 +16,7 @@ Click: **New repository secret**
 
 ```
 Name:  GROK_API_KEY
-Value: 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
+Value: gsk_... (your Grok key)
 
 Click: Add secret
 ```
@@ -101,7 +101,7 @@ If you want to switch providers later:
 ### Required
 ```
 Name: GROK_API_KEY
-Value: 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
+Value: gsk_... (your Grok key)
 ```
 
 ### Optional - For AWS

@@ -28,7 +28,7 @@ Value: sk-ant-...
 
 Option B (Grok):
 Name: GROK_API_KEY
-Value: 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
+Value: gsk_... (your Grok key)
 
 SECRET 2 (optional):
 Name: AWS_ACCOUNT_ID
