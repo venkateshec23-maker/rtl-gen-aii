@@ -216,13 +216,21 @@ if st.session_state.generated_code:
         if generate_waveforms and st.session_state.testbench_code:
             col1, col2 = st.columns(2)
             
+            # Extract module name from RTL code
+            import re
+            module_name = "design"
+            if st.session_state.generated_code:
+                match = re.search(r'module\s+(\w+)', st.session_state.generated_code)
+                if match:
+                    module_name = match.group(1)
+            
             with col1:
                 if st.button("🎬 Generate VCD Waveform", use_container_width=True):
                     with st.spinner("Generating waveform..."):
                         wf_gen = WaveformGenerator(output_dir='outputs/waveforms')
                         result = wf_gen.generate_from_testbench(
                             st.session_state.testbench_code,
-                            'design_tb'
+                            module_name
                         )
                         st.session_state.waveform_result = result
             
@@ -264,7 +272,14 @@ if st.session_state.generated_code:
     with tab4:
         st.markdown("### RTL Synthesis")
         
-        if enable_synthesis:
+        if enable_synthesis and st.session_state.generated_code:
+            # Extract module name
+            import re
+            module_name = "design"
+            match = re.search(r'module\s+(\w+)', st.session_state.generated_code)
+            if match:
+                module_name = match.group(1)
+            
             col1, col2 = st.columns(2)
             
             with col1:
@@ -275,9 +290,9 @@ if st.session_state.generated_code:
                             tech_library=tech_library
                         )
                         st.session_state.synthesis_result = synth_engine.synthesize(
-                            st.session_state.generated_code
+                            st.session_state.generated_code,
+                            top_module=module_name
                         )
-                        
                         if st.session_state.synthesis_result.get('success'):
                             viz = SynthesisVisualizer()
                             st.session_state.synthesis_report = viz.generate_full_report(
@@ -356,6 +371,14 @@ if st.session_state.generated_code:
         
         if st.session_state.waveform_result and st.session_state.waveform_result.get('success'):
             try:
+                # Extract module name
+                import re
+                module_name = "design"
+                if st.session_state.generated_code:
+                    match = re.search(r'module\s+(\w+)', st.session_state.generated_code)
+                    if match:
+                        module_name = match.group(1)
+                
                 from python.waveform_professional import ProfessionalWaveformPlot
                 
                 result = st.session_state.waveform_result
@@ -363,7 +386,6 @@ if st.session_state.generated_code:
                 signals = viz_data.get('signals', [])
                 time_points = viz_data.get('time_points', [])
                 values = viz_data.get('values', {})
-                
                 if signals and time_points:
                     # Create professional plot
                     prof_plot = ProfessionalWaveformPlot(width=14, height=max(8, len(signals) * 1.5))
@@ -429,6 +451,15 @@ if st.session_state.generated_code:
         
         if st.session_state.synthesis_result and st.session_state.synthesis_result.get('netlist'):
             try:
+                # Extract module name
+                import re
+                module_name = st.session_state.synthesis_result.get('top_module', 'design')
+                if not module_name or module_name == 'design':
+                    if st.session_state.generated_code:
+                        match = re.search(r'module\s+(\w+)', st.session_state.generated_code)
+                        if match:
+                            module_name = match.group(1)
+                
                 from python.netlist_visualizer import NetlistVisualizer
                 
                 result = st.session_state.synthesis_result
