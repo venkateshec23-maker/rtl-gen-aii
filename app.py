@@ -173,11 +173,13 @@ if generate_clicked and prompt:
 
 # Display results with all 4 tabs
 if st.session_state.generated_code:
-    tab1, tab2, tab3, tab4 = st.tabs([
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
         "📄 RTL Code (Phase 1)",
         "🧪 Testbench (Phase 2)", 
         "📊 Waveforms (Phase 2)",
-        "🔧 Synthesis (Phase 3)"
+        "🎨 Pro Waveforms",
+        "🔧 Synthesis (Phase 3)",
+        "🔌 Netlist Diagram"
     ])
     
     # Tab 1: RTL Code
@@ -347,6 +349,194 @@ if st.session_state.generated_code:
                     st.error(f"Synthesis failed: {result.get('error')}")
         else:
             st.info("Enable synthesis in sidebar to generate gate-level netlists")
+    
+    # Tab 5: Professional Waveforms
+    with tab5:
+        st.markdown("### 🎨 Professional Timing Diagrams")
+        
+        if st.session_state.waveform_result and st.session_state.waveform_result.get('success'):
+            try:
+                from python.waveform_professional import ProfessionalWaveformPlot
+                
+                result = st.session_state.waveform_result
+                viz_data = result.get('visualization', {})
+                signals = viz_data.get('signals', [])
+                time_points = viz_data.get('time_points', [])
+                values = viz_data.get('values', {})
+                
+                if signals and time_points:
+                    # Create professional plot
+                    prof_plot = ProfessionalWaveformPlot(width=14, height=max(8, len(signals) * 1.5))
+                    
+                    # Filter signals to 8 for clarity
+                    filtered_signals = {s: values.get(s, []) for s in signals[:8] if s in values}
+                    
+                    if filtered_signals:
+                        fig = prof_plot.create_waveform_plot(
+                            signals=filtered_signals,
+                            time_points=time_points,
+                            title=f"Professional Timing Diagram - {module_name}"
+                        )
+                        
+                        if fig:
+                            st.pyplot(fig)
+                            
+                            # Export option
+                            col1, col2, col3 = st.columns(3)
+                            
+                            with col1:
+                                if st.button("💾 Save as PNG", key="save_waveform_png"):
+                                    output_dir = Path('outputs/waveforms')
+                                    output_dir.mkdir(parents=True, exist_ok=True)
+                                    filename = str(output_dir / f"{module_name}_timing_diagram.png")
+                                    prof_plot.export_to_image(fig, filename, dpi=300)
+                                    st.success(f"✅ Saved to {filename}")
+                            
+                            with col2:
+                                if st.button("📊 Export Bus Signals", key="export_bus"):
+                                    # Try to extract bus signals
+                                    bus_sigs = [s for s in signals if any(x in s.lower() for x in ['bus', 'data', 'addr'])]
+                                    if bus_sigs:
+                                        fig_bus = prof_plot.create_bus_waveform(
+                                            signals=filtered_signals,
+                                            time_points=time_points,
+                                            bus_signals=bus_sigs,
+                                            title="Bus Signals"
+                                        )
+                                        if fig_bus:
+                                            st.pyplot(fig_bus)
+                                            st.info(f"Bus signals: {', '.join(bus_sigs)}")
+                            
+                            with col3:
+                                st.metric("Signals", len(signals))
+                        else:
+                            st.warning("Could not generate professional waveform plot")
+                    else:
+                        st.warning("No signal data available for professional plotting")
+                else:
+                    st.warning("Incomplete waveform data - generate waveform first")
+                    
+            except ImportError as e:
+                st.error(f"professional waveform module not available: {e}")
+            except Exception as e:
+                st.error(f"Error generating professional waveform: {e}")
+        else:
+            st.info("📊 Generate a waveform in the Waveforms tab first")
+    
+    # Tab 6: Netlist Diagram
+    with tab6:
+        st.markdown("### 🔌 Gate-Level Netlist Visualization")
+        
+        if st.session_state.synthesis_result and st.session_state.synthesis_result.get('netlist'):
+            try:
+                from python.netlist_visualizer import NetlistVisualizer
+                
+                result = st.session_state.synthesis_result
+                netlist = result.get('netlist', '')
+                
+                if netlist:
+                    # Create visualizer
+                    viz = NetlistVisualizer()
+                    viz.parse_netlist(netlist)
+                    
+                    # Get statistics
+                    stats = viz.get_statistics()
+                    
+                    # Display statistics
+                    st.markdown("#### 📊 Netlist Statistics")
+                    col1, col2, col3, col4 = st.columns(4)
+                    
+                    with col1:
+                        st.metric("Total Gates", stats['total_gates'])
+                    with col2:
+                        st.metric("Gate Types", len(stats['gate_types']))
+                    with col3:
+                        st.metric("Signals", stats['total_signals'])
+                    with col4:
+                        st.metric("Connections", stats['total_connections'])
+                    
+                    # Gate type breakdown
+                    if stats['gate_types']:
+                        st.markdown("#### Gate Type Breakdown")
+                        cols = st.columns(min(3, len(stats['gate_types'])))
+                        for idx, (gate_type, count) in enumerate(stats['gate_types'].items()):
+                            cols[idx % 3].metric(gate_type, count)
+                    
+                    # Drawing options
+                    st.markdown("#### 📐 Visualization Options")
+                    draw_layout = st.selectbox(
+                        "Layout Algorithm",
+                        ["hierarchical", "spring", "circular"],
+                        help="Choose visualization layout"
+                    )
+                    
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if st.button("🎨 Draw Netlist Diagram", use_container_width=True):
+                            with st.spinner("Generating netlist diagram..."):
+                                try:
+                                    fig = viz.draw_hierarchy(figsize=(14, 10), layout=draw_layout)
+                                    if fig:
+                                        st.pyplot(fig)
+                                        st.success("✅ Netlist diagram generated!")
+                                    else:
+                                        st.warning("Could not generate diagram")
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                    
+                    with col2:
+                        if st.button("⚙️ Draw Schematic", use_container_width=True):
+                            with st.spinner("Generating schematic..."):
+                                try:
+                                    fig = viz.draw_schematic(figsize=(16, 12))
+                                    if fig:
+                                        st.pyplot(fig)
+                                        st.success("✅ Schematic generated!")
+                                    else:
+                                        st.warning("Could not generate schematic")
+                                except Exception as e:
+                                    st.error(f"Error: {e}")
+                    
+                    # Export options
+                    col1, col2 = st.columns(2)
+                    
+                    with col1:
+                        if st.button("💾 Export Diagram as PNG", key="export_netlist_diagram"):
+                            output_dir = Path('outputs/diagrams')
+                            output_dir.mkdir(parents=True, exist_ok=True)
+                            try:
+                                fig = viz.draw_hierarchy(figsize=(16, 12), layout=draw_layout)
+                                if fig:
+                                    filename = str(output_dir / f"{module_name}_netlist_diagram.png")
+                                    fig.savefig(filename, dpi=300, bbox_inches='tight')
+                                    st.success(f"✅ Saved to {filename}")
+                            except Exception as e:
+                                st.error(f"Export failed: {e}")
+                    
+                    with col2:
+                        if st.button("📥 Download Netlist", key="download_netlist"):
+                            st.download_button(
+                                label="📥 Netlist.v",
+                                data=netlist,
+                                file_name=f"{module_name}_netlist.v",
+                                mime="text/plain",
+                                use_container_width=True
+                            )
+                    
+                    # Show netlist preview
+                    with st.expander("📄 Netlist Code Preview"):
+                        st.code(netlist[:2000] + ("...\n\n[Truncated]" if len(netlist) > 2000 else ""), language="verilog")
+                        
+                else:
+                    st.warning("No netlist available")
+                    
+            except ImportError as e:
+                st.error(f"Netlist visualizer module not available: {e}")
+            except Exception as e:
+                st.error(f"Error visualizing netlist: {e}")
+        else:
+            st.info("🔧 Run synthesis first to generate and visualize netlist diagram")
 
 # Footer
 st.divider()
