@@ -291,25 +291,34 @@ class TestSynthesiser(unittest.TestCase):
         synth = _Synthesiser(yosys_exe="/nonexistent/yosys")
         with tempfile.TemporaryDirectory() as tmp:
             rtl = write_file(Path(tmp), SIMPLE_RTL, "adder.v")
+            from unittest.mock import MagicMock
+            mock_docker = MagicMock()
             with self.assertRaises(FlowError) as ctx:
-                synth.synthesise(rtl, "adder_8bit", Path(tmp) / "synth")
+                synth.synthesise(rtl, "adder_8bit", Path(tmp) / "synth", mock_docker)
         self.assertEqual(ctx.exception.stage, "synthesis")
 
     def test_yosys_timeout_raises_flow_error(self):
         synth = _Synthesiser(yosys_exe="yosys")
         with tempfile.TemporaryDirectory() as tmp:
             rtl = write_file(Path(tmp), SIMPLE_RTL, "adder.v")
-            with patch("subprocess.run") as mock_run:
-                import subprocess
-                mock_run.side_effect = subprocess.TimeoutExpired("yosys", 300)
-                with self.assertRaises(FlowError) as ctx:
-                    synth.synthesise(rtl, "adder_8bit", Path(tmp))
-        self.assertIn("timed out", ctx.exception.message)
+            from unittest.mock import MagicMock
+            mock_docker = MagicMock()
+            # Mock docker.run_script to return a failed result (timeout)
+            mock_result = MagicMock()
+            mock_result.return_code = -1
+            mock_result.stderr = "timed out waiting for command"
+            mock_result.combined_output.return_value = "timed out"
+            mock_docker.run_script.return_value = mock_result
+            with self.assertRaises(FlowError) as ctx:
+                synth.synthesise(rtl, "adder_8bit", Path(tmp), mock_docker)
+        self.assertIn("synthesis", str(ctx.exception.stage))
 
     def test_yosys_failure_raises_flow_error(self):
         synth = _Synthesiser(yosys_exe="yosys")
         with tempfile.TemporaryDirectory() as tmp:
             rtl = write_file(Path(tmp), SIMPLE_RTL, "adder.v")
+            from unittest.mock import MagicMock
+            mock_docker = MagicMock()
             with patch("subprocess.run") as mock_run:
                 proc = MagicMock()
                 proc.returncode = 1
@@ -317,7 +326,7 @@ class TestSynthesiser(unittest.TestCase):
                 proc.stderr     = ""
                 mock_run.return_value = proc
                 with self.assertRaises(FlowError) as ctx:
-                    synth.synthesise(rtl, "adder_8bit", Path(tmp))
+                    synth.synthesise(rtl, "adder_8bit", Path(tmp), mock_docker)
         self.assertEqual(ctx.exception.stage, "synthesis")
 
     def test_yosys_success_returns_path(self):
@@ -329,13 +338,14 @@ class TestSynthesiser(unittest.TestCase):
             netlist  = out_dir / "adder_8bit_synth.v"
             netlist.write_text(SIMPLE_NETLIST)
 
+            mock_docker = MagicMock()
             with patch("subprocess.run") as mock_run:
                 proc = MagicMock()
                 proc.returncode = 0
                 proc.stdout     = "Synthesis done."
                 proc.stderr     = ""
                 mock_run.return_value = proc
-                result = synth.synthesise(rtl, "adder_8bit", out_dir)
+                result = synth.synthesise(rtl, "adder_8bit", out_dir, mock_docker)
         self.assertEqual(result, netlist)
 
 

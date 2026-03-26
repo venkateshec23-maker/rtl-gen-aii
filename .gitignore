@@ -16,10 +16,17 @@ logs/
 outputs/
 generated/
 generated_designs/
+runs/
+validation/run_*/
+*.gds
+*.def
+*.lef
+*.v.bak
 
 # Temp files
 *.bak
 *.tmp
+*.log
 
 # IDE
 .vscode/

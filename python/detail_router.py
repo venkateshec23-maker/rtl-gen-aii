@@ -252,6 +252,10 @@ class DetailRouter:
         tcl = self._generate_detail_route_script(
             def_path, guide_path, top_module, config
         )
+        
+        # Ensure Docker has PDK mount information
+        self.docker.pdk_root = self.pdk
+        
         run = self.docker.run_script(
             script_content = tcl,
             script_name    = "detail_route.tcl",
@@ -262,7 +266,10 @@ class DetailRouter:
 
         if not run.success:
             result.error_message = self._extract_error(run.combined_output())
-            self.logger.error(f"Detailed routing failed: {result.error_message}")
+            self.logger.error(f"Routing Docker failed (exit={run.return_code})")
+            self.logger.error(f"Docker stdout:\n{run.stdout}")
+            self.logger.error(f"Docker stderr:\n{run.stderr}")
+            self.logger.error(f"Error: {result.error_message}")
             return result
 
         # Collect output files
@@ -277,6 +284,14 @@ class DetailRouter:
             result.stats = self._parse_routing_report(Path(result.report_path))
 
         if not result.success:
+            # Docker exited 0 but routed.def not created - log Docker output for debugging
+            self.logger.warning(
+                f"Routing Docker script ran but routed.def not created. "
+                f"Docker exit={run.return_code} (0=success)"
+            )
+            if run.stdout.strip() or run.stderr.strip():
+                self.logger.warning(f"Docker stdout:\n{run.stdout[:1000]}")
+                self.logger.warning(f"Docker stderr:\n{run.stderr[:1000]}")
             result.error_message = "routed.def not created"
 
         drc  = result.stats.drc_violation_count
@@ -361,7 +376,7 @@ class DetailRouter:
           check_placement           – verify no cells moved
           report_check_types        – list violated DRC rules
         """
-        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.tlef"
+        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/techlef/sky130_fd_sc_hd__nom.tlef"
         cell_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.lef"
         lib_tt   = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
         lib_ss   = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__ss_100C_1v60.lib"

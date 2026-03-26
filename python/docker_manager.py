@@ -128,8 +128,24 @@ class DockerManager:
         self.logger = logging.getLogger(__name__)
         self.is_windows = sys.platform.startswith("win")
         self.is_linux = sys.platform.startswith("linux")
+        # Use latest OpenLane image - compatible after PDK NAMECASESENSITIVE patch
         self.docker_image = os.environ.get("DOCKER_IMAGE", "efabless/openlane:latest")
         self.container_timeout = int(os.environ.get("DOCKER_CONTAINER_TIMEOUT", "300"))
+        # Auto-detect PDK root so it can be mounted into containers
+        self.pdk_root = self._detect_pdk_root()
+
+    def _detect_pdk_root(self) -> Optional[str]:
+        """Detect PDK root directory from env var or common locations."""
+        env_root = os.environ.get("PDK_ROOT", "")
+        if env_root:
+            candidate = Path(env_root)
+            if candidate.exists():
+                return str(candidate)
+        # Common Windows locations
+        for p in [Path(r"C:\pdk"), Path.home() / "pdk"]:
+            if p.exists() and (p / "sky130A").exists():
+                return str(p)
+        return None
 
     # ──────────────────────────────────────────────────────────────────────────
     # VERIFICATION & STATUS
@@ -200,6 +216,72 @@ class DockerManager:
             return "WSL version" in result.stdout
         except:
             return False
+
+    def ensure_docker_running(self) -> Tuple[bool, str]:
+        """
+        Ensure Docker daemon is running. Attempt to start it automatically on Windows.
+        Returns: (success: bool, message: str)
+        """
+        status = self.verify_installation()
+        
+        # If not running, try to start it
+        if not status.running:
+            if self.is_windows:
+                return self._start_docker_windows()
+            elif self.is_linux:
+                return self._start_docker_linux()
+            else:
+                return False, "Cannot auto-start Docker on this platform. Please start Docker Desktop manually."
+        
+        return True, "Docker is running"
+
+    def _start_docker_windows(self) -> Tuple[bool, str]:
+        """Attempt to start Docker Desktop on Windows."""
+        import time as _time
+        
+        try:
+            # Common Docker Desktop locations
+            docker_desktop_paths = [
+                r"C:\Program Files\Docker\Docker\Docker Desktop.exe",
+                r"C:\Program Files (x86)\Docker\Docker\Docker Desktop.exe",
+                Path.home() / "AppData" / "Local" / "Docker" / "Docker Desktop.exe",
+            ]
+            
+            for docker_exe in docker_desktop_paths:
+                exe_path = Path(docker_exe)
+                if exe_path.exists():
+                    self.logger.info(f"Starting Docker Desktop from {exe_path}")
+                    subprocess.Popen([str(exe_path)])
+                    
+                    # Wait for Docker daemon to start (up to 30 seconds)
+                    for attempt in range(30):
+                        _time.sleep(1)
+                        status = self.verify_installation()
+                        if status.running:
+                            self.logger.info("Docker daemon started successfully")
+                            return True, "Docker Desktop started automatically"
+                    
+                    return False, "Docker Desktop started but daemon not responding (timeout)"
+            
+            return False, "Docker Desktop executable not found. Please install Docker Desktop for Windows."
+        except Exception as e:
+            return False, f"Failed to start Docker: {str(e)}"
+
+    def _start_docker_linux(self) -> Tuple[bool, str]:
+        """Attempt to start Docker daemon on Linux."""
+        try:
+            subprocess.run(["sudo", "systemctl", "start", "docker"], 
+                          capture_output=True, timeout=10)
+            import time as _time
+            _time.sleep(2)
+            
+            status = self.verify_installation()
+            if status.running:
+                return True, "Docker daemon started via systemctl"
+            else:
+                return False, "systemctl start docker completed but daemon not responding"
+        except Exception as e:
+            return False, f"Failed to start Docker daemon: {str(e)}"
 
     # ──────────────────────────────────────────────────────────────────────────
     # PATH TRANSLATION (Windows ↔ Docker/Linux)
@@ -374,11 +456,19 @@ class DockerManager:
         # ── write script to disk so Docker can mount it ───────────────
         script_path = host_work / script_name
         script_path.write_text(script_content, encoding="utf-8")
+        
+        # DEBUG: Log script write for troubleshooting
+        if not script_path.exists():
+            return RunResult(
+                command     = f"openroad {script_name}",
+                return_code = -1,
+                stderr      = f"CRITICAL: Script file not written! {script_path}",
+            )
 
         # ── pick interpreter from file extension or explicit parameter ──
         ext = _Path(script_name).suffix.lower()
         interpreter_map = {
-            ".tcl": "openroad",
+            ".tcl": "openroad -no_init -exit",
             ".sh":  "bash",
             ".py":  "python3",
         }
@@ -423,6 +513,15 @@ class DockerManager:
         import time as _time
         from pathlib import Path as _Path
 
+        # ── Ensure Docker is running ──────────────────────────────────
+        docker_ok, docker_msg = self.ensure_docker_running()
+        if not docker_ok:
+            return RunResult(
+                command     = command,
+                return_code = -1,
+                stderr      = f"CRITICAL: {docker_msg}",
+            )
+
         docker_exe = self._find_docker_exe()
         if not docker_exe:
             return RunResult(
@@ -432,26 +531,26 @@ class DockerManager:
             )
 
         # ── build mount arguments ─────────────────────────────────────
-        def to_docker(p):
-            """Convert Windows path to Docker format."""
-            return self.windows_to_docker_path(str(p))
+        # Use Windows-style paths for -v mounts; Docker Desktop handles
+        # the translation to Linux paths internally.
+        host_work_str = str(host_work)
 
         mounts = [
-            "-v", f"{to_docker(host_work)}:/work",
+            "-v", f"{host_work_str}:/work",
         ]
 
-        # Add PDK mount if available
-        if hasattr(self, 'pdk_root'):
-            mounts.extend(["-v", f"{to_docker(self.pdk_root)}:/pdk"])
+        # Always mount PDK if available
+        if self.pdk_root:
+            mounts.extend(["-v", f"{self.pdk_root}:/pdk"])
 
         for host_p, cont_p in extra_mounts.items():
-            mounts += ["-v", f"{to_docker(host_p)}:{cont_p}"]
+            mounts += ["-v", f"{str(host_p)}:{cont_p}"]
 
         # ── build environment variable arguments ──────────────────────
         base_env = {
             "DEBIAN_FRONTEND": "noninteractive",
         }
-        if hasattr(self, 'pdk_root'):
+        if self.pdk_root:
             base_env.update({
                 "PDK_ROOT":         "/pdk",
                 "PDK":              "sky130A",
@@ -470,6 +569,11 @@ class DockerManager:
             + env_args
             + ["-w", "/work", self.docker_image, "/bin/sh", "-c", command]
         )
+        
+        # DEBUG: Log the command (first 500 chars)
+        import logging as _logging
+        _logger = _logging.getLogger(__name__)
+        _logger.debug(f"Docker command: {' '.join(cmd[:15])}... [full: {' '.join(cmd)}]")
 
         start = _time.time()
         try:

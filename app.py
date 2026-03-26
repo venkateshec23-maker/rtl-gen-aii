@@ -106,9 +106,17 @@ with st.sidebar:
     - Phase 1: LLM Providers
     - Phase 2: Waveforms
     - Phase 3: Synthesis
+    - Phase 4: Physical Design ⭐ NEW
     
     [Documentation](docs/)
     """)
+    
+    st.divider()
+    
+    # Navigate to Physical Design Flow
+    st.subheader("🏭 Physical Design (NEW)")
+    if st.button("Go to Full RTL→GDS Pipeline", use_container_width=True):
+        st.switch_page("pages/04_Physical_Design_Flow.py")
 
 # Main content
 st.title("🔷 RTL-Gen AI - Complete")

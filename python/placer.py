@@ -221,6 +221,10 @@ class Placer:
 
         # Generate and run the placement Tcl script
         tcl = self._generate_placement_script(def_path, top_module, config)
+        
+        # Ensure Docker has PDK mount information
+        self.docker.pdk_root = self.pdk
+        
         run = self.docker.run_script(
             script_content = tcl,
             script_name    = "placement.tcl",
@@ -231,7 +235,10 @@ class Placer:
 
         if not run.success:
             result.error_message = self._extract_error(run.combined_output())
-            self.logger.error(f"Placement failed: {result.error_message}")
+            self.logger.error(f"Placement Docker failed (exit={run.return_code})")
+            self.logger.error(f"Docker stdout:\n{run.stdout}")
+            self.logger.error(f"Docker stderr:\n{run.stderr}")
+            self.logger.error(f"Error: {result.error_message}")
             return result
 
         # Collect output files
@@ -246,6 +253,14 @@ class Placer:
             result.stats = self._parse_report(Path(result.report_path))
 
         if not result.success:
+            # Docker exited 0 but placed.def not created - log Docker output for debugging
+            self.logger.warning(
+                f"Placement Docker script ran but placed.def not created. "
+                f"Docker exit={run.return_code} (0=success)"
+            )
+            if run.stdout.strip() or run.stderr.strip():
+                self.logger.warning(f"Docker stdout:\n{run.stdout[:1000]}")
+                self.logger.warning(f"Docker stderr:\n{run.stderr[:1000]}")
             result.error_message = "placed.def not created"
 
         self.logger.info(
@@ -292,7 +307,7 @@ class Placer:
         Full placement Tcl: global → legalise → detailed → report.
         Uses RePlAce for global, OpenDP for legalisation/detailed.
         """
-        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.tlef"
+        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/techlef/sky130_fd_sc_hd__nom.tlef"
         cell_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.lef"
         lib_tt   = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
         lib_ss   = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__ss_100C_1v60.lib"
@@ -368,7 +383,7 @@ class Placer:
         config:     PlacementConfig,
     ) -> str:
         """Global placement only – no legalisation."""
-        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.tlef"
+        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/techlef/sky130_fd_sc_hd__nom.tlef"
         cell_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.lef"
         lib_tt   = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
 

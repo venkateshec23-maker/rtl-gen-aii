@@ -225,6 +225,10 @@ class CTSEngine:
             shutil.copy2(def_path, dest_def)
 
         tcl = self._generate_cts_script(def_path, top_module, config)
+        
+        # Ensure Docker has PDK mount information
+        self.docker.pdk_root = self.pdk
+        
         run = self.docker.run_script(
             script_content = tcl,
             script_name    = "cts.tcl",
@@ -235,7 +239,10 @@ class CTSEngine:
 
         if not run.success:
             result.error_message = self._extract_error(run.combined_output())
-            self.logger.error(f"CTS failed: {result.error_message}")
+            self.logger.error(f"CTS Docker failed (exit={run.return_code})")
+            self.logger.error(f"Docker stdout:\n{run.stdout}")
+            self.logger.error(f"Docker stderr:\n{run.stderr}")
+            self.logger.error(f"Error: {result.error_message}")
             return result
 
         cts_def = output_dir / "cts.def"
@@ -249,6 +256,14 @@ class CTSEngine:
             result.stats = self._parse_cts_report(Path(result.report_path))
 
         if not result.success:
+            # Docker exited 0 but cts.def not created - log Docker output for debugging
+            self.logger.warning(
+                f"CTS Docker script ran but cts.def not created. "
+                f"Docker exit={run.return_code} (0=success)"
+            )
+            if run.stdout.strip() or run.stderr.strip():
+                self.logger.warning(f"Docker stdout:\n{run.stdout[:1000]}")
+                self.logger.warning(f"Docker stderr:\n{run.stderr[:1000]}")
             result.error_message = "cts.def not created"
 
         self.logger.info(
@@ -304,7 +319,7 @@ class CTSEngine:
         """
         Full CTS Tcl: read DEF → TritonCTS → hold repair → write DEF + report.
         """
-        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.tlef"
+        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/techlef/sky130_fd_sc_hd__nom.tlef"
         cell_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.lef"
         lib_tt   = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
         lib_ss   = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__ss_100C_1v60.lib"
@@ -381,7 +396,7 @@ class CTSEngine:
         config:     CTSConfig,
     ) -> str:
         """Skew-check-only script (no modifications)."""
-        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.tlef"
+        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/techlef/sky130_fd_sc_hd__nom.tlef"
         cell_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.lef"
         lib_tt   = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
 

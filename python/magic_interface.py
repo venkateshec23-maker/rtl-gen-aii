@@ -138,7 +138,7 @@ class MagicFlow:
     def __init__(
         self,
         pdk_root: str,
-        docker_image: str = "efabless/openlane:latest"
+        docker_image: str = "efabless/openlane:2024.02"
     ):
         self.logger = logging.getLogger(__name__)
         self.pdk_root = pdk_root
