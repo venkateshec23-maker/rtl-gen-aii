@@ -4,16 +4,17 @@ OpenCode AI Integration Module
 Integrates OpenCode AI coding agent with RTL-Gen-AII pipeline.
 Enables natural language to Verilog RTL code generation.
 
-OpenCode must be installed:
-  npm install -g opencode-ai@latest
-  or
-  Manual installation from https://opencode.ai/download
+Installation options:
+1. Local: npm install -g opencode-ai@latest
+2. Docker: (automatic fallback if local not available)
+3. Manual: https://opencode.ai/download
 """
 
 import subprocess
 import json
 import re
 import logging
+import os
 from pathlib import Path
 from typing import Optional, Tuple
 import tempfile
@@ -22,18 +23,40 @@ logger = logging.getLogger(__name__)
 
 
 class OpenCodeGenerator:
-    """Interface to OpenCode AI for Verilog code generation."""
+    """Interface to OpenCode AI for Verilog code generation.
     
-    def __init__(self, api_key: Optional[str] = None):
+    Supports both local installation and Docker execution.
+    """
+    
+    def __init__(self, api_key: Optional[str] = None, use_docker: bool = False):
         """Initialize OpenCode generator.
         
         Args:
             api_key: Optional API key for remote models (Claude, OpenAI, etc.)
-                    If not provided, uses local/free tier configuration
+            use_docker: Force Docker usage instead of local OpenCode
         """
         self.api_key = api_key
+        self.use_docker = use_docker
+        self.docker_available = self._check_docker_available()
         self.opencode_available = self._check_opencode_installed()
         
+        if not self.opencode_available and self.docker_available:
+            logger.info("Local OpenCode not available, will use Docker")
+            self.opencode_available = True  # Can use Docker fallback
+        
+    def _check_docker_available(self) -> bool:
+        """Check if Docker is installed and daemon is running."""
+        try:
+            result = subprocess.run(
+                ["docker", "ps"],
+                capture_output=True,
+                text=True,
+                timeout=5
+            )
+            return result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            return False
+    
     def _check_opencode_installed(self) -> bool:
         """Check if OpenCode is installed and accessible."""
         try:
@@ -46,6 +69,56 @@ class OpenCodeGenerator:
             return result.returncode == 0
         except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
             return False
+    
+    def _run_opencode_command(self, command: str, timeout: int = 60) -> Tuple[int, str, str]:
+        """Execute OpenCode command via local installation or Docker.
+        
+        Args:
+            command: OpenCode command to run
+            timeout: Command timeout in seconds
+            
+        Returns:
+            Tuple of (returncode, stdout, stderr)
+        """
+        # Try local installation first
+        if not self.use_docker:
+            try:
+                result = subprocess.run(
+                    ["opencode"] + command.split(),
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout
+                )
+                return result.returncode, result.stdout, result.stderr
+            except (FileNotFoundError, OSError):
+                pass  # Fall through to Docker
+        
+        # Fall back to Docker
+        if self.docker_available:
+            cwd = os.getcwd()
+            cmd = [
+                "docker", "run", "-it", "--rm",
+                "-v", f"{cwd}:/workspace",
+                "-w", "/workspace",
+                "node:25",
+                "sh", "-c",
+                f"npm install -g opencode-ai@latest > /dev/null 2>&1 && opencode {command}"
+            ]
+            
+            try:
+                result = subprocess.run(
+                    cmd,
+                    capture_output=True,
+                    text=True,
+                    timeout=timeout
+                )
+                return result.returncode, result.stdout, result.stderr
+            except subprocess.TimeoutExpired:
+                return 1, "", "Docker command timed out"
+            except Exception as e:
+                return 1, "", str(e)
+        
+        return 1, "", "Neither local OpenCode nor Docker available"
     
     def generate_verilog(
         self, 
@@ -66,7 +139,10 @@ class OpenCodeGenerator:
             Tuple of (success, verilog_code, log_message)
         """
         if not self.opencode_available:
-            return False, "", "⚠️ OpenCode not installed. Install with: npm install -g opencode-ai@latest"
+            msg = "⚠️ OpenCode not available.\n"
+            msg += "Install locally: npm install -g opencode-ai@latest\n"
+            msg += "OR install Docker: https://docker.com/get-started/"
+            return False, "", msg
         
         try:
             # Create prompt for OpenCode
@@ -77,42 +153,28 @@ class OpenCodeGenerator:
                 style
             )
             
-            # Write prompt to temp file
-            with tempfile.NamedTemporaryFile(
-                mode='w', 
-                suffix='.txt', 
-                delete=False
-            ) as f:
-                f.write(prompt)
-                temp_file = f.name
-            
-            # Call OpenCode via CLI
-            result = subprocess.run(
-                ["opencode", f"Generate Verilog RTL based on: {prompt}"],
-                capture_output=True,
-                text=True,
-                timeout=60
+            # Run OpenCode command (local or Docker)
+            returncode, stdout, stderr = self._run_opencode_command(
+                f"run \"{prompt}\"",
+                timeout=120  # Docker needs more time on first run
             )
             
-            if result.returncode != 0:
-                return False, "", f"OpenCode error: {result.stderr}"
+            if returncode != 0:
+                return False, "", f"OpenCode error: {stderr or stdout}"
             
             # Extract Verilog from response
-            verilog_code = self._extract_verilog(result.stdout)
+            verilog_code = self._extract_verilog(stdout)
             
             if not verilog_code:
                 return False, "", "Failed to extract Verilog from OpenCode response"
             
-            log_msg = f"✅ Generated Verilog module '{module_name}' successfully"
+            log_msg = f"✅ Generated Verilog module '{module_name}' successfully (via {'Docker' if self.docker_available else 'local'})"
             return True, verilog_code, log_msg
             
         except subprocess.TimeoutExpired:
-            return False, "", "OpenCode generation timed out (>60s)"
+            return False, "", "OpenCode generation timed out (>120s)"
         except Exception as e:
             return False, "", f"Error during Verilog generation: {str(e)}"
-        finally:
-            if 'temp_file' in locals():
-                Path(temp_file).unlink(missing_ok=True)
     
     def analyze_verilog(self, verilog_code: str) -> Tuple[bool, str]:
         """Analyze Verilog code using OpenCode AI.
