@@ -47,15 +47,17 @@ Write-Host ""
 
 if ($Arguments.Count -eq 0) {
     # No arguments - start interactive shell
+    Write-Host "Starting OpenCode interactive shell..."
     docker run -it --rm `
         --volume "${ProjectRoot}:/workspace" `
         --workdir /workspace `
-        node:25 sh -c "npm install -g opencode-ai@latest && opencode"
+        node:25 sh -c "npm install -g opencode-ai@latest > /dev/null 2>&1 && opencode"
 } else {
-    # Pass arguments to OpenCode
+    # Pass arguments to OpenCode using 'run' command
     $ArgString = $Arguments -join " "
+    Write-Host "Executing OpenCode with message..."
     docker run -it --rm `
         --volume "${ProjectRoot}:/workspace" `
         --workdir /workspace `
-        node:25 sh -c "npm install -g opencode-ai@latest && opencode $ArgString"
+        node:25 sh -c "npm install -g opencode-ai@latest > /dev/null 2>&1 && opencode run '$ArgString'"
 }
