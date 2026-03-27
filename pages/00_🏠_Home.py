@@ -262,37 +262,33 @@ Everything is integrated — from code to silicon! ✨
 # CLICKABLE BUTTONS - NAVIGATION
 # ═══════════════════════════════════════════════════════════════════════════════
 
+st.markdown("### 🔗 Quick Navigation")
+
 col1, col2, col3 = st.columns(3)
 
 with col1:
-    if st.button("✏️ Custom Design Studio", use_container_width=True, type="primary"):
-        st.switch_page("pages/01_✏️_Custom_Design.py")
+    st.page_link("pages/01_✏️_Custom_Design.py", label="✏️ Custom Design Studio", icon="📝")
 
 with col2:
-    if st.button("🤖 AI Code Generation", use_container_width=True, type="primary"):
-        st.switch_page("pages/3_AI_Code_Generation.py")
+    st.page_link("pages/3_AI_Code_Generation.py", label="🤖 AI Code Generation", icon="🤖")
 
 with col3:
-    if st.button("🎯 Results Dashboard", use_container_width=True, type="primary"):
-        st.switch_page("pages/05_🎯_Results.py")
+    st.page_link("pages/05_🎯_Results.py", label="🎯 Results Dashboard", icon="📊")
 
 st.divider()
 
-# Additional action buttons
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
-    if st.button("📖 Documentation", use_container_width=True):
-        st.switch_page("pages/2_📖_Documentation.py")
+    st.page_link("pages/2_📖_Documentation.py", label="📖 Documentation", icon="📚")
 
 with col2:
-    if st.button("🔄 Workflow", use_container_width=True):
-        st.switch_page("pages/06_🔄_Workflow.py")
+    st.page_link("pages/06_🔄_Workflow.py", label="🔄 Workflow", icon="🔄")
 
 with col3:
-    if st.button("📜 History", use_container_width=True):
-        st.switch_page("pages/1_📜_History.py")
+    st.page_link("pages/1_📜_History.py", label="📜 History", icon="📜")
 
 with col4:
-    if st.button("📋 Physical Design", use_container_width=True):
-        st.switch_page("pages/04_Physical_Design_Flow.py")
+    st.page_link("pages/04_Physical_Design_Flow.py", label="📋 Physical Design", icon="🏢")
+
+
