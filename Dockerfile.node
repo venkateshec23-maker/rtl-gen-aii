@@ -1,0 +1,14 @@
+# Dockerfile for OpenCode AI with Node.js
+# Provides OpenCode CLI for natural language to Verilog generation
+
+FROM node:25
+
+# Install OpenCode globally
+RUN npm install -g opencode-ai@latest
+
+# Create working directory
+WORKDIR /workspace
+
+# Set up entrypoint
+ENTRYPOINT ["opencode"]
+CMD ["--help"]

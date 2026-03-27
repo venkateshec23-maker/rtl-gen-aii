@@ -1,0 +1,39 @@
+# Docker Compose configuration for RTL-Gen-AII with OpenCode support
+version: '3.8'
+
+services:
+  # Main application - Python with RTL pipeline
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: rtl-gen-aii-app
+    ports:
+      - "8501:8501"  # Streamlit
+    volumes:
+      - .:/workspace
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: streamlit run pages/00_Home.py --server.port=8501 --server.address=0.0.0.0
+    depends_on:
+      - opencode-node
+
+  # OpenCode AI service - Node.js with OpenCode
+  opencode-node:
+    image: node:25
+    container_name: rtl-gen-aii-opencode
+    volumes:
+      - .:/workspace
+    working_dir: /workspace
+    entrypoint: /bin/sh
+    command: -c "npm install -g opencode-ai@latest && sleep infinity"
+    stdin_open: true
+    tty: true
+
+volumes:
+  workspace:
+    driver: local
+
+networks:
+  default:
+    name: rtl-gen-aii-network
