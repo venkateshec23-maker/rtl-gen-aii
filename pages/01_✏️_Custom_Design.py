@@ -14,6 +14,7 @@ import re
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from python.full_flow import RTLGenAI, FlowConfig
+from python.opencode_integration import OpenCodeGenerator, generate_rtl_from_description
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # UTILITY FUNCTIONS
@@ -43,19 +44,89 @@ st.markdown("Write custom Verilog RTL and run through complete RTL→GDSII pipel
 # ═══════════════════════════════════════════════════════════════════════════════
 
 with st.sidebar:
-    st.subheader("📋 Templates")
+    st.subheader("📋 Code Source")
     
-    template_choice = st.radio(
-        "Select template:",
+    code_source = st.radio(
+        "How to create code?",
         options=[
-            "Blank",
-            "Simple Counter",
-            "8-bit Adder",
-            "Traffic Light Controller",
-            "Multiplexer",
+            "Template",
+            "AI Generation (OpenCode)",
+            "Upload File",
         ],
-        key="template_choice"
+        key="code_source"
     )
+    
+    st.divider()
+    
+    if code_source == "Template":
+        template_choice = st.radio(
+            "Select template:",
+            options=[
+                "Blank",
+                "Simple Counter",
+                "8-bit Adder",
+                "Traffic Light Controller",
+                "Multiplexer",
+            ],
+            key="template_choice"
+        )
+    
+    elif code_source == "AI Generation (OpenCode)":
+        st.markdown("### 🤖 AI-Powered Code Generation (BETA)")
+        
+        # Check if OpenCode is available
+        gen = OpenCodeGenerator()
+        if not gen.opencode_available:
+            st.warning("⚠️ **OpenCode not installed**\n\nInstall: `npm install -g opencode-ai@latest`")
+        else:
+            st.success("✅ OpenCode available")
+        
+        # AI generation form
+        ai_description = st.text_area(
+            "Describe your circuit:",
+            placeholder="Example: 8-bit counter with clock, reset, and enable signals",
+            height=100,
+            key="ai_desc"
+        )
+        
+        ai_module_name = st.text_input(
+            "Module name:",
+            value="ai_generated",
+            key="ai_mod_name"
+        )
+        
+        ai_run = st.button("🚀 Generate Code", use_container_width=True)
+        
+        if ai_run and ai_description and gen.opencode_available:
+            with st.spinner("🔄 Generating code with OpenCode..."):
+                success, code, msg = gen.generate_verilog(
+                    description=ai_description,
+                    module_name=ai_module_name,
+                    style="behavioral"
+                )
+                
+                if success:
+                    st.session_state.verilog_code = code
+                    st.session_state.code_source = "AI"
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(f"Generation failed: {msg}")
+        elif ai_run and not gen.opencode_available:
+            st.error("❌ OpenCode not available. Please install it first.")
+    
+    elif code_source == "Upload File":
+        uploaded_file = st.file_uploader(
+            "Select Verilog file (.v)",
+            type=["v", "sv"],
+            key="verilog_upload"
+        )
+        
+        if uploaded_file:
+            code_content = uploaded_file.read().decode()
+            st.session_state.verilog_code = code_content
+            st.session_state.code_source = "Upload"
+            st.success(f"✅ Loaded: {uploaded_file.name}")
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # TEMPLATE DEFINITIONS
@@ -187,12 +258,16 @@ with col1:
     
     # Initialize session state for code
     if "verilog_code" not in st.session_state:
-        st.session_state.verilog_code = TEMPLATES.get(template_choice, TEMPLATES["Blank"])
+        if st.session_state.get("code_source") == "Template":
+            st.session_state.verilog_code = TEMPLATES.get(st.session_state.get("template_choice"), TEMPLATES["Blank"])
+        else:
+            st.session_state.verilog_code = TEMPLATES["Blank"]
     
-    # Update code when template changes
-    if template_choice != st.session_state.get("last_template"):
-        st.session_state.verilog_code = TEMPLATES[template_choice]
-        st.session_state.last_template = template_choice
+    # Update code when template changes (only if using templates)
+    if st.session_state.get("code_source") == "Template":
+        if st.session_state.get("template_choice") != st.session_state.get("last_template"):
+            st.session_state.verilog_code = TEMPLATES[st.session_state.get("template_choice")]
+            st.session_state.last_template = st.session_state.get("template_choice")
     
     # Code editor
     verilog_code = st.text_area(
