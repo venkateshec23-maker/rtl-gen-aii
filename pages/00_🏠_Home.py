@@ -259,36 +259,26 @@ Everything is integrated — from code to silicon! ✨
 """)
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# CLICKABLE BUTTONS - NAVIGATION
+# NAVIGATION GUIDE
 # ═══════════════════════════════════════════════════════════════════════════════
-
-st.markdown("### 🔗 Quick Navigation")
-
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    st.page_link("pages/01_✏️_Custom_Design.py", label="✏️ Custom Design Studio", icon="📝")
-
-with col2:
-    st.page_link("pages/3_AI_Code_Generation.py", label="🤖 AI Code Generation", icon="🤖")
-
-with col3:
-    st.page_link("pages/05_🎯_Results.py", label="🎯 Results Dashboard", icon="📊")
 
 st.divider()
 
-col1, col2, col3, col4 = st.columns(4)
+st.subheader("🔗 Navigation Guide")
 
-with col1:
-    st.page_link("pages/2_📖_Documentation.py", label="📖 Documentation", icon="📚")
+st.info("""
+👈 **Use the sidebar to navigate to any page:**
 
-with col2:
-    st.page_link("pages/06_🔄_Workflow.py", label="🔄 Workflow", icon="🔄")
+**Main Pages:**
+- ✏️ **Custom Design Studio** - Write and run your Verilog code
+- 🤖 **AI Code Generation** - Generate Verilog from descriptions
+- 🎯 **Results Dashboard** - View outputs and metrics
 
-with col3:
-    st.page_link("pages/1_📜_History.py", label="📜 History", icon="📜")
-
-with col4:
-    st.page_link("pages/04_Physical_Design_Flow.py", label="📋 Physical Design", icon="🏢")
+**Reference Pages:**
+- 📖 **Documentation** - Step-by-step guides
+- 🔄 **Workflow** - Integration architecture
+- 📜 **History** - Design history and saved runs
+- 📋 **Physical Design Flow** - Pre-configured design flows
+""")
 
 
