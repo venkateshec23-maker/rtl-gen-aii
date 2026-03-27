@@ -45,8 +45,12 @@ with tab1:
         - ✅ Traffic Light Controller
         - ✅ Multiplexer (4-to-1)
         
-        ### Option 3: AI from Prompt 💡 (Coming Soon)
-        Describe in English → AI generates Verilog → Auto-run pipeline
+        ### Option 3: AI from Prompt 💡 (LIVE NOW!)
+        1. Go to **3️⃣ AI Code Generation** (sidebar)
+        2. Describe your circuit (e.g., "8-bit counter with clock and reset")
+        3. Click **🚀 Generate Code**
+        4. Review generated Verilog
+        5. Click **🚀 Run Pipeline** to synthesize
         """)
     
     with col2:
@@ -212,6 +216,37 @@ with col4:
     st.metric("⏱️ Speed", "~20 seconds")
 
 # ═══════════════════════════════════════════════════════════════════════════════
+# AI CODE GENERATION FEATURE
+# ═══════════════════════════════════════════════════════════════════════════════
+
+st.divider()
+
+st.subheader("🤖 AI Code Generation (NEW!)")
+
+col1, col2 = st.columns([2, 1])
+
+with col1:
+    st.markdown("""
+    **Generate Verilog from Plain English!**
+    
+    Instead of writing code, just describe what you want:
+    - "8-bit counter with clock and reset"
+    - "4-to-1 multiplexer"
+    - "State machine with 3 states"
+    
+    The AI generates synthesis-ready Verilog automatically!
+    """)
+
+with col2:
+    st.info("""
+    **How to Use:**
+    1. Click **3️⃣ AI Code Generation** (sidebar)
+    2. Describe your circuit
+    3. Click **Generate Code**
+    4. Review & **Run Pipeline**
+    """)
+
+# ═══════════════════════════════════════════════════════════════════════════════
 # QUICK START
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -220,11 +255,11 @@ st.divider()
 st.success("""
 ### 🚀 Ready to Design?
 
-**Click ✏️ Custom Design Studio in the sidebar to:**
-1. Choose a template or write Verilog
-2. Click "Run Pipeline"
-3. Watch real-time progress
-4. View results automatically in 🎯 Results Dashboard
+**Choose Your Path:**
+
+1. **✏️ Custom Design Studio** — Write or paste Verilog → Run Pipeline
+2. **🤖 AI Code Generation** — Describe circuit → Generate Verilog → Run Pipeline
+3. **📚 Templates** — Use pre-built designs → Customize → Run Pipeline
 
 Everything is integrated — from code to silicon! ✨
 """)
