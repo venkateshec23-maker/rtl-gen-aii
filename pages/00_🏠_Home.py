@@ -255,11 +255,44 @@ st.divider()
 st.success("""
 ### 🚀 Ready to Design?
 
-**Choose Your Path:**
-
-1. **✏️ Custom Design Studio** — Write or paste Verilog → Run Pipeline
-2. **🤖 AI Code Generation** — Describe circuit → Generate Verilog → Run Pipeline
-3. **📚 Templates** — Use pre-built designs → Customize → Run Pipeline
-
 Everything is integrated — from code to silicon! ✨
 """)
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CLICKABLE BUTTONS - NAVIGATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+col1, col2, col3 = st.columns(3)
+
+with col1:
+    if st.button("✏️ Custom Design Studio", use_container_width=True, type="primary"):
+        st.switch_page("pages/01_✏️_Custom_Design.py")
+
+with col2:
+    if st.button("🤖 AI Code Generation", use_container_width=True, type="primary"):
+        st.switch_page("pages/3_AI_Code_Generation.py")
+
+with col3:
+    if st.button("🎯 Results Dashboard", use_container_width=True, type="primary"):
+        st.switch_page("pages/05_🎯_Results.py")
+
+st.divider()
+
+# Additional action buttons
+col1, col2, col3, col4 = st.columns(4)
+
+with col1:
+    if st.button("📖 Documentation", use_container_width=True):
+        st.switch_page("pages/2_📖_Documentation.py")
+
+with col2:
+    if st.button("🔄 Workflow", use_container_width=True):
+        st.switch_page("pages/06_🔄_Workflow.py")
+
+with col3:
+    if st.button("📜 History", use_container_width=True):
+        st.switch_page("pages/1_📜_History.py")
+
+with col4:
+    if st.button("📋 Physical Design", use_container_width=True):
+        st.switch_page("pages/04_Physical_Design_Flow.py")
