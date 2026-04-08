@@ -45,7 +45,7 @@ class HealthChecker:
     def check_dependencies(self) -> Dict:
         """Check if all dependencies are installed."""
         required = [
-            'anthropic',
+            'groq',
             'streamlit',
             'click',
             'pytest',
@@ -204,7 +204,7 @@ class HealthChecker:
     def check_api_key(self) -> Dict:
         """Check if API key is configured."""
         try:
-            from python.config import ANTHROPIC_API_KEY, ENABLE_MOCK_LLM
+            from python.config import NVIDIA_API_KEY, ENABLE_MOCK_LLM
             
             if ENABLE_MOCK_LLM:
                 return {
@@ -213,11 +213,11 @@ class HealthChecker:
                     'message': 'Using mock LLM (no API key needed)',
                     'healthy': True,
                 }
-            elif ANTHROPIC_API_KEY and ANTHROPIC_API_KEY != 'your-api-key-here':
+            elif NVIDIA_API_KEY and NVIDIA_API_KEY != 'your-api-key-here':
                 return {
                     'name': 'API Key',
                     'status': 'OK',
-                    'message': 'Configured',
+                    'message': 'Configured (NVIDIA/Groq)',
                     'healthy': True,
                 }
             else:

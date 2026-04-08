@@ -24,15 +24,15 @@ from python.mock_llm import MockLLM, get_mock_llm
 
 class LLMClient:
     """
-    Multi-provider LLM Client supporting Mock, Anthropic, DeepSeek.
+    Multi-provider LLM Client supporting Mock, Groq, DeepSeek, NVIDIA.
 
     Usage:
         # Mock mode
         client = LLMClient(use_mock=True)
         
-        # Anthropic (Claude)
-        client = LLMClient(provider='anthropic', api_key='your-key-here', 
-                          model='claude-sonnet-4-20250514')
+        # Groq API
+        client = LLMClient(provider='grok', api_key='your-key-here', 
+                          model='llama-3.3-70b-versatile')
         
         # DeepSeek direct API
         client = LLMClient(provider='deepseek', api_key='your-key-here', 
@@ -67,7 +67,7 @@ class LLMClient:
         elif use_mock is True:
             self.provider = 'mock'
         else:
-            self.provider = 'anthropic' if api_key else 'nvidia'
+            self.provider = 'grok' if api_key else 'nvidia'
         
         self.api_key = api_key
         self.use_mock = self.provider == 'mock'
@@ -75,8 +75,8 @@ class LLMClient:
         # Set model based on provider
         if model:
             self.model = model
-        elif self.provider == 'anthropic':
-            self.model = 'claude-sonnet-4-20250514'  # Default Anthropic model
+        elif self.provider == 'grok':
+            self.model = 'llama-3.3-70b-versatile'  # Default Groq model
         elif self.provider == 'deepseek':
             self.model = 'deepseek-chat'
         else:
@@ -96,31 +96,14 @@ class LLMClient:
 
     def _init_real_client(self):
         """Initialize the appropriate LLM client based on provider."""
-        if self.provider == 'anthropic':
-            self._init_anthropic()
-        elif self.provider == 'grok':
+        if self.provider == 'grok':
             self._init_grok()
         elif self.provider == 'deepseek':
             self._init_deepseek()
         else:
             self._init_nvidia()
     
-    def _init_anthropic(self):
-        """Initialize Anthropic Claude client."""
-        try:
-            from anthropic import Anthropic
-        except ImportError:
-            raise ImportError("anthropic package required. Run: pip install anthropic")
-        
-        if not self.api_key:
-            raise ValueError(
-                "Anthropic API key required. Provide via api_key parameter or "
-                "set ANTHROPIC_API_KEY environment variable. "
-                "Get key at: https://console.anthropic.com"
-            )
-        
-        self.client = Anthropic(api_key=self.api_key)
-    
+
     def _init_grok(self):
         """Initialize Grok (Groq) client."""
         try:
@@ -247,10 +230,7 @@ class LLMClient:
                        max_tokens, cache_kwargs):
         """Generate using the real LLM provider."""
         try:
-            if self.provider == 'anthropic':
-                return self._generate_anthropic(prompt, system_prompt,
-                                               temperature, max_tokens, cache_kwargs)
-            elif self.provider == 'grok':
+            if self.provider == 'grok':
                 return self._generate_grok(prompt, system_prompt,
                                           temperature, max_tokens, cache_kwargs)
             else:
@@ -262,54 +242,7 @@ class LLMClient:
                                    success=False, error=error_msg)
             return {'success': False, 'error': error_msg, 'cached': False}
     
-    def _generate_anthropic(self, prompt, system_prompt, temperature,
-                           max_tokens, cache_kwargs):
-        """Generate response using Anthropic Claude."""
-        try:
-            self._rate_limit()
-            
-            response = self.client.messages.create(
-                model=self.model,
-                max_tokens=max_tokens,
-                system=system_prompt or "",
-                messages=[
-                    {"role": "user", "content": prompt}
-                ],
-                temperature=temperature
-            )
-            
-            content = response.content[0].text
-            usage = {
-                'prompt_tokens': response.usage.input_tokens,
-                'completion_tokens': response.usage.output_tokens,
-                'total_tokens': response.usage.input_tokens + response.usage.output_tokens
-            }
-            
-            self.tracker.log_usage(self.model,
-                                   usage['prompt_tokens'],
-                                   usage['completion_tokens'])
-            
-            result = {
-                'success': True,
-                'content': content,
-                'usage': usage,
-                'cached': False,
-                'model': self.model
-            }
-            self.cache.set(prompt, result,
-                           tokens_saved=usage['total_tokens'],
-                           **cache_kwargs)
-            
-            if DEBUG_MODE:
-                print(f"Anthropic success. Tokens: {usage['total_tokens']}")
-            return result
-        
-        except Exception as e:
-            error_msg = str(e)
-            self.tracker.log_usage(self.model, 0, 0,
-                                   success=False, error=error_msg)
-            return {'success': False, 'error': error_msg, 'cached': False}
-    
+
     def _generate_grok(self, prompt, system_prompt, temperature,
                        max_tokens, cache_kwargs):
         """Generate response using Grok (Groq) API - FIXED VERSION with debugging"""

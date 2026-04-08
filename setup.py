@@ -28,7 +28,8 @@ setup(
     ],
     python_requires=">=3.9",
     install_requires=[
-        "anthropic>=0.18.0",
+        "groq>=0.4.0",
+        "httpx>=0.24.0",
         "python-dotenv>=1.0.0",
         "streamlit>=1.30.0",
         "psutil>=5.9.8",
