@@ -456,7 +456,20 @@ def generate_and_validate(
                     f"Use 'opencode' (recommended) or 'groq'."
                 )
         except Exception as e:
-            print(f"Generation failed: {e}")
+            error_str = str(e)
+            print(f"Generation failed: {error_str}")
+            if attempt == max_retries:
+                # Store error for return
+                return {
+                    "status":      "GENERATION_FAILED",
+                    "module_name": module_name,
+                    "rtl":         "",
+                    "testbench":   "",
+                    "validation":  {},
+                    "simulation":  {},
+                    "attempts":    attempt,
+                    "error":       error_str
+                }
             continue
 
         # Validate syntax
@@ -495,7 +508,8 @@ def generate_and_validate(
                 "paths":       paths,
                 "validation":  validation,
                 "simulation":  sim_result,
-                "attempts":    attempt
+                "attempts":    attempt,
+                "error":       None
             }
         else:
             print(f"❌ Simulation failed:")
@@ -516,7 +530,8 @@ def generate_and_validate(
         "testbench":   tb  if 'tb'  in locals() else "",
         "validation":  validation if 'validation' in locals() else {},
         "simulation":  sim_result if 'sim_result' in locals() else {},
-        "attempts":    max_retries
+        "attempts":    max_retries,
+        "error":       "Failed after max retries: validation or simulation errors"
     }
 
 

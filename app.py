@@ -706,8 +706,11 @@ def page_generate_design():
             ["opencode", "groq"],
             index=1,
             help=(
-                "opencode: Local AI agent — Run: opencode serve --port 8000\n"
-                "groq: Fast inference ✓ WORKING (Needs GROQ_API_KEY env var)"
+                "**opencode** — Local AI agent (unlimited tokens)\n\n"
+                "Setup: opencode serve --port 8000\n\n"
+                "**groq** — Fast cloud inference (100K tokens/day free)\n\n"
+                "⚠️ Free tier limit: If exceeded, upgrade to Dev Tier:\n"
+                "https://console.groq.com/settings/billing"
             )
         )
     with col2:
@@ -812,10 +815,40 @@ def page_generate_design():
             progress.progress(40)
 
         if result["status"] != "READY_FOR_PIPELINE":
-            st.error(
-                f"❌ Generation failed after "
-                f"{result['attempts']} attempts"
-            )
+            error_msg = result.get("error", "Unknown error - check console logs")
+            
+            # Check for Groq rate limit
+            if provider == "groq" and "rate_limit" in error_msg.lower():
+                st.error(
+                    f"❌ Groq Rate Limit Exceeded\n\n"
+                    f"Free tier limit: 100,000 tokens/day\n\n"
+                    f"**Solutions:**\n"
+                    f"1. **Upgrade to Dev Tier** — https://console.groq.com/settings/billing\n"
+                    f"2. **Use OpenCode.ai locally** — Unlimited tokens\n"
+                    f"   ```bash\n"
+                    f"   pip install opencode-ai\n"
+                    f"   opencode serve --port 8000\n"
+                    f"   ```\n"
+                    f"   Then select 'opencode' provider in the dropdown above\n"
+                    f"3. **Use your own API key** — Set GROQ_API_KEY env var with a private key\n\n"
+                    f"Details: {error_msg}"
+                )
+            elif provider == "opencode" and "connection" in error_msg.lower():
+                st.error(
+                    f"❌ OpenCode.ai Not Available\n\n"
+                    f"Make sure it's running:\n"
+                    f"```bash\n"
+                    f"opencode serve --port 8000\n"
+                    f"```\n\n"
+                    f"Or switch to Groq provider (requires GROQ_API_KEY)"
+                )
+            else:
+                st.error(
+                    f"❌ Generation failed after "
+                    f"{result['attempts']} attempts\n\n"
+                    f"Error: {error_msg}"
+                )
+            
             if result.get("rtl"):
                 with st.expander("Generated RTL (with errors)"):
                     st.code(result["rtl"], language="verilog")
