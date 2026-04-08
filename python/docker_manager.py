@@ -135,16 +135,56 @@ class DockerManager:
         self.pdk_root = self._detect_pdk_root()
 
     def _detect_pdk_root(self) -> Optional[str]:
-        """Detect PDK root directory from env var or common locations."""
-        env_root = os.environ.get("PDK_ROOT", "")
-        if env_root:
-            candidate = Path(env_root)
-            if candidate.exists():
-                return str(candidate)
-        # Common Windows locations
-        for p in [Path(r"C:\pdk"), Path.home() / "pdk"]:
+        """
+        Detect PDK root directory from environment variables or well-known locations.
+        The PDK root must contain a sky130A subdirectory to be considered valid.
+        Search order:
+          1. PDK_ROOT env var
+          2. PDKPATH env var
+          3. Common Windows install locations
+          4. WSL2 accessible paths
+        """
+        import os as _os
+        # 1. Explicit environment variables (highest priority)
+        for env_var in ("PDK_ROOT", "PDKPATH", "PDK_PATH"):
+            env_root = _os.environ.get(env_var, "").strip()
+            if env_root:
+                candidate = Path(env_root)
+                if candidate.exists() and (candidate / "sky130A").exists():
+                    self.logger.info(f"PDK found via env {env_var}: {candidate}")
+                    return str(candidate)
+
+        # 2. Common Windows installation paths (ordered by likelihood)
+        user_home = Path.home()
+        common_paths = [
+            Path(r"C:\pdk"),
+            Path(r"C:\PDK"),
+            Path(r"C:\open_pdks"),
+            Path(r"C:\tools\pdk"),
+            Path(r"D:\pdk"),
+            user_home / "pdk",
+            user_home / "PDK",
+            user_home / "open_pdks",
+            user_home / "Documents" / "pdk",
+            user_home / "Documents" / "rtl-gen-aii" / "pdk",
+            # OpenLane default
+            Path(r"C:\Users\venka\pdk"),
+            Path(r"C:\openlane\pdks"),
+        ]
+        for p in common_paths:
             if p.exists() and (p / "sky130A").exists():
+                self.logger.info(f"PDK found at: {p}")
                 return str(p)
+
+        # 3. Not found — warn clearly so user knows exactly what to do
+        self.logger.warning(
+            "Sky130A PDK not found. Synthesis will use generic cell mapping "
+            "(no liberty file). Physical design stages (placement, CTS, routing) "
+            "may be degraded or skipped.\n"
+            "To fix: set environment variable PDK_ROOT=<path containing sky130A/>\n"
+            "  e.g. set PDK_ROOT=C:\\pdk  (then restart VS Code)\n"
+            "Or install via: pip install volare && volare enable sky130"
+        )
         return None
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -288,34 +328,71 @@ class DockerManager:
     # ──────────────────────────────────────────────────────────────────────────
 
     def windows_to_docker_path(self, win_path: str) -> str:
-        """
-        Convert Windows path to Docker (Linux) path format.
-        Examples:
-          C:\\Users\\venka\\work  → /mnt/c/Users/venka/work
-          C:/data                 → /mnt/c/data
-          /home/user              → /home/user  (already Docker format)
+        r"""
+        Convert a Windows host path to its equivalent path INSIDE the Docker container,
+        based on the volume mounts that this DockerManager will apply.
+
+        Mount table (host -> container):
+          <host_work>  -> /work
+          <pdk_root>   -> /pdk   (if PDK was detected)
+
+        Docker Desktop on Windows handles -v C:\path:/container natively.
+        Inside the container the correct path is /container/..., NOT /mnt/c/...
+        /mnt/c/ is WSL2 filesystem notation and is NOT the same as a Docker mount.
+
+        Examples (assuming work_dir=C:\Users\venka\Documents\rtl-gen-aii\work,
+                          pdk_root=C:\pdk):
+          C:\Users\venka\Documents\rtl-gen-aii\work\rtl.v -> /work/rtl.v
+          C:\pdk\sky130A\libs.ref\...                        -> /pdk/sky130A/libs.ref/...
+          /work/already_linux                                    -> /work/already_linux
         """
         if not win_path:
             return ""
 
-        # Already a Linux/Docker path
-        if win_path.startswith("/"):
-            return win_path
+        # Already a Linux/Docker path — return as-is
+        if str(win_path).startswith("/"):
+            return str(win_path)
 
-        # Normalize Windows path: C:\path or C:/path
-        # Replace backslashes with forward slashes
-        path_str = str(win_path).replace("\\", "/")
+        # Normalise to forward slashes for comparison
+        norm = str(win_path).replace("\\", "/")
 
-        # Extract drive letter and path
-        # Pattern: C: or c: followed by /path
-        match = re.match(r"^([a-zA-Z]):(.*)$", path_str)
+        # Build mount table: {normalised_host_prefix → container_prefix}
+        mount_table: dict[str, str] = {}
+
+        # /work mount — resolve work_dir if available
+        if hasattr(self, "work_dir") and self.work_dir:
+            host_work_norm = str(self.work_dir).replace("\\", "/")
+            mount_table[host_work_norm.rstrip("/")] = "/work"
+
+        # /pdk mount
+        if self.pdk_root:
+            pdk_norm = str(self.pdk_root).replace("\\", "/")
+            mount_table[pdk_norm.rstrip("/")] = "/pdk"
+
+        # Match longest prefix first (most specific mount wins)
+        for host_prefix in sorted(mount_table.keys(), key=len, reverse=True):
+            if norm.startswith(host_prefix):
+                container_prefix = mount_table[host_prefix]
+                remainder = norm[len(host_prefix):]
+                # Ensure leading slash
+                if remainder and not remainder.startswith("/"):
+                    remainder = "/" + remainder
+                return container_prefix + remainder
+
+        # Fallback: no known mount matched.
+        # Use /mnt/<drive>/ convention as best-effort (WSL2 passthrough).
+        match = re.match(r"^([a-zA-Z]):(.*)$", norm)
         if match:
             drive_letter = match.group(1).lower()
-            rest_path = match.group(2)
+            rest_path = match.group(2).replace("\\", "/")
+            self.logger.warning(
+                f"Path '{win_path}' has no matching Docker mount. "
+                f"Falling back to /mnt/{drive_letter}{rest_path}. "
+                "Ensure the directory is mounted with extra_mounts."
+            )
             return f"/mnt/{drive_letter}{rest_path}"
 
-        # Already relative or absolute Linux path
-        return path_str
+        return norm
 
     def docker_to_windows_path(self, docker_path: str) -> str:
         """
@@ -540,8 +617,15 @@ class DockerManager:
         ]
 
         # Always mount PDK if available
+        # Convert Windows path to forward slashes for Docker mount
         if self.pdk_root:
-            mounts.extend(["-v", f"{self.pdk_root}:/pdk"])
+            pdk_path = Path(self.pdk_root)
+            # If pdk_root points to sky130A dir, mount its parent (C:\pdk) to /pdk
+            # so that TCL scripts can use /pdk/sky130A/libs.ref/... paths
+            if pdk_path.name == "sky130A":
+                pdk_path = pdk_path.parent
+            pdk_path_docker = str(pdk_path).replace("\\", "/")
+            mounts.extend(["-v", f"{pdk_path_docker}:/pdk"])
 
         for host_p, cont_p in extra_mounts.items():
             mounts += ["-v", f"{str(host_p)}:{cont_p}"]
@@ -630,22 +714,32 @@ class DockerManager:
         result = ContainerResult()
 
         try:
-            # Translate paths
-            docker_work = self.windows_to_docker_path(work_dir)
+            # Resolve work_dir to absolute path
+            from pathlib import Path
+            work_dir_resolved = str(Path(work_dir).resolve())
             
-            # Build mount dict
-            all_mounts = {work_dir: "/work"}
+            # Build mount dict - always mount work_dir as /work  
+            all_mounts = {work_dir_resolved: "/work"}
+            
+            # Add PDK root if available
+            if self.pdk_root:
+                pdk_resolved = str(Path(self.pdk_root).resolve())
+                all_mounts[pdk_resolved] = "/pdk"
+            
+            # Add additional mounts and resolve them to absolute paths
             if mounts:
-                all_mounts.update(mounts)
+                for host_path, container_path in mounts.items():
+                    host_path_resolved = str(Path(host_path).resolve())
+                    all_mounts[host_path_resolved] = container_path
 
             # Build docker run command
             cmd = ["docker", "run", "--rm"]
 
             # Add mounts
             for host_path, container_path in all_mounts.items():
-                # Convert host path for Docker
-                docker_host_path = self.windows_to_docker_path(host_path) if self.is_windows else host_path
-                cmd.extend(["-v", f"{docker_host_path}:{container_path}"])
+                # Use the absolute host path directly for Docker
+                # (Docker Desktop on Windows handles C:\path natively)
+                cmd.extend(["-v", f"{host_path}:{container_path}"])
 
             # Add environment variables
             if env_vars:

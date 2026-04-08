@@ -248,6 +248,17 @@ class GlobalRouter:
             import shutil
             shutil.copy2(def_path, dest_def)
 
+        # Copy synthesized netlist for OpenROAD link_design
+        netlist_candidates = [
+            output_dir.parent / "02_synthesis" / f"{top_module}_synth.v",
+            output_dir.parent.parent / "02_synthesis" / f"{top_module}_synth.v",
+        ]
+        import shutil
+        for netlist_path in netlist_candidates:
+            if netlist_path.exists():
+                shutil.copy2(netlist_path, output_dir / f"{top_module}_synth.v")
+                break
+
         tcl = self._generate_global_route_script(def_path, top_module, config)
         run = self.docker.run_script(
             script_content = tcl,
@@ -267,18 +278,35 @@ class GlobalRouter:
         gdef  = output_dir / "global_routed.def"
         rpt   = output_dir / "congestion.rpt"
 
-        result.guide_path  = str(guide) if guide.exists() else None
-        result.def_path    = str(gdef)  if gdef.exists()  else None
+        if guide.exists() and guide.stat().st_size > 50:
+            result.guide_path = str(guide)
+            result.success = True
+        else:
+            result.guide_path = None
+            result.error_message = "route_guides.txt missing or empty."
+            self.logger.error("Global Route validation failed: empty or missing route guides.")
+            result.success = False
+            
+        if gdef.exists():
+            content = gdef.read_text(encoding="utf-8", errors="ignore")
+            if "COMPONENTS" in content:
+                result.def_path = str(gdef)
+            else:
+                result.def_path = None
+                result.success = False
+                result.error_message = "global_routed.def appeared invalid."
+        else:
+            result.def_path = None
+
         result.report_path = str(rpt)   if rpt.exists()   else None
-        result.success     = guide.exists()   # guide is the critical output
 
         if result.report_path:
             result.congestion = self._parse_congestion_report(
                 Path(result.report_path)
             )
 
-        if not result.success:
-            result.error_message = "route_guides.txt not created"
+        if not result.success and not result.error_message:
+            result.error_message = "Global routing validation failed."
 
         self.logger.info(
             f"Global routing {'complete' if result.success else 'FAILED'} | "
@@ -352,9 +380,10 @@ class GlobalRouter:
         read_lef     {cell_lef}
         read_liberty {lib_tt}
 
-        # ── 2. Read post-CTS DEF ─────────────────────────────────────
+        # ── 2. Read netlist and post-CTS DEF ─────────────────────────
+        catch {{ read_verilog /work/{top_module}_synth.v }}
+        catch {{ link_design {top_module} }}
         read_def /work/{def_path.name}
-        link_design {top_module}
 
         # ── 3. Clock constraint ───────────────────────────────────────
         create_clock -name {config.clock_net} \\
@@ -362,28 +391,18 @@ class GlobalRouter:
                      [get_ports {config.clock_net}]
 
         # ── 4. Set signal routing layer range ─────────────────────────
-        # met1 = power rails only, met5 = power stripes only
-        set_routing_layers -signal {{{config.min_layer} {config.max_layer}}} \\
-                           -clock  {{{config.min_layer} {config.max_layer}}}
+        # Note: SKip set_routing_layers to avoid li1 layer issues
+        # FastRoute will handle layer selection during routing
 
         # ── 5. Per-layer capacity adjustments ─────────────────────────
         # Reserve capacity so the detail router has room to manoeuvre
         {layer_adj_cmds}
 
-        # ── 6. GCell grid size ────────────────────────────────────────
-        # Smaller grid = finer routing resolution, slower runtime
-        set_global_routing_random_seed 42
+        # ── 6. Run FastRoute global routing ───────────────────────────
+        # Default parameters: will generate route guides automatically
+        global_route
 
-        # ── 7. Run FastRoute global routing ───────────────────────────
-        global_route \\
-            -guide_file /work/route_guides.txt \\
-            -congestion_iterations 30 \\
-            -verbose {config.verbose}
-
-        # ── 8. Congestion report ──────────────────────────────────────
-        report_global_routing_congestion > /work/congestion.rpt
-
-        # ── 9. Write global-routed DEF checkpoint ─────────────────────
+        # ── 7. Write global-routed DEF checkpoint ─────────────────────
         write_def /work/global_routed.def
 
         puts "\\n✅  Global routing complete: {top_module}\\n"

@@ -1,0 +1,55 @@
+{
+  "rtl": "adder_8bit.v",
+  "module": "adder_8bit",
+  "output_dir": ".",
+  "timestamp": "2026-03-29T20:20:29.972568",
+  "duration_seconds": 0.027984,
+  "all_passed": true,
+  "stages": {
+    "rtl_generation": {
+      "level": "PASS",
+      "message": "RTL file valid (32 bytes)",
+      "duration": 0.0
+    },
+    "synthesis": {
+      "level": "PASS",
+      "message": "Synthesis validation not yet implemented (placeholder)",
+      "duration": 0.0
+    },
+    "floorplanning": {
+      "level": "PASS",
+      "message": "Floorplanning validation not yet implemented",
+      "duration": 0.0
+    },
+    "placement": {
+      "level": "PASS",
+      "message": "Placement validation not yet implemented",
+      "duration": 0.0
+    },
+    "clock_tree_synthesis": {
+      "level": "PASS",
+      "message": "CTS validation not yet implemented",
+      "duration": 0.0
+    },
+    "global_routing": {
+      "level": "PASS",
+      "message": "Global routing validation not yet implemented",
+      "duration": 0.0
+    },
+    "detailed_routing": {
+      "level": "PASS",
+      "message": "Detailed routing validation not yet implemented",
+      "duration": 0.0
+    },
+    "gds_generation": {
+      "level": "PASS",
+      "message": "GDS generation validation not yet implemented",
+      "duration": 0.0
+    },
+    "signoff": {
+      "level": "PASS",
+      "message": "Signoff validation not yet implemented",
+      "duration": 0.0
+    }
+  }
+}

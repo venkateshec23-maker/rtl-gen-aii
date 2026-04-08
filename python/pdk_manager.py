@@ -289,10 +289,14 @@ class PDKManager:
             Absolute Path to tech.lef, or None if not found.
         """
         lef_dir = self.pdk_root / "libs.ref" / Sky130Library.HD.value / "lef"
+        techlef_dir = self.pdk_root / "libs.ref" / Sky130Library.HD.value / "techlef"
+
+        # Prefer OpenROAD/OpenLane techlef names when present; fall back to older conventions.
         candidates = [
-            lef_dir / f"{Sky130Library.HD.value}.tlef",  # standard name
-            lef_dir / "sky130_tech.lef",                 # alternate name
-            lef_dir / "tech.lef",                        # generic fallback
+            techlef_dir / f"{Sky130Library.HD.value}__nom.tlef",  # OpenROAD default expectation
+            lef_dir / f"{Sky130Library.HD.value}.tlef",           # legacy merged techlef
+            lef_dir / "sky130_tech.lef",                          # alternate name
+            lef_dir / "tech.lef",                                 # generic fallback
         ]
         for c in candidates:
             if c.exists():

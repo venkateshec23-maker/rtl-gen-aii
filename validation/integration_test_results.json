@@ -1,0 +1,81 @@
+{
+  "timestamp": "2026-03-30T20:05:09.171360",
+  "tests": {
+    "synthesis": {
+      "design": "adder_8bit",
+      "status": "PASS",
+      "outputs": {
+        "netlist": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\00_test_synth\\adder_8bit_synth.v",
+        "size_bytes": 3532,
+        "has_sky130_cells": true
+      },
+      "errors": []
+    },
+    "full_pipeline": {
+      "design": "adder_8bit",
+      "status": "PASS",
+      "stages": {
+        "rtl": {
+          "path": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\adder_8bit.v",
+          "exists": true
+        },
+        "netlist": {
+          "path": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_200512\\02_synthesis\\adder_8bit_synth.v",
+          "exists": true
+        },
+        "floorplan": {
+          "path": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_200512\\03_floorplan\\floorplan.def",
+          "exists": true
+        },
+        "placement": {
+          "path": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_200512\\04_placement\\placed.def",
+          "exists": true
+        },
+        "cts": {
+          "path": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_200512\\05_cts\\cts.def",
+          "exists": true
+        },
+        "routing": {
+          "path": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_200512\\06_routing\\routed.def",
+          "exists": true
+        },
+        "gds": {
+          "path": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_200512\\07_gds\\adder_8bit.gds",
+          "exists": true
+        },
+        "package_dir": {
+          "path": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_200512\\09_tapeout",
+          "exists": true
+        }
+      },
+      "stats": {
+        "elapsed_seconds": 28.396971225738525,
+        "total_stages": 9
+      },
+      "errors": []
+    }
+  },
+  "infrastructure": {
+    "docker": {
+      "installed": true,
+      "running": true,
+      "version": "Docker version 29.2.1, build a5c7197",
+      "backend": "wsl2"
+    },
+    "image": {
+      "exists": true,
+      "size_gb": 1.0099769029766321,
+      "name": "efabless/openlane:latest"
+    },
+    "pdk": {
+      "found": true,
+      "path": "C:\\pdk"
+    }
+  },
+  "summary": {
+    "total_tests": 2,
+    "passed": 2,
+    "failed": 0,
+    "all_passed": true
+  }
+}

@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Design Flow - 6 Steps RTL to Layout</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #667eea, #764ba2); 
+               margin: 0; padding: 20px; min-height: 100vh; }
+        .container { max-width: 1200px; margin: 0 auto; background: white; border-radius: 12px; 
+                     padding: 30px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); }
+        .header { text-align: center; margin-bottom: 30px; }
+        h1 { color: #667eea; font-size: 32px; margin: 0 0 10px 0; }
+        .steps { display: flex; justify-content: space-between; margin-bottom: 30px; flex-wrap: wrap; }
+        .step-btn { flex: 1; min-width: 150px; padding: 12px; margin: 5px; border: 2px solid #ddd; 
+                    border-radius: 8px; background: white; cursor: pointer; font-weight: bold;
+                    transition: all 0.3s; }
+        .step-btn:hover { border-color: #667eea; box-shadow: 0 4px 12px rgba(102,126,234,0.3); }
+        .step-btn.active { background: #667eea; color: white; border-color: #667eea; }
+        .content { display: none; }
+        .content.active { display: block; }
+        img { width: 100%; border-radius: 8px; margin: 20px 0; }
+        .footer { text-align: center; margin-top: 30px; color: #666; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Design Flow Visualization</h1>
+            <p>From RTL Simulation to Silicon Layout - 6 Essential Steps</p>
+        </div>
+        
+        <div class="steps">
+            <button class="step-btn active" onclick="showStep(1)">① Verilator</button>
+            <button class="step-btn" onclick="showStep(2)">② Synthesis</button>
+            <button class="step-btn" onclick="showStep(3)">③ Gate Sim</button>
+            <button class="step-btn" onclick="showStep(4)">④ Placement</button>
+            <button class="step-btn" onclick="showStep(5)">⑤ CTS</button>
+            <button class="step-btn" onclick="showStep(6)">⑥ Layout</button>
+        </div>
+        
+        <div id="step1" class="content active">
+            <h2>Step 1: Design Verification in Verilator</h2>
+            <p>RTL behavioral simulation verifies the design before synthesis. Waveforms show clock, reset, inputs, and outputs over 20ns.</p>
+            <img src="01_verilator_simulation.png">
+        </div>
+        
+        <div id="step2" class="content">
+            <h2>Step 2: RTL Synthesis</h2>
+            <p>Convert behavioral Verilog to gate-level netlist using Yosys/Cadence Genus with SKY130 standard cells.</p>
+            <img src="02_rtl_synthesis.png">
+        </div>
+        
+        <div id="step3" class="content">
+            <h2>Step 3: Gate-Level Simulation</h2>
+            <p>Verify the synthesized netlist behaves identically to RTL. All test vectors must pass with 100% coverage.</p>
+            <img src="03_gate_simulation.png">
+        </div>
+        
+        <div id="step4" class="content">
+            <h2>Step 4: Placement</h2>
+            <p>Determine positions of all cells on silicon die. Optimize for timing, power, and area utilization.</p>
+            <img src="04_placement.png">
+        </div>
+        
+        <div id="step5" class="content">
+            <h2>Step 5: Clock Tree Synthesis</h2>
+            <p>Create optimized clock distribution network to reach all flip-flops with minimal skew and balanced latency.</p>
+            <img src="05_cts.png">
+        </div>
+        
+        <div id="step6" class="content">
+            <h2>Step 6: Routing & Layout</h2>
+            <p>Route all signals using metal layers. Complete all design rules and prepare for silicon fabrication (tapeout).</p>
+            <img src="06_layout.png">
+        </div>
+        
+        <div class="footer">
+            <p>Similar to WPI ECE 574 Project Design Flow</p>
+            <p>Tools: Verilator | Yosys | Cadence | SKY130 Library | 100 MHz Target</p>
+        </div>
+    </div>
+    
+    <script>
+        function showStep(n) {
+            const contents = document.querySelectorAll('.content');
+            const buttons = document.querySelectorAll('.step-btn');
+            
+            contents.forEach(c => c.classList.remove('active'));
+            buttons.forEach(b => b.classList.remove('active'));
+            
+            document.getElementById('step' + n).classList.add('active');
+            buttons[n-1].classList.add('active');
+        }
+    </script>
+</body>
+</html>

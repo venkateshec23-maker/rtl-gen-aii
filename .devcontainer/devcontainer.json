@@ -1,0 +1,31 @@
+{
+  "name": "RTL-Gen AI — OpenCode.ai Edition",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+  "features": {
+    "ghcr.io/devcontainers/features/docker-in-docker:2": {}
+  },
+  "postCreateCommand": "pip install -r requirements.txt && docker pull efabless/openlane:latest",
+  "forwardPorts": [8501, 8000],
+  "portsAttributes": {
+    "8501": {
+      "label": "RTL-Gen AI Dashboard",
+      "onAutoForward": "openBrowser"
+    },
+    "8000": {
+      "label": "OpenCode.ai API",
+      "onAutoForward": "silent"
+    }
+  },
+  "remoteEnv": {
+    "GROQ_API_KEY": "${localEnv:GROQ_API_KEY}"
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "ms-python.vscode-pylance",
+        "ms-azuretools.vscode-docker"
+      ]
+    }
+  }
+}

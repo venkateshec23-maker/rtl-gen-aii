@@ -90,7 +90,7 @@ class FloorplanResult:
     
     # Logs
     docker_output: str = ""
-    error_msg: str = ""
+    error_message: str = ""
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -118,6 +118,36 @@ class Floorplanner:
         
         self.result = FloorplanResult(design_name=config.design_name)
     
+    def _estimate_cell_count(self, netlist_path: str) -> int:
+        """Estimate number of cells in the synthesized netlist."""
+        try:
+            if isinstance(netlist_path, str):
+                netlist_path = Path(netlist_path)
+            else:
+                netlist_path = Path(netlist_path)
+            
+            if not netlist_path.exists():
+                self.logger.warning(f"Netlist not found for cell count estimate: {netlist_path}")
+                return 1000  # Conservative default
+            
+            content = netlist_path.read_text(encoding="utf-8", errors="ignore")
+            # Count instantiations (look for instance names like sky130_fd_sc_hd__*)
+            cell_count = content.count("sky130_fd_sc_hd__")
+            
+            if cell_count == 0:
+                # Fallback: count module instantiations
+                cell_count = content.count("(") // 2  # rough estimate
+            
+            if cell_count < 10:
+                cell_count = 100  # Minimum estimate
+            
+            self.logger.info(f"Estimated cell count: {cell_count}")
+            return cell_count
+            
+        except Exception as e:
+            self.logger.warning(f"Cell count estimation failed: {e}, using default 1000")
+            return 1000
+    
     # ──────────────────────────────────────────────────────────────────────────
     # MAIN FLOW
     # ──────────────────────────────────────────────────────────────────────────
@@ -137,22 +167,13 @@ class Floorplanner:
             self.result.core_width_um = die_est.core_width_um
             self.result.core_height_um = die_est.core_height_um
             
-            # Step 2: I/O placement
-            io_placer = IOPlacer(
-                core_width=die_est.core_width_um,
-                core_height=die_est.core_height_um
-            )
-            pins = io_placer.assign_pins_from_verilog(self.config.rtl_file)
-            io_tcl = io_placer.generate_place_pin_tcl(pins)
+            # Step 2: Explicit IO pin placement on correct SKY130 layers
+            # SKY130 layer directions: met3=horizontal, met4=vertical
+            # make_tracks (in TCL) must be called first to populate routing DB.
+            io_tcl = "place_pins -hor_layers met3 -ver_layers met4"
             
-            # Step 3: Power grid
-            pdn_gen = PowerGridGenerator(
-                core_width=die_est.core_width_um,
-                core_height=die_est.core_height_um,
-                power_pin=self.config.power_pin,
-                ground_pin=self.config.ground_pin
-            )
-            pdn_tcl = pdn_gen.generate_pdngen_config()
+            # Step 3: Tapcell insertion instead of full old-style PDN
+            pdn_tcl = "tapcell -distance 14 -tapcell_master sky130_fd_sc_hd__tapvpwrvgnd_1"
             
             # Step 4: Create complete TCL script
             complete_tcl = self._create_floorplan_tcl(
@@ -168,11 +189,11 @@ class Floorplanner:
                 self.result.success = True
                 self.result.floorplan_def = result
             else:
-                self.result.error_msg = "Docker execution failed"
+                self.result.error_message = "Docker execution failed"
         
         except Exception as e:
             self.result.success = False
-            self.result.error_msg = str(e)
+            self.result.error_message = str(e)
             self.logger.error(f"Floorplanning failed: {e}")
         
         return self.result
@@ -180,35 +201,68 @@ class Floorplanner:
     def _create_floorplan_tcl(self, die_est, io_tcl: str, pdn_tcl: str) -> str:
         """Assemble complete floorplanning TCL script."""
         
-        tcl_script = f"""
-# Floorplanning Configuration - Auto-generated
+        tech_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/techlef/sky130_fd_sc_hd__nom.tlef"
+        cell_lef = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.lef"
+        lib_tt   = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__tt_025C_1v80.lib"
+        lib_ss   = "/pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib/sky130_fd_sc_hd__ss_100C_1v60.lib"
+
+        # SKY130 site pitch constraints:
+        #   unithd row height = 2.72 um  (Y-snap)
+        #   site width        = 0.46 um  (X-snap)
+        # Core margin must be a multiple of these pitches.
+        # We use 10.12 um (22 * 0.46)  and 10.88 um (4 * 2.72)
+        # Minimum core: at least 4 rows x 20 sites = 10.88 um H x 9.2 um W
+        die_w  = max(die_est.die_width_um,  80.0)
+        die_h  = max(die_est.die_height_um, 60.0)
+        core_x1 = 10.12
+        core_y1 = 10.88
+        core_x2 = die_w - 10.12
+        core_y2 = die_h - 10.88
+
+        # SKY130 layer directions (from tech LEF):
+        #   met1 = horizontal tracks, pitch 0.34 um
+        #   met2 = vertical   tracks, pitch 0.46 um
+        #   met3 = horizontal tracks, pitch 0.68 um
+        #   met4 = vertical   tracks, pitch 0.92 um
+        #   met5 = horizontal tracks, pitch 3.40 um
+        # IO pins: use met3 (H) and met4 (V) — wide enough pitch for IO pads
+
+        tcl_script = f"""# Floorplanning Configuration - Auto-generated by RTL-Gen AI
 set design_name {self.config.design_name}
-set core_width {die_est.core_width_um}
-set core_height {die_est.core_height_um}
 
-# Read synthesized netlist
+# Load PDK Data
+read_lef {tech_lef}
+read_lef {cell_lef}
+read_liberty {lib_tt}
+read_liberty {lib_ss}
+
+# Read synthesized netlist and link design
 read_verilog /work/design_syn.v
+link_design {self.config.design_name}
 
-# Floorplan core area
-init_floorplan -site sky130_fd_sc_hd \\
-    -core_width ${{core_width}} \\
-    -core_height ${{core_height}} \\
-    -margin_x 10 -margin_y 10
+# Initialize floorplan with site-pitch-snapped margins
+# die: {die_w:.2f} x {die_h:.2f} um
+# core: {core_x1:.2f},{core_y1:.2f} -> {core_x2:.2f},{core_y2:.2f} um
+initialize_floorplan -site unithd \\
+    -die_area  "0 0 {die_w:.2f} {die_h:.2f}" \\
+    -core_area "{core_x1:.2f} {core_y1:.2f} {core_x2:.2f} {core_y2:.2f}"
 
-# I/O Pin Placement
+# CRITICAL: populate routing track database from tech LEF
+# Without make_tracks, place_pins fails with "routing tracks not found" on every layer.
+make_tracks
+
+# Place IO pins: met3 = horizontal, met4 = vertical (SKY130 layer directions)
 {io_tcl}
 
-# Power Grid Generation
+# Insert tapcells for latch-up prevention
 {pdn_tcl}
 
-# Export
+# Write floorplan DEF
 write_def /work/floorplan.def
-
-# Report
-report_placement -verbose
 
 """
         return tcl_script
+
     
     def _run_floorplan_docker(self, tcl_script: str) -> Optional[str]:
         """Run floorplanning via Docker."""
@@ -227,126 +281,56 @@ report_placement -verbose
             # Save TCL script for debugging
             self.logger.debug(f"Floorplan TCL script:\n{tcl_script}")
             
-            # Try to run via stdin instead of file
-            docker_result = self.docker.run_openroad(
+            # Run OpenROAD using run_script to properly mount and execute
+            self.docker.pdk_root = self.pdk_root  # Ensure PDK is mounted
+            
+            run_result = self.docker.run_script(
+                script_content=tcl_script,
+                script_name="floorplan.tcl",
                 work_dir=self.config.output_dir,
-                command="openroad",  # Just openroad, will pipe TCL via stdin
-                env_vars={
-                    "PDK_ROOT": self.docker.windows_to_docker_path(self.pdk_root)
-                }
+                timeout=600
             )
             
-            # For now, generate simplified DEF directly since OpenROAD Verilog parsing is problematic
-            self.logger.warning("Skipping full OpenROAD floorplanning. Generating simplified DEF directly.")
-            def_content = self._generate_simplified_def()
-            if def_content:
-                out_path = os.path.join(self.config.output_dir, "floorplan.def")
-                with open(out_path, "w", encoding="utf-8") as f:
-                    f.write(def_content)
-                self.result.docker_output = "Using simplified DEF generation"
-                return out_path
+            if not run_result.success:
+                self.result.error_message = f"Docker execution failed: {run_result.stderr[:200]}"
+                self.logger.error(f"OpenROAD Floorplan failed:\n{run_result.combined_output()}")
+                return None
+                
+            out_path = os.path.join(self.config.output_dir, "floorplan.def")
+            if not os.path.exists(out_path):
+                self.result.error_message = "floorplan.def was not created by OpenROAD."
+                self.logger.error("floorplan.def missing after successful Docker execution.")
+                return None
+                
+            # Verify DEF is non-empty and has COMPONENTS
+            with open(out_path, "r", encoding="utf-8") as f:
+                content = f.read()
+                if "COMPONENTS" not in content or "UNITS" not in content:
+                    self.result.error_message = "Generated floorplan.def is empty or malformed."
+                    self.logger.error(self.result.error_message)
+                    return None
+            
+            # NOTE: _add_pin_layer_geometry is DISABLED.
+            # place_pins already writes complete PORT + LAYER + PLACED blocks.
+            # Post-processing them corrupts the DEF (inserts premature semicolon
+            # after line 1 of multi-line PORT blocks -> ODB-0421 parse error).
+                    
+            self.result.docker_output = run_result.combined_output()
+            return out_path
             
         except Exception as e:
-            self.result.error_msg = str(e)
-            self.logger.error(f"Floorplanner Docker error: {e}")
-            # Try fallback DEF generation
-            def_content = self._generate_simplified_def()
-            if def_content:
-                out_path = os.path.join(self.config.output_dir, "floorplan.def")
-                with open(out_path, "w", encoding="utf-8") as f:
-                    f.write(def_content)
-                return out_path
-        
-        return None
-    
-    def _generate_simplified_def(self) -> Optional[str]:
-        """
-        Generate a proper DEF file with all required headers and geometry.
-        Uses the die/core estimates to create valid floorplan DEF.
-        This is compatible with OpenROAD, Magic, and other EDA tools.
-        """
-        try:
-            # Re-estimate die size
-            from die_estimator import DieEstimator
-            estimator = DieEstimator()
-            die_est = estimator.estimate_from_netlist(
-                self.config.netlist_file,
-                target_util=self.config.target_util,
-                square_die=self.config.square_die
-            )
-            
-            # Create proper DEF with all required headers and valid geometry
-            die_width_um = die_est.die_width_um * 1000  # Convert to units
-            die_height_um = die_est.die_height_um * 1000
-            core_width_um = die_est.core_width_um * 1000
-            core_height_um = die_est.core_height_um * 1000
-            core_x = 10.0 * 1000  # 10µm margin
-            core_y = 10.0 * 1000
-            
-            pins = self._extract_pins()
-            
-            # Valid DEF 5.8 format with all required headers
-            def_content = f"""VERSION 5.8 ;
-
-NAMECASESENSITIVE ON ;
-
-BUSBITCHARS "[]" ;
-
-DIVIDERCHAR "/" ;
-
-DESIGN {self.config.design_name} ;
-
-UNITS DISTANCE MICRONS 1000 ;
-
-DIEAREA ( 0 0 ) ( {int(die_width_um)} {int(die_height_um)} ) ;
-
-REGIONS
-  REGION core
-    ( {int(core_x)} {int(core_y)} ) ( {int(core_x + core_width_um)} {int(core_y + core_height_um)} )
-    RECTANGULAR ;
-END REGIONS
-
-COMPONENTS 0 ;
-
-PINS {len(pins)}
-"""
-            
-            # Add pin definitions
-            for i, pin in enumerate(pins):
-                def_content += f"""  - {pin}
-    + NET {pin}
-    + LAYER metal1 ( 0 0 ) ( 100 100 )
-    + PLACED ( {int(core_x + i*100)} {int(core_y + i*100)} ) N ;
-"""
-            
-            def_content += """END PINS
-
-NETS 0 ;
-
-END DESIGN
-"""
-            
-            self.logger.info("Generated valid DEF with proper headers (geometry + pins)")
-            return def_content
-            
-        except Exception as e:
-            self.logger.error(f"Failed to generate DEF: {e}")
+            self.result.error_message = str(e)
+            self.logger.error(f"Floorplanner execution error: {e}")
             return None
     
-    def _extract_pins(self) -> list:
-        """Extract pin information from RTL file."""
-        try:
-            with open(self.config.rtl_file, "r") as f:
-                content = f.read()
-            
-            pins = []
-            # Simple regex to find input/output declarations
-            import re
-            for match in re.finditer(r'(input|output)\s+(?:wire|reg)?\s*(?:\[\d+:\d+\])?\s+(\w+)', content):
-                pins.append(match.group(2))
-            return pins
-        except:
-            return []
+    def _add_pin_layer_geometry(self, def_path: str) -> None:
+        """
+        DISABLED: place_pins now generates correct PORT+LAYER+PLACED blocks.
+        Post-processing those blocks corrupts valid multi-line DEF syntax.
+        Keeping the method stub to avoid AttributeError if called externally.
+        """
+        self.logger.debug("_add_pin_layer_geometry: skipped (place_pins output is complete)")
+
     
     # ──────────────────────────────────────────────────────────────────────────
     # RESULT REPORTING
@@ -375,6 +359,6 @@ END DESIGN
                 print(f"\n  Output:")
                 print(f"    DEF file generated ({len(self.result.floorplan_def)} chars)")
         else:
-            print(f"  Error: {self.result.error_msg}")
+            print(f"  Error: {self.result.error_message}")
         
         print("="*70 + "\n")

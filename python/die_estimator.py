@@ -167,7 +167,7 @@ class DieEstimator:
     
     def __init__(self):
         self.logger = logging.getLogger(__name__)
-        self.margin_percent = 15  # 15% margin for routing/power
+        self.margin_percent = 35  # 35% margin for routing/power - increased for small designs
     
     def estimate_from_netlist(
         self,

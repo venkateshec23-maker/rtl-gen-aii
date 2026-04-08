@@ -103,16 +103,14 @@ class IOPlacer:
             with open(verilog_file, "r") as f:
                 content = f.read()
             
-            # Find module declaration
+            # Find module declaration - handle both Verilog-2001 (ports in header) and Verilog-1995 (separate declarations)
             module_match = re.search(r"module\s+(\w+)\s*\((.*?)\)", content, re.DOTALL)
             if not module_match:
                 self.logger.warning("No module found in Verilog")
                 return pins
             
-            port_list = module_match.group(2)
-            
-            # Parse port declarations
-            # Pattern: type [width] port_name
+            # For Verilog-1995 format, search entire file for input/output declarations
+            # Pattern: input|output [width] port_name
             port_patterns = [
                 (r"input\s+(?:\[.*?\])?\s*(\w+)", "input"),
                 (r"output\s+(?:\[.*?\])?\s*(\w+)", "output"),
@@ -120,7 +118,7 @@ class IOPlacer:
             ]
             
             for pattern, direction in port_patterns:
-                matches = re.findall(pattern, port_list)
+                matches = re.findall(pattern, content)
                 for port_name in matches:
                     pin_type = self._classify_pin(port_name)
                     pin = IOPin(
@@ -132,7 +130,10 @@ class IOPlacer:
                     pins.append(pin)
             
             # Assign locations
-            self._assign_locations(pins)
+            if pins:
+                self._assign_locations(pins)
+            else:
+                self.logger.warning(f"No input/output ports found in {verilog_file}")
         
         except Exception as e:
             self.logger.error(f"Failed to parse Verilog: {e}")

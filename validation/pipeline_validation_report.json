@@ -1,0 +1,130 @@
+{
+  "timestamp": "2026-03-30T16:20:30.593474",
+  "test_run": "pipeline_test_20260330_161909",
+  "stages": {
+    "synthesis": {
+      "stage": "synthesis",
+      "directory": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\02_synthesis",
+      "exists": true,
+      "files": {
+        "adder_8bit_synth.v": {
+          "file": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\02_synthesis\\adder_8bit_synth.v",
+          "exists": true,
+          "real": true,
+          "validation": {
+            "file_size_bytes": 3532,
+            "has_yosys_signature": true,
+            "has_module_declaration": true,
+            "sky130_cells_count": 34,
+            "cell_types_used": [
+              "o21ai",
+              "xor2",
+              "nand2",
+              "dfxtp",
+              "nor2"
+            ]
+          },
+          "issues": []
+        }
+      },
+      "passed": true
+    },
+    "floorplan": {
+      "stage": "floorplan",
+      "directory": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\03_floorplan",
+      "exists": true,
+      "files": {
+        "floorplan.def": {
+          "file": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\03_floorplan\\floorplan.def",
+          "exists": true,
+          "real": true,
+          "validation": {
+            "file_size_bytes": 7716,
+            "line_count": 148,
+            "has_version": true,
+            "has_divider": true,
+            "has_design": true,
+            "has_units": true,
+            "has_components": true
+          },
+          "issues": []
+        }
+      },
+      "passed": true
+    },
+    "placement": {
+      "stage": "placement",
+      "directory": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\04_placement",
+      "exists": true,
+      "files": {
+        "placed.def": {
+          "file": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\04_placement\\placed.def",
+          "exists": true,
+          "real": true,
+          "validation": {
+            "file_size_bytes": 7454,
+            "line_count": 136,
+            "has_version": true,
+            "has_divider": true,
+            "has_design": true,
+            "has_units": true,
+            "has_components": true
+          },
+          "issues": []
+        }
+      },
+      "passed": true
+    },
+    "cts": {
+      "stage": "cts",
+      "directory": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\05_cts",
+      "exists": true,
+      "files": {
+        "cts.def": {
+          "file": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\05_cts\\cts.def",
+          "exists": true,
+          "real": true,
+          "validation": {
+            "file_size_bytes": 5931,
+            "line_count": 125,
+            "has_version": true,
+            "has_divider": true,
+            "has_design": true,
+            "has_units": true,
+            "has_components": true
+          },
+          "issues": []
+        }
+      },
+      "passed": true
+    },
+    "global_route": {
+      "stage": "global_route",
+      "directory": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\06_global_route",
+      "exists": false,
+      "files": {},
+      "passed": false
+    },
+    "detail_route": {
+      "stage": "detail_route",
+      "directory": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\07_detail_route",
+      "exists": false,
+      "files": {},
+      "passed": false
+    },
+    "gds": {
+      "stage": "gds",
+      "directory": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\validation\\integration_tests\\pipeline_test_20260330_161909\\08_gds",
+      "exists": false,
+      "files": {},
+      "passed": false
+    }
+  },
+  "summary": {
+    "total_stages_checked": 7,
+    "real_outputs": 4,
+    "fake_outputs": 3,
+    "missing_outputs": 0
+  },
+  "evidence": []
+}
