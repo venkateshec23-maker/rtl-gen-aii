@@ -833,14 +833,23 @@ def page_generate_design():
                     f"3. **Use your own API key** — Set GROQ_API_KEY env var with a private key\n\n"
                     f"Details: {error_msg}"
                 )
-            elif provider == "opencode" and "connection" in error_msg.lower():
+            elif provider == "opencode":
                 st.error(
-                    f"❌ OpenCode.ai Not Available\n\n"
-                    f"Make sure it's running:\n"
-                    f"```bash\n"
-                    f"opencode serve --port 8000\n"
-                    f"```\n\n"
-                    f"Or switch to Groq provider (requires GROQ_API_KEY)"
+                    f"❌ OpenCode.ai API Error\n\n"
+                    f"The OpenCode.ai server is running but the API isn't responding correctly.\n"
+                    f"This usually happens during server startup.\n\n"
+                    f"**Quick Fix (Wait + Retry):**\n"
+                    f"1. Wait 30-60 seconds for OpenCode to fully initialize\n"
+                    f"2. Click the Generate button again\n\n"
+                    f"**If still failing:**\n"
+                    f"1. Kill the OpenCode terminal (Ctrl+C)\n"
+                    f"2. Restart: ```bash\nopencode serve --port 8000\n```\n"
+                    f"3. Wait for 'listening on http://127.0.0.1:8000' message\n"
+                    f"4. Try generating again\n\n"
+                    f"**Verify installation:**\n"
+                    f"```bash\npip install -U opencode-ai\n```\n\n"
+                    f"**Technical error:**\n"
+                    f"{error_msg}"
                 )
             else:
                 st.error(

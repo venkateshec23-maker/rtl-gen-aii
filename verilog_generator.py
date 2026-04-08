@@ -172,6 +172,17 @@ def generate_verilog_opencode(
             timeout=120
         )
         response.raise_for_status()
+        
+        # Check if response is actually JSON (not HTML)
+        content_type = response.headers.get("content-type", "").lower()
+        if "html" in content_type:
+            raise RuntimeError(
+                f"OpenCode.ai returned HTML instead of JSON (status {response.status_code}).\n"
+                f"The API is still initializing or not properly configured.\n"
+                f"Wait 30 seconds for full startup, then retry.\n"
+                f"Or restart: opencode serve --port 8000"
+            )
+        
         result = response.json()
         text = result["choices"][0]["message"]["content"]
         return parse_verilog_response(text)
@@ -181,6 +192,31 @@ def generate_verilog_opencode(
             f"Make sure to run: opencode serve --port 8000\n"
             f"Error: {e}"
         )
+    except (ValueError, KeyError) as e:
+        # ValueError = JSON parse error, KeyError = missing response field
+        error_type = type(e).__name__
+        error_detail = str(e)
+        
+        # More detailed error message
+        if "expecting value" in error_detail.lower() or "json" in error_detail.lower():
+            raise RuntimeError(
+                f"OpenCode.ai API returned invalid JSON.\n"
+                f"The server may still be initializing (takes 30-60 seconds).\n\n"
+                f"SOLUTIONS:\n"
+                f"1. Wait 30 seconds and try again\n"
+                f"2. Restart OpenCode.ai server:\n"
+                f"   Kill current: Close the OpenCode terminal\n"
+                f"   Start fresh:  opencode serve --port 8000\n"
+                f"3. Check terminal for error messages\n"
+                f"4. Verify: pip install -U opencode-ai\n"
+                f"5. Fallback: Use Groq (24h for limit reset)"
+            )
+        else:
+            raise RuntimeError(
+                f"Invalid response from OpenCode.ai.\n"
+                f"Error: {error_type}: {error_detail}\n\n"
+                f"Try restarting: opencode serve --port 8000"
+            )
 
 
 def generate_verilog_groq(
