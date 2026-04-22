@@ -296,11 +296,11 @@
       <span style="color:var(--green)">Physical Design Report</span>
     </div>
     <div class="subtitle">
-      8-Bit Synchronous Adder — SKY130A 130nm CMOS Technology
+      counter_4bit — SKY130A 130nm CMOS Technology
     </div>
     <div class="meta">
       <div class="meta-item">
-        Design: <span>adder_8bit</span>
+        Design: <span>counter_4bit</span>
       </div>
       <div class="meta-item">
         Technology: <span>SKY130A 130nm</span>
@@ -309,7 +309,7 @@
         PDK: <span>sky130_fd_sc_hd (HD)</span>
       </div>
       <div class="meta-item">
-        Generated: <span>2026-04-07 08:31</span>
+        Generated: <span>2026-04-22 22:37</span>
       </div>
       <div class="meta-item">
         All data: <span>REAL TOOL OUTPUTS</span>
@@ -339,10 +339,10 @@
             TAPE-OUT READY
         </div>
         <div style="color:#888;margin-top:10px;font-size:0.9rem">
-            DRC: 0 violations &nbsp;|&nbsp;
+          DRC: 0 violations &nbsp;|&nbsp;
             LVS: MATCHED &nbsp;|&nbsp;
-            Timing: MET (5.55ns slack) &nbsp;|&nbsp;
-            GDS: 152.4 KB real layout
+            Timing: MET (9.15ns slack) &nbsp;|&nbsp;
+            GDS: 135.4 KB real layout
         </div>
     </div>
 
@@ -362,39 +362,39 @@
     </div>
     <div class="metric-card">
         <div class="metric-label">Standard Cells</div>
-        <div class="metric-value">34</div>
+        <div class="metric-value">14</div>
         <div class="metric-sub">sky130_fd_sc_hd__</div>
     </div>
     <div class="metric-card">
         <div class="metric-label">GDS Size</div>
-        <div class="metric-value">152.4<span style="font-size:1rem"> KB</span></div>
+        <div class="metric-value">135.4<span style="font-size:1rem"> KB</span></div>
         <div class="metric-sub">Real layout</div>
     </div>
     <div class="metric-card">
         <div class="metric-label">Timing Slack</div>
-        <div class="metric-value">5.55<span style="font-size:1rem"> ns</span></div>
-        <div class="metric-sub">Setup MET</div>
+        <div class="metric-value">9.15<span style="font-size:1rem"> ns</span></div>
+      <div class="metric-sub">Setup MET</div>
     </div>
     <div class="metric-card">
         <div class="metric-label">LVS</div>
         <div class="metric-value" style="color:#00ff9d">
             PASS
         </div>
-        <div class="metric-sub">480 transistors</div>
+        <div class="metric-sub">17 transistors</div>
     </div>
     <div class="metric-card">
         <div class="metric-label">DRC</div>
-        <div class="metric-value" style="color:#00ff9d">0</div>
+      <div class="metric-value" style="color:#00ff9d">0</div>
         <div class="metric-sub">Violations</div>
     </div>
     <div class="metric-card">
         <div class="metric-label">Simulation</div>
-        <div class="metric-value" style="color:#00ff9d">6/6</div>
-        <div class="metric-sub">Test vectors PASS</div>
+      <div class="metric-value" style="color:#00ff9d">6/6</div>
+      <div class="metric-sub">PASS/Total vectors</div>
     </div>
     <div class="metric-card">
         <div class="metric-label">Flow Time</div>
-        <div class="metric-value">~30<span style="font-size:1rem"> s</span></div>
+      <div class="metric-value">35.5 s</div>
         <div class="metric-sub">Fully automated</div>
     </div>
       </div>
@@ -427,16 +427,16 @@
             <td style="font-weight:bold;color:#e0e0e0">Environment Setup</td>
             <td style="color:#aaa;font-size:0.85em">Docker + OpenROAD + efabless/openlane:latest</td>
             <td style="text-align:center;font-size:1.1em">✅</td>
-            <td style="color:#00ff9d;font-size:0.9em">All 5 EDA tools verified</td>
+            <td style="color:#00ff9d;font-size:0.9em">Active run dir: C:\tools\OpenLane\runs\counter_4bit_20260418_221648</td>
         </tr>
-        <tr style="background:#2a0a0a;border-left:3px solid #ff3333">
+        <tr style="background:#0a2a0a;border-left:3px solid #00ff9d">
             <td style="text-align:center;font-weight:bold;color:#888">
                 1
             </td>
             <td style="font-weight:bold;color:#e0e0e0">RTL Simulation</td>
             <td style="color:#aaa;font-size:0.85em">iverilog + vvp + proper always #5 clk</td>
-            <td style="text-align:center;font-size:1.1em">❌</td>
-            <td style="color:#00ff9d;font-size:0.9em">0 PASS / 0 FAIL</td>
+            <td style="text-align:center;font-size:1.1em">✅</td>
+            <td style="color:#00ff9d;font-size:0.9em">6 PASS / 0 FAIL</td>
         </tr>
         <tr style="background:#0a2a0a;border-left:3px solid #00ff9d">
             <td style="text-align:center;font-weight:bold;color:#888">
@@ -445,7 +445,7 @@
             <td style="font-weight:bold;color:#e0e0e0">RTL Synthesis</td>
             <td style="color:#aaa;font-size:0.85em">Yosys synth_sky130 + abc -liberty Sky130A</td>
             <td style="text-align:center;font-size:1.1em">✅</td>
-            <td style="color:#00ff9d;font-size:0.9em">34 sky130_fd_sc_hd__ cells</td>
+            <td style="color:#00ff9d;font-size:0.9em">14 sky130_fd_sc_hd__ cells</td>
         </tr>
         <tr style="background:#0a2a0a;border-left:3px solid #00ff9d">
             <td style="text-align:center;font-weight:bold;color:#888">
@@ -454,34 +454,34 @@
             <td style="font-weight:bold;color:#e0e0e0">Static Timing Analysis</td>
             <td style="color:#aaa;font-size:0.85em">OpenSTA embedded in OpenROAD</td>
             <td style="text-align:center;font-size:1.1em">✅</td>
-            <td style="color:#00ff9d;font-size:0.9em">slack 5.55ns MET</td>
+            <td style="color:#00ff9d;font-size:0.9em">slack 9.15ns MET</td>
         </tr>
-        <tr style="background:#0a2a0a;border-left:3px solid #00ff9d">
+        <tr style="background:#2a0a0a;border-left:3px solid #ff3333">
             <td style="text-align:center;font-weight:bold;color:#888">
                 4
             </td>
             <td style="font-weight:bold;color:#e0e0e0">Gate-Level Simulation</td>
             <td style="color:#aaa;font-size:0.85em">iverilog -DFUNCTIONAL -DUNIT_DELAY=#1</td>
-            <td style="text-align:center;font-size:1.1em">✅</td>
-            <td style="color:#00ff9d;font-size:0.9em">Functional equiv. verified</td>
+            <td style="text-align:center;font-size:1.1em">❌</td>
+            <td style="color:#00ff9d;font-size:0.9em">Not verified in gate-level log</td>
         </tr>
-        <tr style="background:#0a2a0a;border-left:3px solid #00ff9d">
+        <tr style="background:#2a0a0a;border-left:3px solid #ff3333">
             <td style="text-align:center;font-weight:bold;color:#888">
                 5
             </td>
             <td style="font-weight:bold;color:#e0e0e0">Floorplanning</td>
             <td style="color:#aaa;font-size:0.85em">OpenROAD initialize_floorplan 80×60μm</td>
-            <td style="text-align:center;font-size:1.1em">✅</td>
-            <td style="color:#00ff9d;font-size:0.9em">placed.def 10.5 KB</td>
+            <td style="text-align:center;font-size:1.1em">❌</td>
+            <td style="color:#00ff9d;font-size:0.9em">placed.def 4.7 KB</td>
         </tr>
-        <tr style="background:#0a2a0a;border-left:3px solid #00ff9d">
+        <tr style="background:#2a0a0a;border-left:3px solid #ff3333">
             <td style="text-align:center;font-weight:bold;color:#888">
                 6
             </td>
             <td style="font-weight:bold;color:#e0e0e0">Placement</td>
             <td style="color:#aaa;font-size:0.85em">OpenROAD global_placement + detailed_placement</td>
-            <td style="text-align:center;font-size:1.1em">✅</td>
-            <td style="color:#00ff9d;font-size:0.9em">34 components legalized</td>
+            <td style="text-align:center;font-size:1.1em">❌</td>
+            <td style="color:#00ff9d;font-size:0.9em">14 components legalized</td>
         </tr>
         <tr style="background:#0a2a0a;border-left:3px solid #00ff9d">
             <td style="text-align:center;font-weight:bold;color:#888">
@@ -490,7 +490,7 @@
             <td style="font-weight:bold;color:#e0e0e0">Clock Tree Synthesis</td>
             <td style="color:#aaa;font-size:0.85em">OpenROAD TritonCTS clkbuf_16</td>
             <td style="text-align:center;font-size:1.1em">✅</td>
-            <td style="color:#00ff9d;font-size:0.9em">cts.def 11.1 KB</td>
+            <td style="color:#00ff9d;font-size:0.9em">cts.def 5.2 KB</td>
         </tr>
         <tr style="background:#0a2a0a;border-left:3px solid #00ff9d">
             <td style="text-align:center;font-weight:bold;color:#888">
@@ -499,7 +499,7 @@
             <td style="font-weight:bold;color:#e0e0e0">Routing</td>
             <td style="color:#aaa;font-size:0.85em">OpenROAD TritonRoute + PDN (met1/met4)</td>
             <td style="text-align:center;font-size:1.1em">✅</td>
-            <td style="color:#00ff9d;font-size:0.9em">routed.def 49.7 KB</td>
+            <td style="color:#00ff9d;font-size:0.9em">routed.def 33.7 KB</td>
         </tr>
         <tr style="background:#0a2a0a;border-left:3px solid #00ff9d">
             <td style="text-align:center;font-weight:bold;color:#888">
@@ -508,7 +508,7 @@
             <td style="font-weight:bold;color:#e0e0e0">GDS Generation</td>
             <td style="color:#aaa;font-size:0.85em">Magic write_gds from routed DEF</td>
             <td style="text-align:center;font-size:1.1em">✅</td>
-            <td style="color:#00ff9d;font-size:0.9em">adder_8bit.gds 152.4 KB</td>
+            <td style="color:#00ff9d;font-size:0.9em">counter_4bit.gds 135.4 KB</td>
         </tr>
         <tr style="background:#0a2a0a;border-left:3px solid #00ff9d">
             <td style="text-align:center;font-weight:bold;color:#888">
@@ -517,7 +517,7 @@
             <td style="font-weight:bold;color:#e0e0e0">DRC / LVS Sign-off</td>
             <td style="color:#aaa;font-size:0.85em">Magic DRC + Netgen SPICE vs SPICE LVS</td>
             <td style="text-align:center;font-size:1.1em">✅</td>
-            <td style="color:#00ff9d;font-size:0.9em">DRC=0 violations | LVS=MATCHED (480 transistors)</td>
+            <td style="color:#00ff9d;font-size:0.9em">DRC=0 | LVS=MATCHED (17 transistors)</td>
         </tr>
         </tbody>
       </table>
@@ -535,24 +535,20 @@
         <div>
           <div style="color:var(--dim);font-size:0.8rem;
                margin-bottom:8px;letter-spacing:1px">
-            adder_8bit.v — Design under test
+            counter_4bit.v — Design under test
           </div>
-          <div class="code-block">module adder_8bit (
+          <div class="code-block">module counter_4bit(
     input clk,
-    input reset_n,
-    input [7:0] a,
-    input [7:0] b,
-    output reg [8:0] sum
+    input rst,
+    input en,
+    output reg [3:0] count
 );
-
-always @(posedge clk) begin
-    if (!reset_n) begin
-        sum <= 9'b0;
-    end else begin
-        sum <= a + b;
+    always @(posedge clk) begin
+        if (rst)
+            count <= 4'b0;
+        else if (en)
+            count <= count + 1;
     end
-end
-
 endmodule
 </div>
         </div>
@@ -563,36 +559,24 @@ endmodule
           </div>
           <table>
             <tr>
-              <td style="color:var(--dim)">Type</td>
-              <td>Synchronous ripple-carry adder</td>
+              <td style="color:var(--dim)">Module</td>
+              <td>counter_4bit</td>
             </tr>
             <tr>
-              <td style="color:var(--dim)">Input A</td>
-              <td>8-bit unsigned [7:0]</td>
+              <td style="color:var(--dim)">Results Dir</td>
+              <td>C:\tools\OpenLane\runs\counter_4bit_20260418_221648</td>
             </tr>
             <tr>
-              <td style="color:var(--dim)">Input B</td>
-              <td>8-bit unsigned [7:0]</td>
+              <td style="color:var(--dim)">RTL Source</td>
+              <td>C:\tools\OpenLane\designs\counter_4bit\counter_4bit.v</td>
             </tr>
             <tr>
-              <td style="color:var(--dim)">Output</td>
-              <td>9-bit sum [8:0] (includes carry)</td>
+              <td style="color:var(--dim)">Testbench</td>
+              <td>C:\tools\OpenLane\designs\counter_4bit\counter_4bit_tb.v</td>
             </tr>
             <tr>
-              <td style="color:var(--dim)">Clock</td>
-              <td>Positive edge triggered</td>
-            </tr>
-            <tr>
-              <td style="color:var(--dim)">Reset</td>
-              <td>Active-low synchronous</td>
-            </tr>
-            <tr>
-              <td style="color:var(--dim)">Latency</td>
-              <td>1 clock cycle</td>
-            </tr>
-            <tr>
-              <td style="color:var(--dim)">Target freq</td>
-              <td>100 MHz (10ns period)</td>
+              <td style="color:var(--dim)">Mapped Netlist</td>
+              <td>C:\tools\OpenLane\runs\counter_4bit_20260418_221648\counter_4bit_sky130.v</td>
             </tr>
           </table>
         </div>
@@ -610,14 +594,14 @@ endmodule
       <div class="two-col">
         <div>
           <div style="margin-bottom:16px">
-            <span class="badge badge-fail">
-              TESTS FAILED
+            <span class="badge badge-pass">
+              ALL TESTS PASSED
             </span>
           </div>
           <table>
             <tr>
               <td style="color:var(--dim)">Tests passed</td>
-              <td style="color:var(--green)">0</td>
+              <td style="color:var(--green)">6</td>
             </tr>
             <tr>
               <td style="color:var(--dim)">Tests failed</td>
@@ -631,7 +615,7 @@ endmodule
             </tr>
             <tr>
               <td style="color:var(--dim)">VCD size</td>
-              <td>1.2 KB (real waveform)</td>
+              <td>0.9 KB (real waveform)</td>
             </tr>
             <tr>
               <td style="color:var(--dim)">Clock timing</td>
@@ -647,54 +631,41 @@ endmodule
           <table>
             <thead>
               <tr>
-                <th>Test</th>
-                <th>A</th>
-                <th>B</th>
-                <th>Expected</th>
+                <th>Idx</th>
+                <th colspan="3">Simulation Log Line</th>
                 <th>Result</th>
               </tr>
             </thead>
             <tbody>
+              
               <tr>
                 <td>1</td>
-                <td>5</td>
-                <td>3</td>
-                <td>8</td>
+                <td colspan="3" style="font-family:'Share Tech Mono',monospace;font-size:0.78rem">PASS reset_holds_zero: count=0</td>
                 <td><span class="badge badge-pass">PASS</span></td>
               </tr>
               <tr>
                 <td>2</td>
-                <td>100</td>
-                <td>50</td>
-                <td>150</td>
+                <td colspan="3" style="font-family:'Share Tech Mono',monospace;font-size:0.78rem">PASS increment_1: count=1</td>
                 <td><span class="badge badge-pass">PASS</span></td>
               </tr>
               <tr>
                 <td>3</td>
-                <td>255</td>
-                <td>1</td>
-                <td>256</td>
+                <td colspan="3" style="font-family:'Share Tech Mono',monospace;font-size:0.78rem">PASS increment_2: count=2</td>
                 <td><span class="badge badge-pass">PASS</span></td>
               </tr>
               <tr>
                 <td>4</td>
-                <td>128</td>
-                <td>128</td>
-                <td>256</td>
+                <td colspan="3" style="font-family:'Share Tech Mono',monospace;font-size:0.78rem">PASS increment_3: count=3</td>
                 <td><span class="badge badge-pass">PASS</span></td>
               </tr>
               <tr>
                 <td>5</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
+                <td colspan="3" style="font-family:'Share Tech Mono',monospace;font-size:0.78rem">PASS increment_4: count=4</td>
                 <td><span class="badge badge-pass">PASS</span></td>
               </tr>
               <tr>
                 <td>6</td>
-                <td>255</td>
-                <td>255</td>
-                <td>510</td>
+                <td colspan="3" style="font-family:'Share Tech Mono',monospace;font-size:0.78rem">PASS ld_when_disabled: count=4</td>
                 <td><span class="badge badge-pass">PASS</span></td>
               </tr>
             </tbody>
@@ -715,7 +686,7 @@ endmodule
         <div>
           <div style="color:var(--dim);font-size:0.8rem;
                margin-bottom:12px;letter-spacing:1px">
-            Cell distribution — 34 total cells
+            Cell distribution — 14 total cells
           </div>
           <table>
             <thead>
@@ -728,31 +699,31 @@ endmodule
             <tbody>
               
         <tr>
-            <td><code style="color:#00ff9d">xnor2_1</code></td>
-            <td style="text-align:center">13</td>
+            <td><code style="color:#00ff9d">dfxtp_1</code></td>
+            <td style="text-align:center">4</td>
             <td>
                 <div style="background:#00ff9d;height:8px;
-                     width:195px;border-radius:4px"></div>
+                     width:60px;border-radius:4px"></div>
             </td>
         </tr>
         <tr>
-            <td><code style="color:#00d4ff">dfxtp_1</code></td>
-            <td style="text-align:center">9</td>
+            <td><code style="color:#00d4ff">nor2_1</code></td>
+            <td style="text-align:center">2</td>
             <td>
                 <div style="background:#00d4ff;height:8px;
-                     width:135px;border-radius:4px"></div>
+                     width:30px;border-radius:4px"></div>
             </td>
         </tr>
         <tr>
-            <td><code style="color:#ff6b35">maj3_1</code></td>
-            <td style="text-align:center">6</td>
+            <td><code style="color:#ff6b35">a21oi_1</code></td>
+            <td style="text-align:center">2</td>
             <td>
                 <div style="background:#ff6b35;height:8px;
-                     width:90px;border-radius:4px"></div>
+                     width:30px;border-radius:4px"></div>
             </td>
         </tr>
         <tr>
-            <td><code style="color:#ffd700">nand2_1</code></td>
+            <td><code style="color:#ffd700">nor3_1</code></td>
             <td style="text-align:center">2</td>
             <td>
                 <div style="background:#ffd700;height:8px;
@@ -760,7 +731,7 @@ endmodule
             </td>
         </tr>
         <tr>
-            <td><code style="color:#ff69b4">nor2_1</code></td>
+            <td><code style="color:#ff69b4">and3_1</code></td>
             <td style="text-align:center">1</td>
             <td>
                 <div style="background:#ff69b4;height:8px;
@@ -768,7 +739,7 @@ endmodule
             </td>
         </tr>
         <tr>
-            <td><code style="color:#98ff98">lpflow_isobufsrc_1</code></td>
+            <td><code style="color:#98ff98">and4_1</code></td>
             <td style="text-align:center">1</td>
             <td>
                 <div style="background:#98ff98;height:8px;
@@ -776,7 +747,7 @@ endmodule
             </td>
         </tr>
         <tr>
-            <td><code style="color:#87ceeb">o21ai_0</code></td>
+            <td><code style="color:#87ceeb">xnor2_1</code></td>
             <td style="text-align:center">1</td>
             <td>
                 <div style="background:#87ceeb;height:8px;
@@ -784,7 +755,7 @@ endmodule
             </td>
         </tr>
         <tr>
-            <td><code style="color:#dda0dd">xor2_1</code></td>
+            <td><code style="color:#dda0dd">o21a_1</code></td>
             <td style="text-align:center">1</td>
             <td>
                 <div style="background:#dda0dd;height:8px;
@@ -806,7 +777,7 @@ endmodule
             </tr>
             <tr>
               <td style="color:var(--dim)">Command</td>
-              <td><code>synth_sky130 -top adder_8bit</code></td>
+              <td><code>synth_sky130 -top counter_4bit</code></td>
             </tr>
             <tr>
               <td style="color:var(--dim)">Technology</td>
@@ -826,7 +797,7 @@ endmodule
             </tr>
             <tr>
               <td style="color:var(--dim)">Output size</td>
-              <td>3.4 KB mapped netlist</td>
+              <td>1.6 KB mapped netlist</td>
             </tr>
             <tr>
               <td style="color:var(--dim)">Generic cells</td>
@@ -836,11 +807,11 @@ endmodule
           <div style="margin-top:16px">
             <div class="progress-bar">
               <div class="progress-fill"
-                   style="width:51.0%">
+                   style="width:21.0%">
               </div>
             </div>
             <div style="font-size:0.75rem;color:var(--dim);margin-top:4px">
-              34 cells synthesized
+              14 cells synthesized
             </div>
           </div>
         </div>
@@ -873,25 +844,25 @@ endmodule
             <tbody>
               <tr>
                 <td>Floorplan</td>
-                <td>10.5 KB</td>
+                <td>4.7 KB</td>
                 <td>80×60μm die</td>
                 <td><span class="badge badge-pass">REAL</span></td>
               </tr>
               <tr>
                 <td>Placement</td>
-                <td>10.5 KB</td>
-                <td>34 components</td>
+                <td>4.7 KB</td>
+                <td>14 components</td>
                 <td><span class="badge badge-pass">REAL</span></td>
               </tr>
               <tr>
                 <td>CTS</td>
-                <td>11.1 KB</td>
-                <td>38 w/buffers</td>
+                <td>5.2 KB</td>
+                <td>17 w/buffers</td>
                 <td><span class="badge badge-pass">REAL</span></td>
               </tr>
               <tr>
                 <td>Routing</td>
-                <td>49.7 KB</td>
+                <td>33.7 KB</td>
                 <td>2 nets routed</td>
                 <td>
                   <span class="badge badge-pass">
@@ -912,19 +883,19 @@ endmodule
               <div>
                 <div style="font-size:0.75rem;color:var(--dim)">routed.def</div>
                 <div style="color:var(--green);font-family:'Share Tech Mono',monospace">
-                  49.7 KB
+                  33.7 KB
                 </div>
               </div>
               <div style="color:var(--dim)">vs</div>
               <div>
                 <div style="font-size:0.75rem;color:var(--dim)">cts.def</div>
                 <div style="color:var(--blue);font-family:'Share Tech Mono',monospace">
-                  11.1 KB
+                  5.2 KB
                 </div>
               </div>
               <div>
                 <span class="badge badge-pass">
-                  DIFFERENT — REAL ROUTING
+                  DIFFERENT + SIZE OK — REAL ROUTING
                 </span>
               </div>
             </div>
@@ -994,11 +965,11 @@ endmodule
             </tr>
             <tr>
               <td style="color:var(--dim)">Output</td>
-              <td>adder_8bit.gds</td>
+              <td>counter_4bit.gds</td>
             </tr>
             <tr>
               <td style="color:var(--dim)">GDS size</td>
-              <td style="color:var(--green)">152.4 KB</td>
+              <td style="color:var(--green)">135.4 KB</td>
             </tr>
             <tr>
               <td style="color:var(--dim)">Status</td>
@@ -1015,7 +986,7 @@ endmodule
             <tr>
               <td style="color:var(--dim)">Result</td>
               <td style="color:var(--green)">
-                152.4 KB (✅ PASSES threshold)
+                135.4 KB (✅ PASSES threshold)
               </td>
             </tr>
           </table>
@@ -1031,15 +1002,15 @@ endmodule
             <div style="font-size:3rem;font-weight:700;
                  color:var(--green);
                  font-family:'Share Tech Mono',monospace">
-              152.4 KB
+              135.4 KB
             </div>
             <div style="color:var(--dim);font-size:0.8rem;margin-top:8px">
               178 bytes = stub (April 1 failure)<br>
-              152.4 KB = real layout ✅
+              135.4 KB = real layout ✅
             </div>
             <div class="progress-bar" style="margin-top:16px">
               <div class="progress-fill"
-                   style="width:76.2%">
+                   style="width:67.7%">
               </div>
             </div>
             <div style="font-size:0.7rem;color:var(--dim);margin-top:4px">
@@ -1077,7 +1048,7 @@ endmodule
             <span class="badge badge-pass">PASS</span>
           </div>
           <div style="color:var(--dim);font-size:0.75rem;margin-top:8px">
-            Magic DRC on real 152.4 KB GDS
+            Magic DRC on real 135.4 KB GDS
           </div>
         </div>
 
@@ -1094,7 +1065,7 @@ endmodule
             ✓
           </div>
           <div style="color:var(--dim);font-size:0.8rem">
-            MATCHED
+            MATCHED (WARN)
           </div>
           <div style="margin-top:12px">
             <span class="badge badge-pass">
@@ -1102,7 +1073,7 @@ endmodule
             </span>
           </div>
           <div style="color:var(--dim);font-size:0.75rem;margin-top:8px">
-            480 transistors extracted<br>
+            17 transistors extracted<br>
             Netgen SPICE vs SPICE
           </div>
         </div>
@@ -1115,9 +1086,9 @@ endmodule
           <div style="font-size:0.75rem;color:var(--dim);
                letter-spacing:1px;margin-bottom:12px">TIMING</div>
           <div style="font-size:2.5rem;font-weight:700;
-               color:var(--green);
+            color:var(--green);
                font-family:'Share Tech Mono',monospace">
-            5.55
+            9.15
           </div>
           <div style="color:var(--dim);font-size:0.8rem">ns slack</div>
           <div style="margin-top:12px">
@@ -1144,10 +1115,10 @@ endmodule
             <div style="color:var(--dim);font-size:0.8rem">Layout (GDS)</div>
             <div style="color:var(--blue);
                  font-family:'Share Tech Mono',monospace;font-size:1.2rem">
-              480 transistors
+              17 transistors
             </div>
             <div style="color:var(--dim);font-size:0.75rem">
-              Magic extraction from 152.4 KB GDS
+              Magic extraction from 135.4 KB GDS
             </div>
           </div>
           <div style="color:var(--dim);font-size:1.5rem;align-self:center">≡</div>
@@ -1155,7 +1126,7 @@ endmodule
             <div style="color:var(--dim);font-size:0.8rem">Schematic (Netlist)</div>
             <div style="color:var(--green);
                  font-family:'Share Tech Mono',monospace;font-size:1.2rem">
-              34 standard cells
+              14 standard cells
             </div>
             <div style="color:var(--dim);font-size:0.75rem">
               Yosys synthesis output
@@ -1193,33 +1164,26 @@ endmodule
             <tbody>
               <tr>
                 <td>pytest -m unit</td>
-                <td>24</td>
-                <td>~4s</td>
-                <td><span class="badge badge-pass">24/24 PASS</span></td>
+                <td>N/A</td>
+                <td>N/A</td>
+                <td><span class="badge badge-warn">NOT EMBEDDED</span></td>
               </tr>
               <tr>
                 <td>pytest -m integration</td>
-                <td>6</td>
-                <td>~35s</td>
-                <td><span class="badge badge-pass">6/6 PASS</span></td>
+                <td>N/A</td>
+                <td>N/A</td>
+                <td><span class="badge badge-warn">NOT EMBEDDED</span></td>
               </tr>
               <tr>
                 <td>pytest -m database</td>
-                <td>5</td>
-                <td>~2s</td>
-                <td><span class="badge badge-pass">4/5 PASS</span></td>
+                <td>N/A</td>
+                <td>N/A</td>
+                <td><span class="badge badge-warn">NOT EMBEDDED</span></td>
               </tr>
               <tr>
-                <td>verify_everything.ps1</td>
-                <td>55</td>
-                <td>~53s</td>
-                <td><span class="badge badge-pass">55/55 PASS</span></td>
-              </tr>
-              <tr>
-                <td>verify_integration.ps1</td>
-                <td>23</td>
-                <td>~10s</td>
-                <td><span class="badge badge-pass">23/23 PASS</span></td>
+                <td colspan="4" style="color:var(--dim)">
+                  This report now avoids hardcoded test pass counts. Run pytest directly for current status.
+                </td>
               </tr>
             </tbody>
           </table>
@@ -1410,7 +1374,7 @@ endmodule
           <tr>
             <td>GDS output</td>
             <td>Real layout</td>
-            <td style="color:var(--green)">Real layout (152.4 KB)</td>
+            <td style="color:var(--green)">Real layout (135.4 KB)</td>
             <td><span class="badge badge-pass">Equivalent</span></td>
           </tr>
           <tr>
@@ -1438,7 +1402,7 @@ endmodule
       RTL-Gen AI — WPI ECE 574 Style IC Design Flow Report
     </div>
     <div style="font-family:'Share Tech Mono',monospace;font-size:0.75rem">
-      Generated: 2026-04-07 08:31:22 &nbsp;|&nbsp;
+      Generated: 2026-04-22 22:37:11 &nbsp;|&nbsp;
       All metrics from real EDA tool execution &nbsp;|&nbsp;
       No synthetic data &nbsp;|&nbsp;
       SKY130A 130nm &nbsp;|&nbsp;

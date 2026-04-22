@@ -1,14 +1,32 @@
 version: '3.8'
 
 services:
-  rtl-gen:
+  app:
     build: .
     ports:
       - "8501:8501"
     environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
       - GROQ_API_KEY=${GROQ_API_KEY}
-      - ENABLE_PERFORMANCE_MONITORING=True
-      - DEBUG_MODE=False
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/rtlgenai
     volumes:
-      - ./cache:/app/cache
-      - ./outputs:/app/outputs
+      - C:\tools\OpenLane:/openroad
+      - C:\pdk:/pdk
+    depends_on:
+      - db
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_DB=rtlgenai
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:

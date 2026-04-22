@@ -8,9 +8,59 @@ import json
 import subprocess
 import re
 import base64
+import logging
 from pathlib import Path
 from datetime import datetime
-from full_flow import RTLtoGDSIIFlow, RealMetricsParser, OPENLANE_HOST
+from full_flow import (
+    RTLtoGDSIIFlow,
+    RealMetricsParser,
+    OPENLANE_HOST,
+    analyze_lvs_report,
+)
+
+log = logging.getLogger(__name__)
+
+# Database layer (SQLite — zero config)
+DB_INIT_ERROR = None
+try:
+    from db import (
+        save_run_metrics as _save_run_metrics,
+        get_design_history as _get_design_history,
+        init_db,
+    )
+    init_db()
+    DB_AVAILABLE = True
+except ImportError as e:
+    DB_AVAILABLE = False
+    DB_INIT_ERROR = f"Database module import failed: {e}"
+except Exception as e:
+    DB_AVAILABLE = False
+    DB_INIT_ERROR = f"Database initialization failed: {e}"
+
+
+def save_run_metrics(*a, **kw):
+    if not DB_AVAILABLE:
+        log.debug("Skipping DB write: %s", DB_INIT_ERROR)
+        return None
+    return _save_run_metrics(*a, **kw)
+
+
+def get_design_history(*a, **kw):
+    if not DB_AVAILABLE:
+        return []
+    return _get_design_history(*a, **kw)
+
+# Visualization module (GDS, waveform, schematic)
+VIZ_IMPORT_ERROR = None
+try:
+    from visualizer import make_gds_figure, make_waveform_figure, make_schematic_figure
+    VIZ_AVAILABLE = True
+except ImportError as e:
+    VIZ_AVAILABLE = False
+    VIZ_IMPORT_ERROR = f"Visualizer import failed: {e}"
+except Exception as e:
+    VIZ_AVAILABLE = False
+    VIZ_IMPORT_ERROR = f"Visualizer initialization failed: {e}"
 
 # Set page config FIRST
 st.set_page_config(
@@ -20,11 +70,13 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-RESULTS_DIR   = Path(r"C:\tools\OpenLane\results")
-DESIGNS_DIR   = Path(r"C:\tools\OpenLane\designs\adder_8bit")
-WORK_DIR      = Path(r"C:\tools\OpenLane")
-PDK_DIR       = Path(r"C:\pdk")
-DOCKER_IMAGE  = "efabless/openlane:latest"
+import os
+IS_CLOUD     = os.getenv("CODESPACE_NAME") is not None
+WORK_DIR     = Path("/workspaces/rtl-gen-ai/openroad") if IS_CLOUD else Path(r"C:\tools\OpenLane")
+PDK_DIR      = Path("/workspaces/rtl-gen-ai/pdk")       if IS_CLOUD else Path(r"C:\pdk")
+RESULTS_DIR  = WORK_DIR / "results"
+DESIGNS_DIR  = WORK_DIR / "designs" / "adder_8bit"
+DOCKER_IMAGE = "efabless/openlane:latest"
 
 
 # ============================================================
@@ -34,14 +86,14 @@ DOCKER_IMAGE  = "efabless/openlane:latest"
 def read_file_safe(path, default="File not found"):
     try:
         return Path(path).read_text(errors="ignore")
-    except:
+    except Exception:
         return default
 
 
 def file_kb(path):
     try:
         return round(Path(path).stat().st_size / 1024, 1)
-    except:
+    except Exception:
         return 0
 
 
@@ -50,10 +102,37 @@ def file_exists_real(path, min_bytes=100):
     return p.exists() and p.stat().st_size >= min_bytes
 
 
-def parse_synthesis_cells():
+def get_active_results_dir() -> Path:
+    """Resolve the currently active run directory for UI pages."""
+    session_path = st.session_state.get("active_results_dir")
+    if session_path:
+        p = Path(session_path)
+        if p.exists():
+            return p
+
+    runs_index = WORK_DIR / "runs" / "index.json"
+    if runs_index.exists():
+        try:
+            runs = json.loads(runs_index.read_text(errors="ignore"))
+            if runs:
+                latest = sorted(
+                    runs,
+                    key=lambda x: x.get("timestamp", "")
+                )[-1]
+                latest_dir = Path(latest.get("results_dir", ""))
+                if latest_dir.exists():
+                    return latest_dir
+        except (json.JSONDecodeError, OSError, TypeError, ValueError) as e:
+            log.warning("Failed to read runs index %s: %s", runs_index, e)
+
+    return RESULTS_DIR
+
+
+def parse_synthesis_cells(results_dir: Path = None):
     """Parse real cell types from synthesized netlist"""
     from collections import Counter
-    netlist = RESULTS_DIR / "adder_8bit_sky130.v"
+    results_dir = results_dir or get_active_results_dir()
+    netlist = next(results_dir.glob("*_sky130.v"), results_dir / "adder_8bit_sky130.v")
     if not netlist.exists():
         return {}, 0
     content = netlist.read_text(errors="ignore")
@@ -62,25 +141,33 @@ def parse_synthesis_cells():
     return dict(counts.most_common(15)), sum(counts.values())
 
 
-def parse_lvs_stats():
+def parse_lvs_stats(results_dir: Path = None):
     """Parse real LVS statistics"""
-    lvs = RESULTS_DIR / "lvs_report_final.txt"
+    results_dir = results_dir or get_active_results_dir()
+    lvs = results_dir / "lvs_report_final.txt"
     if not lvs.exists():
         return {}
     content = lvs.read_text(errors="ignore")
+    analysis = analyze_lvs_report(content)
     dev_match = re.search(r'Number of devices:\s+(\d+)', content)
     net_match = re.search(r'Number of nets:\s+(\d+)', content)
-    matched = "equivalent" in content or "match uniquely" in content
+    matched = analysis.get("has_match", False) and not analysis.get("has_mismatch", False)
+    if analysis.get("has_pin_ambiguity_warning"):
+        matched = True
+
     return {
         "matched": matched,
         "transistors": int(dev_match.group(1)) if dev_match else 0,
-        "nets": int(net_match.group(1)) if net_match else 0
+        "nets": int(net_match.group(1)) if net_match else 0,
+        "reason_code": analysis.get("reason_code"),
+        "has_warning": analysis.get("has_pin_ambiguity_warning", False),
     }
 
 
-def parse_timing_stats():
+def parse_timing_stats(results_dir: Path = None):
     """Parse real timing from STA report"""
-    sta = RESULTS_DIR / "sta_final.txt"
+    results_dir = results_dir or get_active_results_dir()
+    sta = results_dir / "sta_final.txt"
     if not sta.exists():
         return {}
     content = sta.read_text(errors="ignore")
@@ -120,6 +207,8 @@ def parse_def_stats(def_file):
 # ============================================================
 
 def show_home():
+    results_dir = get_active_results_dir()
+
     st.markdown("""
     <div style="background:linear-gradient(135deg,#0a0a1a,#0a1a0a);
          border:1px solid #00ff9d;border-radius:12px;padding:30px;
@@ -134,15 +223,16 @@ def show_home():
     """, unsafe_allow_html=True)
 
     # Quick status
-    gds_real   = file_exists_real(RESULTS_DIR / "adder_8bit.gds", 50000)
-    lvs_data   = parse_lvs_stats()
-    timing     = parse_timing_stats()
-    cell_types, total_cells = parse_synthesis_cells()
+    gds_file = next(results_dir.glob("*.gds"), results_dir / "adder_8bit.gds")
+    gds_real   = file_exists_real(gds_file, 50000)
+    lvs_data   = parse_lvs_stats(results_dir)
+    timing     = parse_timing_stats(results_dir)
+    cell_types, total_cells = parse_synthesis_cells(results_dir)
 
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
         st.metric("GDS Size",
-                  f"{file_kb(RESULTS_DIR/'adder_8bit.gds')} KB",
+                  f"{file_kb(gds_file)} KB",
                   delta="Real layout" if gds_real else "Missing")
     with col2:
         st.metric("Std Cells", total_cells,
@@ -181,11 +271,18 @@ def show_home():
                     clock_period = 10.0
                 )
                 summary = flow.run_full_flow()
+                st.session_state["active_results_dir"] = summary.get(
+                    "results_dir", str(results_dir)
+                )
                 if summary["tapeout_ready"]:
                     st.success(
                         f"✅ TAPE-OUT READY in "
                         f"{summary['elapsed_sec']}s"
                     )
+                    # Persist to DB
+                    if DB_AVAILABLE:
+                        parser = RealMetricsParser(summary.get("results_dir", str(results_dir)))
+                        save_run_metrics("adder_8bit", parser.get_all_metrics())
                 else:
                     st.error("❌ Flow incomplete — check logs")
                 st.json(summary["steps"])
@@ -203,6 +300,9 @@ def show_home():
                     clock_period = 10.0
                 )
                 summary = flow.run_full_flow()
+                st.session_state["active_results_dir"] = summary.get(
+                    "results_dir", str(results_dir)
+                )
                 if summary["tapeout_ready"]:
                     st.success(
                         f"✅ counter_4bit TAPE-OUT READY in "
@@ -218,6 +318,7 @@ def show_home():
 # ============================================================
 
 def show_simulation():
+    results_dir = get_active_results_dir()
     st.header("Step 1 — RTL Source & Simulation")
 
     tab1, tab2, tab3 = st.tabs([
@@ -249,9 +350,9 @@ def show_simulation():
         st.subheader("Simulation Results — iverilog + vvp")
 
         sim_log = read_file_safe(
-            RESULTS_DIR / "simulation.log", ""
+            results_dir / "simulation.log", ""
         )
-        vcd_size = file_kb(RESULTS_DIR / "trace.vcd")
+        vcd_size = file_kb(results_dir / "trace.vcd")
 
         if sim_log:
             all_passed = "ALL_TESTS_PASSED" in sim_log
@@ -299,7 +400,7 @@ def show_simulation():
             f"`C:\\tools\\OpenLane\\results\\trace.vcd`"
         )
 
-        vcd_path = RESULTS_DIR / "trace.vcd"
+        vcd_path = results_dir / "trace.vcd"
         if vcd_path.exists():
             size = vcd_path.stat().st_size
             st.success(
@@ -330,10 +431,18 @@ def show_simulation():
 # ============================================================
 
 def show_synthesis():
+    results_dir = get_active_results_dir()
     st.header("Step 2 — RTL Synthesis (Yosys synth_sky130)")
 
-    netlist_path = RESULTS_DIR / "adder_8bit_sky130.v"
-    cell_types, total_cells = parse_synthesis_cells()
+    netlist_path = next(results_dir.glob("*_sky130.v"), results_dir / "adder_8bit_sky130.v")
+    if not netlist_path.exists():
+        st.warning(
+            "No synthesis results found for the active run. "
+            "Run the pipeline from AI Verilog Generator or Home page first."
+        )
+        return
+
+    cell_types, total_cells = parse_synthesis_cells(results_dir)
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -432,7 +541,7 @@ def show_synthesis():
     with tab3:
         st.subheader("Yosys Synthesis Log")
         synth_log = read_file_safe(
-            RESULTS_DIR / "synthesis.log", ""
+            results_dir / "synthesis.log", ""
         )
         if synth_log:
             with st.expander("Full Synthesis Log"):
@@ -446,13 +555,21 @@ def show_synthesis():
 # ============================================================
 
 def show_physical_design():
+    results_dir = get_active_results_dir()
     st.header("Steps 3-8 — Physical Design (OpenROAD)")
 
+    if not (results_dir / "floorplan.def").exists():
+        st.warning(
+            "No physical-design outputs found for the active run. "
+            "Run the pipeline first."
+        )
+        return
+
     # File size comparison — silent failure detection
-    routed_kb  = file_kb(RESULTS_DIR / "routed.def")
-    cts_kb     = file_kb(RESULTS_DIR / "cts.def")
-    placed_kb  = file_kb(RESULTS_DIR / "placed.def")
-    floor_kb   = file_kb(RESULTS_DIR / "floorplan.def")
+    routed_kb  = file_kb(results_dir / "routed.def")
+    cts_kb     = file_kb(results_dir / "cts.def")
+    placed_kb  = file_kb(results_dir / "placed.def")
+    floor_kb   = file_kb(results_dir / "floorplan.def")
 
     routing_real = routed_kb > cts_kb and routed_kb > 6
 
@@ -490,9 +607,14 @@ def show_physical_design():
 # ============================================================
 
 def show_gds_layout():
+    results_dir = get_active_results_dir()
     st.header("Step 9 — GDS Generation (Magic)")
 
-    gds_path = RESULTS_DIR / "adder_8bit.gds"
+    gds_path = next(results_dir.glob("*.gds"), results_dir / "adder_8bit.gds")
+    if not gds_path.exists():
+        st.warning("No GDS file found for the active run. Run the pipeline first.")
+        return
+
     gds_kb   = file_kb(gds_path)
     gds_real = gds_kb > 50
 
@@ -540,11 +662,17 @@ def show_gds_layout():
 # ============================================================
 
 def show_signoff():
+    results_dir = get_active_results_dir()
     st.header("Step 10 — Sign-off (DRC + LVS + STA)")
 
-    lvs_data = parse_lvs_stats()
-    timing   = parse_timing_stats()
-    gds_kb   = file_kb(RESULTS_DIR / "adder_8bit.gds")
+    if not (results_dir / "lvs_report_final.txt").exists() and not (results_dir / "sta_final.txt").exists():
+        st.warning("No sign-off reports found for the active run. Run the pipeline first.")
+        return
+
+    lvs_data = parse_lvs_stats(results_dir)
+    timing   = parse_timing_stats(results_dir)
+    gds_file = next(results_dir.glob("*.gds"), results_dir / "adder_8bit.gds")
+    gds_kb   = file_kb(gds_file)
     gds_real = gds_kb > 50
 
     col1, col2, col3 = st.columns(3)
@@ -580,7 +708,14 @@ def show_signoff():
 # ============================================================
 
 def show_downloads():
+    results_dir = get_active_results_dir()
     st.header("Download Center — All Real EDA Outputs")
+
+    if not results_dir.exists():
+        st.warning("No active run directory found. Run the pipeline first.")
+        return
+
+    design_name = next((p.stem for p in results_dir.glob("*.gds")), "adder_8bit")
 
     st.info(
         "All files below are real outputs from professional EDA tools. "
@@ -589,21 +724,21 @@ def show_downloads():
 
     files = {
         "🏆 Primary Deliverables": {
-            "adder_8bit.gds": (RESULTS_DIR / "adder_8bit.gds", "GDSII layout"),
-            "adder_8bit_sky130.v": (RESULTS_DIR / "adder_8bit_sky130.v", "Gate-level netlist"),
-            "lvs_report_final.txt": (RESULTS_DIR / "lvs_report_final.txt", "LVS verification"),
-            "sta_final.txt": (RESULTS_DIR / "sta_final.txt", "Timing analysis"),
+            f"{design_name}.gds": (results_dir / f"{design_name}.gds", "GDSII layout"),
+            f"{design_name}_sky130.v": (results_dir / f"{design_name}_sky130.v", "Gate-level netlist"),
+            "lvs_report_final.txt": (results_dir / "lvs_report_final.txt", "LVS verification"),
+            "sta_final.txt": (results_dir / "sta_final.txt", "Timing analysis"),
         },
         "📐 Physical Design": {
-            "routed.def": (RESULTS_DIR / "routed.def", "Routed DEF"),
-            "placed.def": (RESULTS_DIR / "placed.def", "Placement DEF"),
-            "cts.def": (RESULTS_DIR / "cts.def", "CTS DEF"),
-            "floorplan.def": (RESULTS_DIR / "floorplan.def", "Floorplan DEF"),
+            "routed.def": (results_dir / "routed.def", "Routed DEF"),
+            "placed.def": (results_dir / "placed.def", "Placement DEF"),
+            "cts.def": (results_dir / "cts.def", "CTS DEF"),
+            "floorplan.def": (results_dir / "floorplan.def", "Floorplan DEF"),
         },
         "📊 Simulation": {
-            "trace.vcd": (RESULTS_DIR / "trace.vcd", "Waveform file"),
-            "adder_8bit_extracted.spice": (RESULTS_DIR / "adder_8bit_extracted.spice", "LVS extraction"),
-            "adder_8bit.sdf": (RESULTS_DIR / "adder_8bit.sdf", "Timing SDF"),
+            "trace.vcd": (results_dir / "trace.vcd", "Waveform file"),
+            f"{design_name}_extracted.spice": (results_dir / f"{design_name}_extracted.spice", "LVS extraction"),
+            f"{design_name}.sdf": (results_dir / f"{design_name}.sdf", "Timing SDF"),
         },
     }
 
@@ -635,14 +770,20 @@ def show_downloads():
 # ============================================================
 
 def show_status():
+    results_dir = get_active_results_dir()
     st.header("Pipeline Status — Real Tool Verification")
 
-    gds_kb   = file_kb(RESULTS_DIR / "adder_8bit.gds")
-    routed_kb = file_kb(RESULTS_DIR / "routed.def")
-    cts_kb   = file_kb(RESULTS_DIR / "cts.def")
-    _, total_cells = parse_synthesis_cells()
-    lvs      = parse_lvs_stats()
-    timing   = parse_timing_stats()
+    if not results_dir.exists():
+        st.warning("No active run found. Generate and run a design first.")
+        return
+
+    gds_file = next(results_dir.glob("*.gds"), results_dir / "adder_8bit.gds")
+    gds_kb   = file_kb(gds_file)
+    routed_kb = file_kb(results_dir / "routed.def")
+    cts_kb   = file_kb(results_dir / "cts.def")
+    _, total_cells = parse_synthesis_cells(results_dir)
+    lvs      = parse_lvs_stats(results_dir)
+    timing   = parse_timing_stats(results_dir)
 
     col1, col2, col3 = st.columns(3)
     with col1:
@@ -661,7 +802,7 @@ def show_status():
         ("Netlist has Sky130 cells", total_cells > 0),
         ("LVS MATCHED", lvs.get("matched", False)),
         ("Timing MET", timing.get("met", False)),
-        ("Waveform generated", file_exists_real(RESULTS_DIR / "trace.vcd", 500)),
+        ("Waveform generated", file_exists_real(results_dir / "trace.vcd", 500)),
     ]
 
     pass_count = 0
@@ -692,7 +833,10 @@ def page_generate_design():
 
     # Import generator
     try:
-        from verilog_generator import generate_and_validate
+        from verilog_generator import (
+            generate_and_validate,
+            validate_testbench_has_real_checks,
+        )
         generator_available = True
     except ImportError as e:
         generator_available = False
@@ -702,16 +846,9 @@ def page_generate_design():
     col1, col2 = st.columns(2)
     with col1:
         provider = st.selectbox(
-            "AI Provider",
-            ["opencode", "groq"],
-            index=1,
-            help=(
-                "**opencode** — Local AI agent (unlimited tokens)\n\n"
-                "Setup: opencode serve --port 8000\n\n"
-                "**groq** — Fast cloud inference (100K tokens/day free)\n\n"
-                "⚠️ Free tier limit: If exceeded, upgrade to Dev Tier:\n"
-                "https://console.groq.com/settings/billing"
-            )
+            "🧠 Select LLM Provider",
+            ["gemini", "opencode", "groq", "nvidia"],
+            help="gemini (1.5 Flash - Best Output), opencode (big-pickle - Local unlimited), groq (Llama-3 - Cloud limit)"
         )
     with col2:
         max_retries = st.slider(
@@ -833,21 +970,22 @@ def page_generate_design():
                     f"3. **Use your own API key** — Set GROQ_API_KEY env var with a private key\n\n"
                     f"Details: {error_msg}"
                 )
-            elif provider == "opencode":
+            elif provider == "gemini":
+                st.info(
+                    "**gemini** (Gemini 2.0 Flash) - HIGH QUALITY, 15 RPM Free Tier ✨ RECOMMENDED\n\n"
+                )
+            elif provider == "opencode" and ("reachable" in error_msg.lower() or "connection" in error_msg.lower()):
                 st.error(
                     f"❌ OpenCode.ai API Error\n\n"
-                    f"The OpenCode.ai server is running but the API isn't responding correctly.\n"
+                    f"The OpenCode ACP server is not responding correctly.\n"
                     f"This usually happens during server startup.\n\n"
                     f"**Quick Fix (Wait + Retry):**\n"
-                    f"1. Wait 30-60 seconds for OpenCode to fully initialize\n"
+                    f"1. Wait 15-30 seconds for OpenCode to fully initialize\n"
                     f"2. Click the Generate button again\n\n"
-                    f"**If still failing:**\n"
-                    f"1. Kill the OpenCode terminal (Ctrl+C)\n"
-                    f"2. Restart: ```bash\nopencode serve --port 8000\n```\n"
-                    f"3. Wait for 'listening on http://127.0.0.1:8000' message\n"
-                    f"4. Try generating again\n\n"
-                    f"**Verify installation:**\n"
-                    f"```bash\npip install -U opencode-ai\n```\n\n"
+                    f"**Manual Start (in a new terminal):**\n"
+                    f"```bash\n"
+                    f"opencode acp --port 4096\n"
+                    f"```\n\n"
                     f"**Technical error:**\n"
                     f"{error_msg}"
                 )
@@ -867,6 +1005,19 @@ def page_generate_design():
             f"✅ Verilog generated and validated "
             f"(attempt {result['attempts']})"
         )
+
+        tb_check = validate_testbench_has_real_checks(result["testbench"])
+        if tb_check["is_lying"]:
+            st.warning(
+                "⚠️ Generated testbench had weak assertions. "
+                "It was auto-fixed before continuing."
+            )
+            for issue in tb_check.get("issues", []):
+                st.caption(f"• {issue}")
+            with st.expander("Testbench Used After Fixes"):
+                st.code(result["testbench"], language="verilog")
+        else:
+            st.success("✅ Testbench has real assertions")
 
         # Show generated code
         col1, col2 = st.columns(2)
@@ -893,6 +1044,20 @@ def page_generate_design():
         # Run full pipeline
         status.info("Step 2/3 — Running RTL-to-GDSII pipeline...")
         progress.progress(50)
+        step_placeholder = st.empty()
+        steps_done = []
+
+        def on_flow_progress(step_name, step_num, total_steps, step_status):
+            if step_status == "PASS":
+                steps_done.append(f"✅ {step_name}")
+            elif step_status == "FAIL":
+                steps_done.append(f"❌ {step_name}")
+            pct = 40 + int((step_num / max(total_steps, 1)) * 55)
+            progress.progress(min(pct, 95))
+            step_placeholder.markdown(
+                "**Pipeline Progress**\n" +
+                "\n".join(steps_done[-8:])
+            )
 
         with st.spinner(
             f"Running full pipeline for {module_name} — ~90 seconds..."
@@ -905,9 +1070,11 @@ def page_generate_design():
                 pdk_dir      = str(PDK_DIR),
                 clock_period = 10.0
             )
-            summary = flow.run_full_flow()
+            summary = flow.run_full_flow(progress_callback=on_flow_progress)
 
         progress.progress(90)
+        run_results_dir = Path(summary.get("results_dir", str(get_active_results_dir())))
+        st.session_state["active_results_dir"] = str(run_results_dir)
 
         # Results
         status.info("Step 3/3 — Collecting results...")
@@ -937,8 +1104,34 @@ def page_generate_design():
             icon = "✅" if result_val == "PASS" else "❌"
             st.write(f"{icon} {step}")
 
-        # GDS download
-        gds_path = WORK_DIR / "results" / f"{module_name}.gds"
+        # Immediate sign-off summary + GDS download
+        gds_path = run_results_dir / f"{module_name}.gds"
+        lvs_path = run_results_dir / "lvs_report_final.txt"
+        sta_path = run_results_dir / "sta_final.txt"
+
+        lvs_ok = False
+        if lvs_path.exists():
+            lvs_txt = lvs_path.read_text(errors="ignore")
+            lvs_ok = ("equivalent" in lvs_txt) or ("Circuits match uniquely" in lvs_txt)
+
+        slack_val = 0.0
+        if sta_path.exists():
+            sta_txt = sta_path.read_text(errors="ignore")
+            slack_match = re.search(r'([\d.\-]+)\s+slack\s+\((?:MET|VIOLATED)\)', sta_txt)
+            if slack_match:
+                try:
+                    slack_val = float(slack_match.group(1))
+                except ValueError:
+                    slack_val = 0.0
+
+        m1, m2, m3 = st.columns(3)
+        with m1:
+            st.metric("GDS Size", f"{file_kb(gds_path)} KB")
+        with m2:
+            st.metric("LVS", "MATCHED" if lvs_ok else "UNMATCHED")
+        with m3:
+            st.metric("Timing Slack", f"{slack_val} ns")
+
         if gds_path.exists() and gds_path.stat().st_size > 50000:
             st.success(
                 f"✅ GDS generated: "
@@ -955,7 +1148,15 @@ def page_generate_design():
         progress.progress(100)
         status.success("Complete!")
 
-        # Save to session history
+        # Save to DB and session history
+        if DB_AVAILABLE:
+            try:
+                from full_flow import RealMetricsParser
+                parser = RealMetricsParser(str(run_results_dir))
+                save_run_metrics(module_name, parser.get_all_metrics(), provider=provider)
+            except Exception as e:
+                st.caption(f"Database sync note: {e}")
+
         if "design_history" not in st.session_state:
             st.session_state["design_history"] = []
         st.session_state["design_history"].append({
@@ -967,6 +1168,210 @@ def page_generate_design():
             ) if gds_path.exists() else 0
         })
 
+
+# ============================================================
+# PAGE: LIVE VIEWER (GDS Layout + Waveform + Schematic + Downloads)
+# ============================================================
+
+def show_viewer():
+    results = get_active_results_dir()
+    st.header("Live Viewer")
+    st.caption(
+        "Cadence-style interactive viewer — GDS layout, digital waveforms, "
+        "gate schematic, and downloadable artifacts."
+    )
+
+    # Let user pick which design to view
+    available_designs = []
+    if WORK_DIR.exists():
+        for d in (WORK_DIR / "results").parent.iterdir() if (WORK_DIR / "results").exists() else []:
+            pass
+    # Find all GDS files in active results
+    gds_files = list(results.glob("*.gds")) if results.exists() else []
+    netlist_files = list(results.glob("*_sky130.v")) if results.exists() else []
+    vcd_files = list(results.glob("*.vcd")) + list(results.glob("trace.vcd"))
+    if (results / "trace.vcd").exists():
+        vcd_files = [(results / "trace.vcd")]
+
+    design_names = [f.stem.replace("_sky130", "") for f in netlist_files] or \
+                   [f.stem for f in gds_files] or ["adder_8bit"]
+
+    selected_design = st.selectbox(
+        "Select Design",
+        design_names,
+        help="Designs that have completed the RTL-to-GDSII flow"
+    )
+
+    # Resolve file paths
+    gds_path     = results / f"{selected_design}.gds"
+    netlist_path = results / f"{selected_design}_sky130.v"
+    vcd_path     = results / "trace.vcd"
+    spice_path   = results / f"{selected_design}_extracted.spice"
+    routed_path  = results / "routed.def"
+    sta_path     = results / "sta_final.txt"
+    lvs_path     = results / "lvs_report_final.txt"
+
+    # ---- TABS ----
+    tab_gds, tab_wave, tab_schem, tab_dl = st.tabs(
+        ["GDS Layout", "Waveform", "Schematic", "Downloads"]
+    )
+
+    # ===========================================================
+    # TAB 1: GDS LAYOUT
+    # ===========================================================
+    with tab_gds:
+        st.subheader("GDS Layout — Real Silicon")
+        if not gds_path.exists():
+            st.warning(f"GDS file not found: {gds_path}\n\nRun the pipeline first.")
+        else:
+            gds_kb_val = round(gds_path.stat().st_size / 1024, 1)
+            col1, col2, col3 = st.columns(3)
+            col1.metric("GDS File", f"{gds_kb_val} KB", "Real layout")
+            col2.metric("Status", "TAPE-OUT READY" if gds_kb_val > 50 else "STUB")
+            col3.metric("Design", selected_design)
+
+            max_polys = st.slider("Max polygons per layer", 100, 2000, 500, step=100,
+                                  help="Lower = faster render. Higher = more detail.")
+
+            if not VIZ_AVAILABLE:
+                st.error("Visualizer module not loaded — check visualizer.py")
+            else:
+                with st.spinner("Parsing GDS binary file..."):
+                    fig = make_gds_figure(str(gds_path), max_polys_per_layer=max_polys)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.caption(
+                        "Tip: Scroll to zoom in, drag to pan, click layer names in legend "
+                        "to toggle visibility. Each colour = one metal/diffusion layer."
+                    )
+                else:
+                    st.error("Could not parse GDS file — it may be empty or corrupted.")
+
+    # ===========================================================
+    # TAB 2: WAVEFORM VIEWER
+    # ===========================================================
+    with tab_wave:
+        st.subheader("Digital Waveform Viewer")
+        st.caption("Parsed from simulation VCD — like GTKWave in your browser.")
+
+        if not vcd_path.exists():
+            st.warning(f"VCD file not found: {vcd_path}\n\nRun RTL simulation first.")
+        else:
+            vcd_kb = round(vcd_path.stat().st_size / 1024, 1)
+            st.metric("VCD Size", f"{vcd_kb} KB", "Real waveform")
+
+            max_sigs = st.slider("Max signals to display", 5, 50, 20,
+                                 help="Limit for readability")
+
+            if not VIZ_AVAILABLE:
+                st.error("Visualizer module not loaded")
+            else:
+                with st.spinner("Parsing VCD waveform..."):
+                    fig = make_waveform_figure(str(vcd_path), max_signals=max_sigs)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.caption(
+                        "Tip: Drag to zoom into a time window, double-click to reset. "
+                        "Each row is one signal — green=high, flat=low."
+                    )
+                else:
+                    st.warning(
+                        "VCD file exists but has no signal data. "
+                        "This can happen if simulation completed instantly. "
+                        "Try running a longer simulation."
+                    )
+                    # Show raw VCD
+                    with st.expander("Raw VCD content"):
+                        st.code(vcd_path.read_text(errors="ignore")[:2000], language="text")
+
+    # ===========================================================
+    # TAB 3: GATE-LEVEL SCHEMATIC
+    # ===========================================================
+    with tab_schem:
+        st.subheader("Gate-Level Schematic")
+        st.caption(
+            "Interactive netlist view — each node is a Sky130 standard cell, "
+            "edges are wire connections. Input ports = green triangles, outputs = orange."
+        )
+
+        if not netlist_path.exists():
+            st.warning(f"Synthesized netlist not found: {netlist_path}")
+        else:
+            net_kb = round(netlist_path.stat().st_size / 1024, 1)
+            st.metric("Netlist", f"{net_kb} KB", "Sky130A mapped")
+
+            max_cells = st.slider("Max cells to show", 20, 200, 80,
+                                  help="Large designs may be slow to render")
+
+            if not VIZ_AVAILABLE:
+                st.error("Visualizer module not loaded")
+            else:
+                with st.spinner("Building schematic graph..."):
+                    fig = make_schematic_figure(str(netlist_path), max_cells=max_cells)
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.caption(
+                        "Tip: Hover over a node to see the full cell type. "
+                        "Zoom with scroll, pan with drag."
+                    )
+                else:
+                    st.warning("No cells found in netlist.")
+                    with st.expander("Raw netlist"):
+                        st.code(netlist_path.read_text(errors="ignore")[:3000],
+                                language="verilog")
+
+    # ===========================================================
+    # TAB 4: DOWNLOADS
+    # ===========================================================
+    with tab_dl:
+        st.subheader("Download All Artifacts")
+        st.caption(
+            "All files produced by the RTL-to-GDSII pipeline. "
+            "GDS can be opened in KLayout. VCD in GTKWave."
+        )
+
+        dl_files = [
+            (gds_path,     f"{selected_design}.gds",          "GDS Layout (open in KLayout)",   "application/octet-stream"),
+            (netlist_path, f"{selected_design}_sky130.v",      "Synthesized Netlist (Sky130A)",   "text/plain"),
+            (vcd_path,     "trace.vcd",                        "Simulation Waveform (open in GTKWave)", "text/plain"),
+            (spice_path,   f"{selected_design}_extracted.spice", "Extracted SPICE Netlist",       "text/plain"),
+            (routed_path,  "routed.def",                       "Routed DEF (placed+routed)",      "text/plain"),
+            (results / "cts.def",      "cts.def",              "CTS DEF (clock tree)",            "text/plain"),
+            (results / "placed.def",   "placed.def",           "Placed DEF",                      "text/plain"),
+            (results / "floorplan.def","floorplan.def",        "Floorplan DEF",                   "text/plain"),
+            (sta_path,     "sta_final.txt",                    "Timing Report (STA)",             "text/plain"),
+            (lvs_path,     "lvs_report_final.txt",             "LVS Report",                      "text/plain"),
+            (results / "drc_report.txt", "drc_report.txt",     "DRC Report",                      "text/plain"),
+            (results / "synthesis.log", "synthesis.log",       "Synthesis Log (Yosys)",           "text/plain"),
+        ]
+
+        found = [(p, fn, desc, mt) for p, fn, desc, mt in dl_files if p.exists()]
+        missing = [(p, fn, desc, mt) for p, fn, desc, mt in dl_files if not p.exists()]
+
+        if found:
+            st.success(f"**{len(found)} files ready to download** ({len(missing)} not yet generated)")
+            st.markdown("---")
+
+        cols = st.columns(2)
+        for i, (fpath, fname, desc, mime) in enumerate(found):
+            size_kb = round(fpath.stat().st_size / 1024, 1)
+            with cols[i % 2]:
+                with open(fpath, "rb") as f:
+                    st.download_button(
+                        label=f"⬇️  {fname}  ({size_kb} KB)",
+                        data=f,
+                        file_name=fname,
+                        mime=mime,
+                        help=desc,
+                        use_container_width=True,
+                        key=f"dl_{fname}_{i}"
+                    )
+
+        if missing:
+            st.markdown("---")
+            with st.expander(f"{len(missing)} files not yet generated"):
+                for p, fn, desc, _ in missing:
+                    st.write(f"- `{fn}` — {desc}")
 
 # ============================================================
 # MAIN APP
@@ -989,6 +1394,8 @@ menu_option = st.sidebar.radio(
     [
         "Home",
         "🤖 AI Verilog Generator",
+        "📚 Design History",
+        "Live Viewer",
         "RTL & Simulation",
         "Synthesis",
         "Physical Design",
@@ -1003,9 +1410,11 @@ menu_option = st.sidebar.radio(
 # Sidebar metrics
 st.sidebar.markdown("---")
 st.sidebar.markdown("**Current Status**")
-gds_kb = file_kb(RESULTS_DIR / "adder_8bit.gds")
-lvs = parse_lvs_stats()
-timing = parse_timing_stats()
+_sidebar_results = get_active_results_dir()
+_sidebar_gds = next(_sidebar_results.glob("*.gds"), _sidebar_results / "adder_8bit.gds")
+gds_kb = file_kb(_sidebar_gds)
+lvs = parse_lvs_stats(_sidebar_results)
+timing = parse_timing_stats(_sidebar_results)
 
 st.sidebar.metric("GDS", f"{gds_kb} KB", "REAL" if gds_kb > 50 else "MISSING")
 st.sidebar.metric("LVS", "✅" if lvs.get("matched") else "❌")
@@ -1014,11 +1423,90 @@ st.sidebar.metric("Timing", f"{timing.get('slack',0)}ns", "MET" if timing.get("m
 st.sidebar.markdown("---")
 st.sidebar.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
 
+def page_design_history():
+    """Design History — database-first, runs index fallback."""
+    st.header("📚 Design History — All Runs")
+
+    runs = []
+    try:
+        from database import get_all_runs
+        runs = get_all_runs()
+    except (ImportError, RuntimeError, OSError, ValueError) as e:
+        log.warning("Database history lookup failed: %s", e)
+        runs = []
+
+    if not runs:
+        runs_index = WORK_DIR / "runs" / "index.json"
+        if runs_index.exists():
+            runs = json.loads(runs_index.read_text(errors="ignore"))
+
+    if not runs:
+        st.info("No designs run yet. Use the AI Generator page to get started.")
+        return
+
+    # Newest first
+    runs = sorted(runs, key=lambda x: x.get("timestamp", ""), reverse=True)
+
+    col_total, col_ready, col_fail = st.columns(3)
+    with col_total: st.metric("Total runs", len(runs))
+    with col_ready: st.metric("Tape-out ready", sum(1 for r in runs if r.get("tapeout_ready")))
+    with col_fail:  st.metric("Failed",         sum(1 for r in runs if not r.get("tapeout_ready")))
+
+    st.divider()
+
+    for run in runs:
+        gds_kb  = 0
+        gds_path = Path(run.get("gds_path", ""))
+        if gds_path.exists():
+            gds_kb = round(gds_path.stat().st_size / 1024, 1)
+
+        ready   = run.get("tapeout_ready", False)
+        icon    = "✅" if ready else "❌"
+        ts      = run.get("timestamp", "")[:16].replace("T", " ")
+
+        col1, col2, col3, col4, col5 = st.columns([2, 2, 1, 1, 1])
+        with col1:
+            st.write(f"**{icon} {run.get('design_name', '?')}**")
+            st.caption(run.get("run_id", ""))
+        with col2:
+            st.caption(ts)
+        with col3:
+            if ready:
+                st.success("READY")
+            else:
+                st.error("FAIL")
+        with col4:
+            st.write(f"{run.get('elapsed_sec', '?')}s")
+        with col5:
+            if gds_kb > 50 and gds_path.exists():
+                with open(gds_path, "rb") as gf:
+                    st.download_button(
+                        "⬇ GDS",
+                        gf,
+                        file_name=f"{run.get('design_name')}.gds",
+                        key=f"dl_{run.get('run_id')}",
+                        mime="application/octet-stream"
+                    )
+            elif gds_kb > 0:
+                st.caption(f"{gds_kb} KB")
+            else:
+                st.caption("no GDS")
+
+        # Show results_dir path as small caption
+        if run.get("results_dir"):
+            st.caption(f"📁 {run.get('results_dir', '')}")
+        st.divider()
+
+
 # Route to pages
 if menu_option == "Home":
     show_home()
 elif menu_option == "🤖 AI Verilog Generator":
     page_generate_design()
+elif menu_option == "📚 Design History":
+    page_design_history()
+elif menu_option == "Live Viewer":
+    show_viewer()
 elif menu_option == "RTL & Simulation":
     show_simulation()
 elif menu_option == "Synthesis":

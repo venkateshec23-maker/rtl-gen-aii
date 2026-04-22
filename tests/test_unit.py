@@ -13,6 +13,7 @@ from unittest.mock import patch, MagicMock
 import sys
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from full_flow import RealMetricsParser, DockerManager, FILE_SIZE_THRESHOLDS
+from full_flow import analyze_lvs_report
 
 
 # ============================================================
@@ -207,6 +208,65 @@ class TestRealMetricsParser:
         assert "disclaimer" in result
         assert "synthetic" not in result["disclaimer"].lower() or \
                "real" in result["disclaimer"].lower()
+
+
+@pytest.mark.unit
+class TestLvsAnalyzer:
+    """Validate LVS mismatch classification and warning gates."""
+
+    def test_pin_matching_failure_equivalent_is_warning(self):
+        """Counter-style top pin matching failure should remain warning-qualified."""
+        report = """
+Netlists do not match.
+Subcircuit pins:
+Circuit 1: counter_4bit | Circuit 2: counter_4bit
+count[1] | clk **Mismatch**
+Cell pin lists for counter_4bit and counter_4bit altered to match.
+Device classes counter_4bit and counter_4bit are equivalent.
+Number of devices: 18 | Number of devices: 18
+Final result: Top level cell failed pin matching.
+"""
+
+        analysis = analyze_lvs_report(report)
+        assert analysis["has_pin_ambiguity_warning"] is True
+        assert analysis["reason_code"] == "TOP_PIN_MATCHING_FAILED_EQUIVALENT"
+
+    def test_pin_table_mismatch_equivalent_is_warning(self):
+        """Adder-style pin table mismatch without explicit pin-failed marker can warn."""
+        report = """
+Netlists do not match.
+Subcircuit pins:
+Circuit 1: adder_8bit | Circuit 2: adder_8bit
+a[7] | a[0] **Mismatch**
+clk | (no matching pin)
+Cell pin lists are equivalent.
+Device classes adder_8bit and adder_8bit are equivalent.
+Number of devices: 56 | Number of devices: 56
+Final result: Netlists do not match.
+"""
+
+        analysis = analyze_lvs_report(report)
+        assert analysis["has_pin_ambiguity_warning"] is True
+        assert analysis["reason_code"] == "TOP_PIN_TABLE_MISMATCH_EQUIVALENT"
+
+    def test_no_matching_element_remains_hard_fail(self):
+        """Any no-matching-element marker should block warning continuation."""
+        report = """
+Netlists do not match.
+Subcircuit pins:
+Circuit 1: adder_8bit | Circuit 2: adder_8bit
+a[7] | a[0] **Mismatch**
+Cell pin lists are equivalent.
+Device classes adder_8bit and adder_8bit are equivalent.
+Number of devices: 56 | Number of devices: 56
+No matching element found for instance X_123.
+Final result: Netlists do not match.
+"""
+
+        analysis = analyze_lvs_report(report)
+        assert analysis["has_pin_ambiguity_warning"] is False
+        assert analysis["has_mismatch"] is True
+        assert analysis["reason_code"] == "HARD_MISMATCH"
 
 
 # ============================================================

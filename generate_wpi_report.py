@@ -10,23 +10,28 @@ import os
 from pathlib import Path
 from datetime import datetime
 
-RESULTS   = Path(r"C:\tools\OpenLane\results")
-DESIGNS   = Path(r"C:\tools\OpenLane\designs\adder_8bit")
+try:
+    from full_flow import analyze_lvs_report
+except Exception:
+    analyze_lvs_report = None
+
 WORK      = Path(r"C:\tools\OpenLane")
 OUTPUT    = Path(r"C:\Users\venka\Documents\rtl-gen-aii\wpi_ece574_report.html")
+DEFAULT_DESIGN = "adder_8bit"
+DEFAULT_RESULTS = WORK / "results"
 
 
 def safe_read(path, default="Not available"):
     try:
         return Path(path).read_text(errors="ignore")
-    except:
+    except OSError:
         return default
 
 
 def file_size_kb(path):
     try:
         return round(Path(path).stat().st_size / 1024, 1)
-    except:
+    except OSError:
         return 0
 
 
@@ -42,7 +47,7 @@ def parse_synthesis_cells(netlist_path):
         from collections import Counter
         counts = Counter(cells)
         return dict(counts.most_common(10)), len(cells)
-    except:
+    except OSError:
         return {}, 0
 
 
@@ -59,25 +64,144 @@ def parse_def_stats(def_path):
             "pins":       int(pins.group(1))  if pins  else 0,
             "die": f"{die.group(3)}×{die.group(4)} DBU" if die else "N/A"
         }
-    except:
+    except OSError:
         return {"components": 0, "nets": 0, "pins": 0, "die": "N/A"}
+
+
+def parse_drc(drc_path):
+    content = safe_read(drc_path, "")
+    if not content.strip():
+        return {"status": "NOT_RUN", "violations": None}
+
+    count_match = (
+        re.search(r'DRC\s+violations:\s*(\d+)', content, re.IGNORECASE) or
+        re.search(r'(\d+)\s+violations?', content, re.IGNORECASE)
+    )
+    if not count_match:
+        return {"status": "PARSE_ERROR", "violations": None}
+
+    violations = int(count_match.group(1))
+    return {
+      "status": "CLEAN" if violations == 0 else "VIOLATIONS",
+        "violations": violations
+    }
+
+
+def resolve_active_results_dir(work_dir: Path, design_name: str = None) -> Path:
+    """
+    Find the best results directory to report from.
+    Priority: latest TAPE_OUT_READY run > latest any run > default path.
+    Optionally filter by design_name.
+    """
+    runs_index = work_dir / "runs" / "index.json"
+    if runs_index.exists():
+        try:
+            runs = json.loads(runs_index.read_text(errors="ignore"))
+            if runs:
+                # Filter by design name if specified
+                if design_name:
+                    filtered = [r for r in runs if r.get("design_name") == design_name]
+                    if filtered:
+                        runs = filtered
+
+                # Sort by timestamp descending
+                sorted_runs = sorted(runs, key=lambda x: x.get("timestamp", ""), reverse=True)
+
+                # Prefer latest TAPE_OUT_READY run
+                for run in sorted_runs:
+                    if run.get("tapeout_ready") or run.get("status") == "TAPE_OUT_READY":
+                        run_dir = Path(run.get("results_dir", ""))
+                        if run_dir.exists():
+                            gds_files = list(run_dir.glob("*.gds"))
+                            if gds_files and gds_files[0].stat().st_size > 50_000:
+                                return run_dir
+
+                # Fall back to latest run with any results
+                for run in sorted_runs:
+                    run_dir = Path(run.get("results_dir", ""))
+                    if run_dir.exists():
+                        return run_dir
+
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+            pass
+
+    return DEFAULT_RESULTS
+
+
+def detect_design_name(results_dir: Path) -> str:
+    run_summary = results_dir / "run_summary.json"
+    if run_summary.exists():
+        try:
+            summary = json.loads(run_summary.read_text(errors="ignore"))
+            name = summary.get("design_name") or summary.get("design")
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+        except (json.JSONDecodeError, OSError, TypeError, ValueError):
+            pass
+
+    gds_files = list(results_dir.glob("*.gds"))
+    if gds_files:
+        return gds_files[0].stem
+
+    netlists = list(results_dir.glob("*_sky130.v"))
+    if netlists:
+        return netlists[0].name.replace("_sky130.v", "")
+
+    return DEFAULT_DESIGN
 
 
 def parse_lvs(lvs_path):
     try:
         content = Path(lvs_path).read_text(errors="ignore")
-        matched = "equivalent" in content or "match uniquely" in content
+
+        if analyze_lvs_report:
+            analysis = analyze_lvs_report(content)
+            status = "UNMATCHED"
+            if analysis.get("has_pin_ambiguity_warning"):
+                status = "MATCHED_WITH_WARNINGS"
+            elif analysis.get("has_mismatch"):
+                status = "UNMATCHED"
+            elif analysis.get("has_match"):
+                status = "MATCHED"
+            else:
+                status = "INCOMPLETE"
+
+            matched = status in ("MATCHED", "MATCHED_WITH_WARNINGS")
+            reason_code = analysis.get("reason_code")
+            has_warning = analysis.get("has_pin_ambiguity_warning", False)
+        else:
+            content_lower = content.lower()
+            mismatch = (
+                "netlists do not match" in content_lower or
+                "failed pin matching" in content_lower or
+                ("final result:" in content_lower and "failed" in content_lower)
+            )
+            matched = ("equivalent" in content_lower or "match uniquely" in content_lower) and not mismatch
+            status = "MATCHED" if matched else "UNMATCHED"
+            reason_code = "LEGACY_PARSER"
+            has_warning = False
+
         dev_match = re.search(r'Number of devices:\s+(\d+)', content)
         net_match = re.search(r'Number of nets:\s+(\d+)', content)
         transistors = int(dev_match.group(1)) if dev_match else 0
         nets = int(net_match.group(1)) if net_match else 0
         return {
+            "status": status,
             "matched": matched,
             "transistors": transistors,
-            "nets": nets
+            "nets": nets,
+            "reason_code": reason_code,
+            "has_warning": has_warning,
         }
-    except:
-        return {"matched": False, "transistors": 0, "nets": 0}
+    except OSError:
+        return {
+            "status": "MISSING",
+            "matched": False,
+            "transistors": 0,
+            "nets": 0,
+            "reason_code": "MISSING",
+            "has_warning": False,
+        }
 
 
 def parse_timing(sta_path):
@@ -87,50 +211,42 @@ def parse_timing(sta_path):
             return {"wns": 0, "tns": 0, "slack": 0, "met": False}
 
         # Try multiple patterns — OpenSTA uses different formats
-        # Pattern 1: "slack (MET)   6.14"
-        slack_match = re.search(
-            r'slack\s+\(MET\)\s+([\d.]+)', content
-        )
-        # Pattern 2: "wns 0.00" with separate slack line
-        wns_match = re.search(r'wns\s+([-\d.]+)', content)
-        tns_match = re.search(r'tns\s+([-\d.]+)', content)
-        # Pattern 3: "6.14   slack (MET)" — reversed format
-        slack_match2 = re.search(
-            r'([\d.]+)\s+slack\s+\(MET\)', content
-        )
-        # Pattern 4: Data required - arrival time line
-        # "  6.14   slack (MET)"
-        slack_match3 = re.search(
-            r'^\s+([\d.]+)\s+slack\s+\(MET\)',
-            content, re.MULTILINE
-        )
+        # Accept both MET and VIOLATED, and allow negative numbers [-\d.]+
+        slack_match = re.search(r'slack\s+\((MET|VIOLATED)\)\s+([-\d.]+)', content)
+        wns_match   = re.search(r'\bwns\s+([-\d.]+)', content, re.IGNORECASE)
+        tns_match   = re.search(r'\btns\s+([-\d.]+)', content, re.IGNORECASE)
+        slack_match2 = re.search(r'([-\d.]+)\s+slack\s+\((MET|VIOLATED)\)', content)
+        slack_match3 = re.search(r'^\s*([-\d.]+)\s+slack\s+\((MET|VIOLATED)\)', content, re.MULTILINE)
 
-        # Extract best slack value
         slack_val = None
+        timing_met = False
+
         if slack_match:
-            slack_val = float(slack_match.group(1))
+            slack_val = float(slack_match.group(2))
+            timing_met = (slack_match.group(1) == "MET")
         elif slack_match2:
             slack_val = float(slack_match2.group(1))
+            timing_met = (slack_match2.group(2) == "MET")
         elif slack_match3:
             slack_val = float(slack_match3.group(1))
+            timing_met = (slack_match3.group(2) == "MET")
 
         wns_val = float(wns_match.group(1)) if wns_match else 0.0
         tns_val = float(tns_match.group(1)) if tns_match else 0.0
 
-        # WNS = 0.00 means no negative slack = timing MET
-        timing_met = (
-            (wns_val >= 0 and (wns_match is not None)) or
-            (slack_val is not None and slack_val > 0) or
-            "MET" in content
-        )
+        # Derivation logic if Slack string missing but WNS present
+        if slack_val is None:
+            slack_val = wns_val
+            timing_met = (wns_val >= 0.0)
 
-        # Use slack_val if found, else derive from WNS context
-        final_slack = slack_val if slack_val is not None else 0.0
-
+        # Force override status based on slack value to be safe
+        if slack_val < 0:
+            timing_met = False
+            
         return {
             "wns":   wns_val,
             "tns":   tns_val,
-            "slack": final_slack,
+            "slack": slack_val,
             "met":   timing_met
         }
     except Exception as e:
@@ -140,12 +256,36 @@ def parse_timing(sta_path):
 def parse_simulation(sim_log):
     try:
         content = Path(sim_log).read_text(errors="ignore")
-        passed  = len(re.findall(r'\bPASS\b', content))
-        failed  = len(re.findall(r'\bFAIL\b', content))
-        all_ok  = "ALL_TESTS_PASSED" in content
-        return {"passed": passed, "failed": failed, "all_ok": all_ok}
-    except:
-        return {"passed": 0, "failed": 0, "all_ok": False}
+        lines = content.splitlines()
+
+        passed = 0
+        failed = 0
+        all_ok = "ALL_TESTS_PASSED" in content
+
+        for line in lines:
+            line_upper = line.upper()
+            # Skip summary lines to avoid double-counting
+            if "ALL_TESTS_PASSED" in line_upper or "SUMMARY" in line_upper:
+                continue
+                
+            if re.search(r'\bPASS\b', line, re.IGNORECASE):
+                passed += 1
+            elif re.search(r'\bFAIL\b', line, re.IGNORECASE):
+                failed += 1
+
+        vector_lines = [
+            line.strip() for line in lines
+            if re.search(r'^\s*(PASS|FAIL)\b', line, re.IGNORECASE)
+        ][:12]
+
+        return {
+            "passed": passed,
+            "failed": failed,
+            "all_ok": all_ok,
+            "vector_lines": vector_lines,
+        }
+    except OSError:
+        return {"passed": 0, "failed": 0, "all_ok": False, "vector_lines": []}
 
 
 # ============================================================
@@ -154,31 +294,85 @@ def parse_simulation(sim_log):
 
 print("Collecting real tool outputs...")
 
-rtl_source = safe_read(DESIGNS / "adder_8bit.v")
-testbench  = safe_read(DESIGNS / "adder_8bit_tb.v")
+RESULTS = resolve_active_results_dir(WORK)
+DESIGN_NAME = detect_design_name(RESULTS)
+DESIGNS = WORK / "designs" / DESIGN_NAME
 
-cell_types, total_cells = parse_synthesis_cells(RESULTS / "adder_8bit_sky130.v")
-netlist_preview = safe_read(RESULTS / "adder_8bit_sky130.v")[:2000]
+run_summary = {}
+elapsed_sec = None
+run_summary_path = RESULTS / "run_summary.json"
+if run_summary_path.exists():
+    try:
+        run_summary = json.loads(run_summary_path.read_text(errors="ignore"))
+        if isinstance(run_summary.get("elapsed_sec"), (int, float)):
+            elapsed_sec = float(run_summary["elapsed_sec"])
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        run_summary = {}
+
+rtl_source = safe_read(DESIGNS / f"{DESIGN_NAME}.v")
+testbench  = safe_read(DESIGNS / f"{DESIGN_NAME}_tb.v")
+
+netlist_path = RESULTS / f"{DESIGN_NAME}_sky130.v"
+gds_path = RESULTS / f"{DESIGN_NAME}.gds"
+
+cell_types, total_cells = parse_synthesis_cells(netlist_path)
+netlist_preview = safe_read(netlist_path)[:2000]
 
 sim_data   = parse_simulation(RESULTS / "simulation.log")
 lvs_data   = parse_lvs(RESULTS / "lvs_report_final.txt")
 timing     = parse_timing(RESULTS / "sta_final.txt")
+drc_data   = parse_drc(RESULTS / "drc_report.txt")
 placed     = parse_def_stats(RESULTS / "placed.def")
 routed     = parse_def_stats(RESULTS / "routed.def")
 cts_stats  = parse_def_stats(RESULTS / "cts.def")
 
-gds_kb     = file_size_kb(RESULTS / "adder_8bit.gds")
+gds_kb     = file_size_kb(gds_path)
 routed_kb  = file_size_kb(RESULTS / "routed.def")
 cts_kb     = file_size_kb(RESULTS / "cts.def")
 placed_kb  = file_size_kb(RESULTS / "placed.def")
 vcd_kb     = file_size_kb(RESULTS / "trace.vcd")
-netlist_kb = file_size_kb(RESULTS / "adder_8bit_sky130.v")
+netlist_kb = file_size_kb(netlist_path)
 
 # Determine tapeout readiness
 gds_real    = gds_kb > 50
+routing_real = routed_kb > cts_kb and routed_kb > 6
 lvs_matched = lvs_data["matched"]
 timing_met  = timing["met"]
-tapeout     = gds_real and lvs_matched and timing_met
+drc_pass    = drc_data.get("status") == "CLEAN"
+tapeout     = gds_real and routing_real and lvs_matched and timing_met and drc_pass and sim_data["all_ok"]
+
+lvs_status = lvs_data.get("status", "UNMATCHED")
+if lvs_status == "MATCHED_WITH_WARNINGS":
+  lvs_status_label = "MATCHED (WARN)"
+elif lvs_matched:
+  lvs_status_label = "MATCHED"
+else:
+  lvs_status_label = "UNMATCHED"
+
+tests_total = sim_data["passed"] + sim_data["failed"]
+sim_ratio = f"{sim_data['passed']}/{tests_total}" if tests_total > 0 else "N/A"
+flow_time_text = f"{round(elapsed_sec, 1)} s" if elapsed_sec is not None else "N/A"
+
+sim_vector_rows = ""
+if sim_data.get("vector_lines"):
+    for idx, line in enumerate(sim_data["vector_lines"], start=1):
+        verdict = "PASS" if line.upper().startswith("PASS") else "FAIL"
+        badge = "badge-pass" if verdict == "PASS" else "badge-fail"
+        sim_vector_rows += f"""
+              <tr>
+                <td>{idx}</td>
+                <td colspan=\"3\" style=\"font-family:'Share Tech Mono',monospace;font-size:0.78rem\">{line}</td>
+                <td><span class=\"badge {badge}\">{verdict}</span></td>
+              </tr>"""
+else:
+    sim_vector_rows = """
+              <tr>
+                <td colspan="5" style="color:var(--dim)">No explicit PASS/FAIL vectors were emitted in simulation.log.</td>
+              </tr>"""
+
+gate_log = safe_read(RESULTS / "gate_simulation.log", "")
+gate_ok = "ALL_TESTS_PASSED" in gate_log
+gate_detail = "ALL_TESTS_PASSED marker found" if gate_ok else "Not verified in gate-level log"
 
 # Cell table rows
 cell_rows = ""
@@ -200,7 +394,8 @@ for i, (cell, count) in enumerate(cell_types.items()):
 # Step status rows
 steps = [
     (0,  "Environment Setup",        "Docker + OpenROAD + efabless/openlane:latest",
-         True,  "✅ COMPLETE",  "All 5 EDA tools verified"),
+      RESULTS.exists(),  "✅ COMPLETE" if RESULTS.exists() else "❌ FAIL",
+      f"Active run dir: {RESULTS}"),
     (1,  "RTL Simulation",           "iverilog + vvp + proper always #5 clk",
          sim_data["all_ok"], "✅ COMPLETE" if sim_data["all_ok"] else "❌ FAIL",
          f"{sim_data['passed']} PASS / {sim_data['failed']} FAIL"),
@@ -211,7 +406,7 @@ steps = [
          timing["met"], "✅ COMPLETE" if timing["met"] else "❌ FAIL",
          f"slack {timing['slack']}ns MET"),
     (4,  "Gate-Level Simulation",    "iverilog -DFUNCTIONAL -DUNIT_DELAY=#1",
-         True, "✅ COMPLETE", "Functional equiv. verified"),
+      gate_ok, "✅ COMPLETE" if gate_ok else "❌ FAIL", gate_detail),
     (5,  "Floorplanning",            "OpenROAD initialize_floorplan 80×60μm",
          placed_kb > 5, "✅ COMPLETE" if placed_kb > 5 else "❌ FAIL",
          f"placed.def {placed_kb} KB"),
@@ -222,14 +417,14 @@ steps = [
          cts_kb > 5, "✅ COMPLETE" if cts_kb > 5 else "❌ FAIL",
          f"cts.def {cts_kb} KB"),
     (8,  "Routing",                  "OpenROAD TritonRoute + PDN (met1/met4)",
-         routed_kb > 6, "✅ COMPLETE" if routed_kb > 6 else "❌ FAIL",
+          routing_real, "✅ COMPLETE" if routing_real else "❌ FAIL",
          f"routed.def {routed_kb} KB"),
     (9,  "GDS Generation",           "Magic write_gds from routed DEF",
          gds_real, "✅ COMPLETE" if gds_real else "❌ FAIL",
-         f"adder_8bit.gds {gds_kb} KB"),
+          f"{DESIGN_NAME}.gds {gds_kb} KB"),
     (10, "DRC / LVS Sign-off",       "Magic DRC + Netgen SPICE vs SPICE LVS",
-         lvs_matched, "✅ COMPLETE" if lvs_matched else "❌ FAIL",
-         f"DRC=0 violations | LVS={'MATCHED' if lvs_matched else 'UNMATCHED'} "
+          drc_pass and lvs_matched, "✅ COMPLETE" if (drc_pass and lvs_matched) else "❌ FAIL",
+          f"DRC={drc_data.get('violations', 'N/A')} | LVS={'MATCHED' if lvs_matched else 'UNMATCHED'} "
          f"({lvs_data['transistors']} transistors)")
 ]
 
@@ -269,7 +464,7 @@ metrics_html = f"""
     <div class="metric-card">
         <div class="metric-label">Timing Slack</div>
         <div class="metric-value">{timing['slack']}<span style="font-size:1rem"> ns</span></div>
-        <div class="metric-sub">Setup MET</div>
+      <div class="metric-sub">{'Setup MET' if timing['met'] else 'Setup VIOLATED'}</div>
     </div>
     <div class="metric-card">
         <div class="metric-label">LVS</div>
@@ -280,17 +475,17 @@ metrics_html = f"""
     </div>
     <div class="metric-card">
         <div class="metric-label">DRC</div>
-        <div class="metric-value" style="color:#00ff9d">0</div>
+      <div class="metric-value" style="color:{'#00ff9d' if drc_pass else '#ff3333'}">{drc_data.get('violations', 'N/A')}</div>
         <div class="metric-sub">Violations</div>
     </div>
     <div class="metric-card">
         <div class="metric-label">Simulation</div>
-        <div class="metric-value" style="color:#00ff9d">6/6</div>
-        <div class="metric-sub">Test vectors PASS</div>
+      <div class="metric-value" style="color:{'#00ff9d' if sim_data['all_ok'] else '#ff3333'}">{sim_ratio}</div>
+      <div class="metric-sub">PASS/Total vectors</div>
     </div>
     <div class="metric-card">
         <div class="metric-label">Flow Time</div>
-        <div class="metric-value">~30<span style="font-size:1rem"> s</span></div>
+      <div class="metric-value">{flow_time_text}</div>
         <div class="metric-sub">Fully automated</div>
     </div>"""
 
@@ -312,7 +507,7 @@ tapeout_banner = f"""
             {'TAPE-OUT READY' if tapeout else 'NOT TAPE-OUT READY'}
         </div>
         <div style="color:#888;margin-top:10px;font-size:0.9rem">
-            DRC: 0 violations &nbsp;|&nbsp;
+          DRC: {drc_data.get('violations', 'N/A')} violations &nbsp;|&nbsp;
             LVS: {'MATCHED' if lvs_matched else 'UNMATCHED'} &nbsp;|&nbsp;
             Timing: {'MET' if timing_met else 'VIOLATED'} ({timing['slack']}ns slack) &nbsp;|&nbsp;
             GDS: {gds_kb} KB real layout
@@ -621,11 +816,11 @@ html = f"""<!DOCTYPE html>
       <span style="color:var(--green)">Physical Design Report</span>
     </div>
     <div class="subtitle">
-      8-Bit Synchronous Adder — SKY130A 130nm CMOS Technology
+      {DESIGN_NAME} — SKY130A 130nm CMOS Technology
     </div>
     <div class="meta">
       <div class="meta-item">
-        Design: <span>adder_8bit</span>
+        Design: <span>{DESIGN_NAME}</span>
       </div>
       <div class="meta-item">
         Technology: <span>SKY130A 130nm</span>
@@ -696,7 +891,7 @@ html = f"""<!DOCTYPE html>
         <div>
           <div style="color:var(--dim);font-size:0.8rem;
                margin-bottom:8px;letter-spacing:1px">
-            adder_8bit.v — Design under test
+            {DESIGN_NAME}.v — Design under test
           </div>
           <div class="code-block">{rtl_source}</div>
         </div>
@@ -707,36 +902,24 @@ html = f"""<!DOCTYPE html>
           </div>
           <table>
             <tr>
-              <td style="color:var(--dim)">Type</td>
-              <td>Synchronous ripple-carry adder</td>
+              <td style="color:var(--dim)">Module</td>
+              <td>{DESIGN_NAME}</td>
             </tr>
             <tr>
-              <td style="color:var(--dim)">Input A</td>
-              <td>8-bit unsigned [7:0]</td>
+              <td style="color:var(--dim)">Results Dir</td>
+              <td>{RESULTS}</td>
             </tr>
             <tr>
-              <td style="color:var(--dim)">Input B</td>
-              <td>8-bit unsigned [7:0]</td>
+              <td style="color:var(--dim)">RTL Source</td>
+              <td>{DESIGNS / f"{DESIGN_NAME}.v"}</td>
             </tr>
             <tr>
-              <td style="color:var(--dim)">Output</td>
-              <td>9-bit sum [8:0] (includes carry)</td>
+              <td style="color:var(--dim)">Testbench</td>
+              <td>{DESIGNS / f"{DESIGN_NAME}_tb.v"}</td>
             </tr>
             <tr>
-              <td style="color:var(--dim)">Clock</td>
-              <td>Positive edge triggered</td>
-            </tr>
-            <tr>
-              <td style="color:var(--dim)">Reset</td>
-              <td>Active-low synchronous</td>
-            </tr>
-            <tr>
-              <td style="color:var(--dim)">Latency</td>
-              <td>1 clock cycle</td>
-            </tr>
-            <tr>
-              <td style="color:var(--dim)">Target freq</td>
-              <td>100 MHz (10ns period)</td>
+              <td style="color:var(--dim)">Mapped Netlist</td>
+              <td>{netlist_path}</td>
             </tr>
           </table>
         </div>
@@ -791,56 +974,13 @@ html = f"""<!DOCTYPE html>
           <table>
             <thead>
               <tr>
-                <th>Test</th>
-                <th>A</th>
-                <th>B</th>
-                <th>Expected</th>
+                <th>Idx</th>
+                <th colspan="3">Simulation Log Line</th>
                 <th>Result</th>
               </tr>
             </thead>
             <tbody>
-              <tr>
-                <td>1</td>
-                <td>5</td>
-                <td>3</td>
-                <td>8</td>
-                <td><span class="badge badge-pass">PASS</span></td>
-              </tr>
-              <tr>
-                <td>2</td>
-                <td>100</td>
-                <td>50</td>
-                <td>150</td>
-                <td><span class="badge badge-pass">PASS</span></td>
-              </tr>
-              <tr>
-                <td>3</td>
-                <td>255</td>
-                <td>1</td>
-                <td>256</td>
-                <td><span class="badge badge-pass">PASS</span></td>
-              </tr>
-              <tr>
-                <td>4</td>
-                <td>128</td>
-                <td>128</td>
-                <td>256</td>
-                <td><span class="badge badge-pass">PASS</span></td>
-              </tr>
-              <tr>
-                <td>5</td>
-                <td>0</td>
-                <td>0</td>
-                <td>0</td>
-                <td><span class="badge badge-pass">PASS</span></td>
-              </tr>
-              <tr>
-                <td>6</td>
-                <td>255</td>
-                <td>255</td>
-                <td>510</td>
-                <td><span class="badge badge-pass">PASS</span></td>
-              </tr>
+              {sim_vector_rows}
             </tbody>
           </table>
         </div>
@@ -886,7 +1026,7 @@ html = f"""<!DOCTYPE html>
             </tr>
             <tr>
               <td style="color:var(--dim)">Command</td>
-              <td><code>synth_sky130 -top adder_8bit</code></td>
+              <td><code>synth_sky130 -top {DESIGN_NAME}</code></td>
             </tr>
             <tr>
               <td style="color:var(--dim)">Technology</td>
@@ -974,8 +1114,8 @@ html = f"""<!DOCTYPE html>
                 <td>{routed_kb} KB</td>
                 <td>{routed['nets']} nets routed</td>
                 <td>
-                  <span class="badge {'badge-pass' if routed_kb > cts_kb else 'badge-fail'}">
-                    {'REAL' if routed_kb > cts_kb else 'STUB'}
+                  <span class="badge {'badge-pass' if routing_real else 'badge-fail'}">
+                    {'REAL' if routing_real else 'STUB'}
                   </span>
                 </td>
               </tr>
@@ -1003,8 +1143,8 @@ html = f"""<!DOCTYPE html>
                 </div>
               </div>
               <div>
-                <span class="badge {'badge-pass' if routed_kb != cts_kb else 'badge-fail'}">
-                  {'DIFFERENT — REAL ROUTING' if routed_kb != cts_kb else 'IDENTICAL — SILENT FAIL'}
+                <span class="badge {'badge-pass' if routing_real else 'badge-fail'}">
+                  {'DIFFERENT + SIZE OK — REAL ROUTING' if routing_real else 'IDENTICAL/TOO SMALL — SILENT FAIL'}
                 </span>
               </div>
             </div>
@@ -1074,7 +1214,7 @@ html = f"""<!DOCTYPE html>
             </tr>
             <tr>
               <td style="color:var(--dim)">Output</td>
-              <td>adder_8bit.gds</td>
+              <td>{DESIGN_NAME}.gds</td>
             </tr>
             <tr>
               <td style="color:var(--dim)">GDS size</td>
@@ -1150,11 +1290,11 @@ html = f"""<!DOCTYPE html>
           <div style="font-size:0.75rem;color:var(--dim);
                letter-spacing:1px;margin-bottom:12px">DRC</div>
           <div style="font-size:2.5rem;font-weight:700;
-               color:var(--green);
-               font-family:'Share Tech Mono',monospace">0</div>
+               color:{'var(--green)' if drc_pass else '#ff5555'};
+               font-family:'Share Tech Mono',monospace">{drc_data.get('violations', 'N/A')}</div>
           <div style="color:var(--dim);font-size:0.8rem">Violations</div>
           <div style="margin-top:12px">
-            <span class="badge badge-pass">PASS</span>
+            <span class="badge {'badge-pass' if drc_pass else 'badge-fail'}">{'PASS' if drc_pass else 'FAIL'}</span>
           </div>
           <div style="color:var(--dim);font-size:0.75rem;margin-top:8px">
             Magic DRC on real {gds_kb} KB GDS
@@ -1174,7 +1314,7 @@ html = f"""<!DOCTYPE html>
             {'✓' if lvs_matched else '✗'}
           </div>
           <div style="color:var(--dim);font-size:0.8rem">
-            {'MATCHED' if lvs_matched else 'UNMATCHED'}
+            {lvs_status_label}
           </div>
           <div style="margin-top:12px">
             <span class="badge {'badge-pass' if lvs_matched else 'badge-fail'}">
@@ -1195,7 +1335,7 @@ html = f"""<!DOCTYPE html>
           <div style="font-size:0.75rem;color:var(--dim);
                letter-spacing:1px;margin-bottom:12px">TIMING</div>
           <div style="font-size:2.5rem;font-weight:700;
-               color:var(--green);
+            color:{'var(--green)' if timing['met'] else '#ff5555'};
                font-family:'Share Tech Mono',monospace">
             {timing['slack']}
           </div>
@@ -1273,33 +1413,26 @@ html = f"""<!DOCTYPE html>
             <tbody>
               <tr>
                 <td>pytest -m unit</td>
-                <td>24</td>
-                <td>~4s</td>
-                <td><span class="badge badge-pass">24/24 PASS</span></td>
+                <td>N/A</td>
+                <td>N/A</td>
+                <td><span class="badge badge-warn">NOT EMBEDDED</span></td>
               </tr>
               <tr>
                 <td>pytest -m integration</td>
-                <td>6</td>
-                <td>~35s</td>
-                <td><span class="badge badge-pass">6/6 PASS</span></td>
+                <td>N/A</td>
+                <td>N/A</td>
+                <td><span class="badge badge-warn">NOT EMBEDDED</span></td>
               </tr>
               <tr>
                 <td>pytest -m database</td>
-                <td>5</td>
-                <td>~2s</td>
-                <td><span class="badge badge-pass">4/5 PASS</span></td>
+                <td>N/A</td>
+                <td>N/A</td>
+                <td><span class="badge badge-warn">NOT EMBEDDED</span></td>
               </tr>
               <tr>
-                <td>verify_everything.ps1</td>
-                <td>55</td>
-                <td>~53s</td>
-                <td><span class="badge badge-pass">55/55 PASS</span></td>
-              </tr>
-              <tr>
-                <td>verify_integration.ps1</td>
-                <td>23</td>
-                <td>~10s</td>
-                <td><span class="badge badge-pass">23/23 PASS</span></td>
+                <td colspan="4" style="color:var(--dim)">
+                  This report now avoids hardcoded test pass counts. Run pytest directly for current status.
+                </td>
               </tr>
             </tbody>
           </table>

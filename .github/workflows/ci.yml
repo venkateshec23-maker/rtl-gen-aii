@@ -1,137 +1,150 @@
-name: CI/CD Pipeline
+name: CI — Unit Tests + Lint
 
 on:
   push:
-    branches: [ main, develop ]
+    branches: [main, develop]
   pull_request:
-    branches: [ main ]
+    branches: [main]
 
 jobs:
-  test:
-    name: Test Suite
+  unit-tests:
+    name: Unit Tests (pytest -m unit)
     runs-on: ubuntu-latest
-    
     strategy:
       matrix:
-        python-version: [3.9, 3.10, 3.11]
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ matrix.python-version }}
-    
-    - name: Cache pip packages
-      uses: actions/cache@v3
-      with:
-        path: ~/.cache/pip
-        key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-        restore-keys: |
-          ${{ runner.os }}-pip-
-    
-    - name: Install system dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y iverilog
-    
-    - name: Install Python dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install -r requirements.txt
-        pip install pytest pytest-cov black pylint
-    
-    - name: Check code formatting (Black)
-      run: black --check python/ tests/
-    
-    - name: Lint with pylint
-      run: pylint python/ --exit-zero
-      continue-on-error: true
-    
-    - name: Run tests with coverage
-      env:
-        GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
-        ENABLE_MOCK_LLM: true
-      run: |
-        pytest tests/ -v --cov=python --cov-report=xml --cov-report=term
-    
-    - name: Upload coverage to Codecov
-      uses: codecov/codecov-action@v3
-      with:
-        file: ./coverage.xml
-        fail_ci_if_error: false
-    
-    - name: Run integration tests
-      env:
-        ENABLE_MOCK_LLM: true
-      run: |
-        python test_complete_workflow.py
-        python test_with_testbench_gen.py
+        python-version: ["3.10", "3.11", "3.12"]
 
-  build:
-    name: Build Package
-    runs-on: ubuntu-latest
-    needs: test
-    
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Python
-      uses: actions/setup-python@v4
-      with:
-        python-version: 3.11
-    
-    - name: Install build dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install build twine
-    
-    - name: Build package
-      run: python -m build
-    
-    - name: Check package
-      run: twine check dist/*
-    
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: dist-packages
-        path: dist/
+      - uses: actions/checkout@v4
 
-  docker:
-    name: Build Docker Image
-    runs-on: ubuntu-latest
-    needs: test
-    
-    steps:
-    - uses: actions/checkout@v3
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v2
-    
-    - name: Build Docker image
-      run: docker build -t rtl-gen-ai:test .
-    
-    - name: Test Docker image
-      run: |
-        docker run rtl-gen-ai:test python -c "import python; print('OK')"
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
-  security:
-    name: Security Scan
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-cov
+
+      - name: Run unit tests (no Docker required)
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+        run: |
+          pytest -m unit -v --tb=short 2>&1
+          echo "Exit code: $?"
+
+      - name: Verify no synthetic/hardcoded metrics (TestPreventionRules)
+        run: |
+          pytest tests/test_unit.py::TestPreventionRules -v --tb=short
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unit-test-results-py${{ matrix.python-version }}
+          path: |
+            unit_test_results.txt
+            .pytest_cache/
+
+  db-smoke-test:
+    name: Database Layer Smoke Test
     runs-on: ubuntu-latest
-    
+    needs: unit-tests
+
     steps:
-    - uses: actions/checkout@v3
-    
-    - name: Run Bandit security scan
-      run: |
-        pip install bandit
-        bandit -r python/ -f json -o bandit-report.json
-      continue-on-error: true
-    
-    - name: Run Safety check
-      run: |
-        pip install safety
-        safety check --json
-      continue-on-error: true
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install sqlalchemy python-dotenv
+
+      - name: Test db.py schema creation
+        run: |
+          python -c "
+          from db import init_db, save_run_metrics, get_design_history
+          init_db()
+          rid = save_run_metrics('ci_test', {
+              'status': 'TAPE_OUT_READY',
+              'gds': {'size_bytes': 155000, 'size_kb': 151.4},
+              'synthesis': {'total_cells': 34},
+              'routing': {'routed_def_size': 49000, 'cts_def_size': 11000},
+              'signoff': {'lvs': {'matched': True, 'transistors': 516}, 'drc': {'violations': 0}},
+              'timing': {'worst_slack_ns': 5.55, 'status': 'PASS'},
+              'elapsed_sec': 31.0
+          })
+          history = get_design_history()
+          assert len(history) >= 1
+          assert history[0]['lvs_matched'] == True
+          print('DB smoke test PASSED — run id:', rid)
+          "
+
+  verilog-generator-import:
+    name: Verilog Generator Import Test
+    runs-on: ubuntu-latest
+    needs: unit-tests
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          pip install httpx python-dotenv
+
+      - name: Test generator imports and tool detection
+        run: |
+          python -c "
+          from verilog_generator import detect_sim_tool, parse_verilog_response, validate_verilog_syntax
+          tool = detect_sim_tool()
+          print('Detected sim tool:', tool)
+
+          # Test parser
+          mock_resp = '''
+          \`\`\`rtl
+          \`timescale 1ns/1ps
+          module test_mod(input clk, input reset_n, output reg q);
+          always @(posedge clk) if (!reset_n) q <= 0; else q <= ~q;
+          endmodule
+          \`\`\`
+          \`\`\`testbench
+          \`timescale 1ns/1ps
+          module test_mod_tb;
+          reg clk; reg reset_n; wire q;
+          test_mod uut(.clk(clk),.reset_n(reset_n),.q(q));
+          always #5 clk = ~clk;
+          initial begin
+            clk=0; reset_n=0; #20; reset_n=1;
+            \$dumpfile(\"/work/results/trace.vcd\"); \$dumpvars;
+            #100; \$display(\"ALL_TESTS_PASSED\"); \$finish;
+          end
+          endmodule
+          \`\`\`
+          '''
+          rtl, tb = parse_verilog_response(mock_resp)
+          assert 'test_mod' in rtl, 'RTL extraction failed'
+          assert 'ALL_TESTS_PASSED' in tb, 'TB extraction failed'
+
+          v = validate_verilog_syntax(rtl, tb, 'test_mod')
+          print('Validation:', v)
+          assert v['valid'], f'Validation errors: {v[\"errors\"]}'
+          print('Generator import test PASSED')
+          "

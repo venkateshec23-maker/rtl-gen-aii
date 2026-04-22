@@ -1,0 +1,62 @@
+﻿`timescale 1ns/1ps
+module adder_8bit_tb();
+
+    reg        clk;
+    reg  [7:0] a, b;
+    wire [8:0] sum;
+
+    adder_8bit dut (
+        .clk(clk),
+        .a(a), .b(b), .sum(sum)
+    );
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    integer pass_count = 0;
+    integer fail_count = 0;
+
+    task automatic check_result;
+        input [7:0]  in_a, in_b;
+        input [8:0]  expected;
+        input [63:0] test_num;
+        begin
+            a = in_a; b = in_b;
+            @(posedge clk); #1;
+            if (sum === expected) begin
+                $display("PASS Test %0d: %0d+%0d=%0d",
+                          test_num, in_a, in_b, sum);
+                pass_count = pass_count + 1;
+            end else begin
+                $display("FAIL Test %0d: %0d+%0d=%0d exp=%0d",
+                          test_num, in_a, in_b, sum, expected);
+                fail_count = fail_count + 1;
+            end
+        end
+    endtask
+
+    initial begin
+        $dumpfile("/work/runs/adder_8bit_20260418_180402/trace.vcd");
+        $dumpvars(0, adder_8bit_tb);
+
+        a = 0; b = 0;
+        @(posedge clk); @(posedge clk);
+        #1;
+
+        check_result(8'd5,   8'd3,   9'd8,   1);
+        check_result(8'd100, 8'd50,  9'd150, 2);
+        check_result(8'd255, 8'd1,   9'd256, 3);
+        check_result(8'd128, 8'd128, 9'd256, 4);
+        check_result(8'd0,   8'd0,   9'd0,   5);
+        check_result(8'd255, 8'd255, 9'd510, 6);
+
+        $display("RESULTS: %0d PASS / %0d FAIL",
+                  pass_count, fail_count);
+        if (fail_count == 0)
+            $display("ALL_TESTS_PASSED");
+        else
+            $display("TESTS_FAILED");
+
+        $finish;
+    end
+endmodule

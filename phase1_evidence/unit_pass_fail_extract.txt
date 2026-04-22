@@ -1,0 +1,36 @@
+﻿
+tests/test_unit.py::TestRealMetricsParser::test_parse_synthesis_returns_error_when_missing PASSED [  4%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_synthesis_detects_stub PASSED [  8%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_synthesis_detects_generic_cells PASSED [ 12%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_synthesis_accepts_real_sky130 PASSED [ 16%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_routing_detects_silent_failure PASSED [ 20%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_routing_accepts_real_routing PASSED [ 25%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_gds_detects_empty_stub PASSED [ 29%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_gds_accepts_real_gds PASSED [ 33%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_signoff_invalidates_drc_on_stub PASSED [ 37%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_lvs_detects_matched PASSED [ 41%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_timing_handles_wns_zero PASSED [ 45%]
+tests/test_unit.py::TestRealMetricsParser::test_parse_timing_detects_violation PASSED [ 50%]
+tests/test_unit.py::TestRealMetricsParser::test_get_all_metrics_never_returns_hardcoded PASSED [ 54%]
+tests/test_unit.py::TestRealMetricsParser::test_get_all_metrics_has_disclaimer PASSED [ 58%]
+tests/test_unit.py::TestDockerManager::test_no_windows_paths_in_container_command PASSED [ 62%]
+tests/test_unit.py::TestDockerManager::test_volume_mounts_use_windows_paths PASSED [ 66%]
+tests/test_unit.py::TestDockerManager::test_run_command_returns_tuple PASSED [ 70%]
+tests/test_unit.py::TestDockerManager::test_run_command_handles_timeout PASSED [ 75%]
+tests/test_unit.py::TestDockerManager::test_run_command_handles_exception PASSED [ 79%]
+tests/test_unit.py::TestPreventionRules::test_no_hardcoded_gate_count FAILED [ 83%]
+tests/test_unit.py::TestPreventionRules::test_no_hardcoded_area PASSED   [ 87%]
+tests/test_unit.py::TestPreventionRules::test_no_return_fake_status FAILED [ 91%]
+tests/test_unit.py::TestPreventionRules::test_file_thresholds_cover_all_outputs PASSED [ 95%]
+tests/test_unit.py::TestPreventionRules::test_all_thresholds_are_nonzero PASSED [100%]
+E       AssertionError: Hardcoded gate count '110 gates' found:
+tests\test_unit.py:321: AssertionError
+E       AssertionError: Hardcoded status='PASS' found in non-test code:
+tests\test_unit.py:353: AssertionError
+FAILED tests/test_unit.py::TestPreventionRules::test_no_hardcoded_gate_count - AssertionError: Hardcoded gate count '110 gates' 
+found:
+FAILED tests/test_unit.py::TestPreventionRules::test_no_return_fake_status - AssertionError: Hardcoded status='PASS' found in 
+non-test code:
+=========== 2 failed, 22 passed, 11 deselected, 1 warning in 4.22s ============
+
+

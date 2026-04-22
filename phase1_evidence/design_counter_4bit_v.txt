@@ -1,0 +1,17 @@
+﻿// counter_4bit.v
+// 4-bit synchronous up counter with enable and reset
+// Second design to prove pipeline generality
+
+module counter_4bit (
+    input        clk,
+    input        reset_n,
+    input        enable,
+    output reg [3:0] count
+);
+    always @(posedge clk) begin
+        if (!reset_n)
+            count <= 4'b0000;
+        else if (enable)
+            count <= count + 4'b0001;
+    end
+endmodule

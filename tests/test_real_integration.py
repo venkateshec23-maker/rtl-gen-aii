@@ -77,9 +77,17 @@ endmodule
     # Therefore, we use the real flow object pointing to real tools\OpenLane
     
     results_dir = Path(r"C:\tools\OpenLane\results")
-    if results_dir.exists():
-        import shutil
-        shutil.rmtree(results_dir)
+    if results_dir.exists() or results_dir.is_symlink():
+        try:
+            if results_dir.is_symlink():
+                results_dir.unlink(missing_ok=True)
+            else:
+                shutil.rmtree(results_dir)
+        except OSError:
+            import subprocess
+            subprocess.run(["cmd", "/c", "rmdir", str(results_dir)], capture_output=True, text=True)
+            if results_dir.exists():
+                subprocess.run(["cmd", "/c", "rmdir", "/S", "/Q", str(results_dir)], capture_output=True, text=True)
     results_dir.mkdir(parents=True, exist_ok=True)
     
     # To run test, we need RTL. Assuming RTL is present.
