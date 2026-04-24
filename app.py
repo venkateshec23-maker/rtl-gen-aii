@@ -1400,14 +1400,15 @@ def page_design_history():
     st.divider()
 
     # --- Table Header ---
-    h1, h2, h3, h4, h5, h6, h7 = st.columns([1.5, 1, 1.2, 1, 1, 1, 1])
+    h1, h2, h3, h4, h5, h6, h7, h8 = st.columns([1.5, 1, 1.2, 1, 0.8, 1, 1, 0.8])
     h1.write("**Design (Time)**")
     h2.write("**Status**")
     h3.write("**GDS Size / DL**")
     h4.write("**Timing**")
-    h5.write("**Cells**")
-    h6.write("**LVS**")
-    h7.write("**Time**")
+    h5.write("**Area (um2)**")
+    h6.write("**Cells**")
+    h7.write("**LVS**")
+    h8.write("**Time**")
     st.markdown("---")
 
     for run in filtered_runs:
@@ -1427,7 +1428,9 @@ def page_design_history():
         lvs_stat= run.get("lvs_status", "N/A")
         elapsed = run.get("elapsed_sec", "N/A")
 
-        c1, c2, c3, c4, c5, c6, c7 = st.columns([1.5, 1, 1.2, 1, 1, 1, 1])
+        area    = run.get("area_um2", 0.0)
+
+        c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([1.5, 1, 1.2, 1, 0.8, 1, 1, 0.8])
         with c1:
             st.write(f"**{icon} {run.get('design_name', '?')}**")
             st.caption(ts)
@@ -1451,10 +1454,12 @@ def page_design_history():
         with c4:
             st.write(f"{slack} ns" if slack != "N/A" else "N/A")
         with c5:
-            st.write(str(cells))
+            st.write(f"{area:.1f}" if area else "N/A")
         with c6:
-            st.caption(str(lvs_stat))
+            st.write(str(cells))
         with c7:
+            st.caption(str(lvs_stat))
+        with c8:
             st.write(f"{elapsed} s" if elapsed != "N/A" else "N/A")
 
         st.divider()

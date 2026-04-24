@@ -63,6 +63,9 @@ class RunMetrics(Base):
 
     # Metrics extracted from tool output files
     cell_count       = Column(Integer, default=0)
+    area_um2         = Column(Float,   default=0.0)
+    power_uw         = Column(Float,   default=0.0)
+    utilization      = Column(Float,   default=0.0)
     lvs_matched      = Column(Boolean, default=False)
     lvs_transistors  = Column(Integer, default=0)
     timing_slack_ns  = Column(Float,   default=0.0)
@@ -128,6 +131,9 @@ def save_run_metrics(
             routed_def_bytes = routing.get("routed_def_size", 0),
             cts_def_bytes    = routing.get("cts_def_size", 0),
             cell_count       = synth.get("total_cells", 0),
+            area_um2         = synth.get("chip_area_um2", 0.0),
+            power_uw         = routing.get("power_uw", 0.0),
+            utilization      = routing.get("utilization", 0.0),
             lvs_matched      = signoff.get("lvs", {}).get("matched", False),
             lvs_transistors  = signoff.get("lvs", {}).get("transistors", 0),
             timing_slack_ns  = timing.get("worst_slack_ns") or timing.get("wns_ns") or 0.0,
@@ -195,6 +201,9 @@ def _row_to_dict(run: RunMetrics) -> Dict:
         "status":           run.status,
         "gds_kb":           run.gds_kb,
         "cell_count":       run.cell_count,
+        "area_um2":         run.area_um2,
+        "power_uw":         run.power_uw,
+        "utilization":      run.utilization,
         "lvs_matched":      run.lvs_matched,
         "lvs_transistors":  run.lvs_transistors,
         "timing_slack_ns":  run.timing_slack_ns,

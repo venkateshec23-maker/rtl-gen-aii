@@ -66,6 +66,9 @@ def init_database() -> bool:
                 gds_path        TEXT,
                 gds_size_bytes  INTEGER DEFAULT 0,
                 cell_count      INTEGER DEFAULT 0,
+                area_um2        FLOAT DEFAULT 0.0,
+                power_uw        FLOAT DEFAULT 0.0,
+                utilization     FLOAT DEFAULT 0.0,
                 lvs_status      VARCHAR(20),
                 timing_slack_ns FLOAT,
                 drc_violations  INTEGER DEFAULT 0,
@@ -156,9 +159,9 @@ def save_run(summary: Dict) -> bool:
             INSERT INTO design_runs (
                 run_id, design_name, status, tapeout_ready,
                 elapsed_sec, results_dir, gds_path,
-                gds_size_bytes, cell_count, lvs_status,
-                timing_slack_ns, drc_violations
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                gds_size_bytes, cell_count, area_um2, power_uw, utilization,
+                lvs_status, timing_slack_ns, drc_violations
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (run_id) DO UPDATE SET
                 status        = EXCLUDED.status,
                 tapeout_ready = EXCLUDED.tapeout_ready,
@@ -173,9 +176,12 @@ def save_run(summary: Dict) -> bool:
             gds_path,
             gds_size,
             synth.get("total_cells", 0),
-                lvs_status,
-                timing_slack,
-                int(drc.get("violations", 0) or 0)
+            synth.get("chip_area_um2", 0.0),
+            0.0, # placeholder for power
+            0.0, # placeholder for utilization
+            lvs_status,
+            timing_slack,
+            int(drc.get("violations", 0) or 0)
         ))
 
         for step, result in summary.get("steps", {}).items():
@@ -248,7 +254,7 @@ def get_all_runs() -> List[Dict]:
                 SELECT run_id, design_name, status, tapeout_ready,
                        elapsed_sec, gds_size_bytes, cell_count,
                        lvs_status, timing_slack_ns, results_dir,
-                       gds_path, created_at
+                       gds_path, created_at, area_um2, power_uw, utilization
                 FROM design_runs
                 ORDER BY created_at DESC
             """)
@@ -268,7 +274,10 @@ def get_all_runs() -> List[Dict]:
                     "timing_slack_ns":  r[8],
                     "results_dir":      r[9],
                     "gds_path":         r[10],
-                    "timestamp":        str(r[11])
+                    "timestamp":        str(r[11]),
+                    "area_um2":         r[12],
+                    "power_uw":         r[13],
+                    "utilization":      r[14]
                 }
                 for r in rows
             ]

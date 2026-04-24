@@ -24,9 +24,10 @@
 - [x] Ensure strict JSON response formats from repair prompts
 
 ### Phase 4: Design Quality Metrics
-- [ ] Add Area/Power estimates to PostgreSQL schema
-- [ ] Generate visualizations comparing power/area across runs
-- [ ] Show utilization metrics on Design History page
+**Status**: ✅ Complete
+- [x] Add Area/Power estimates to PostgreSQL schema
+- [x] Generate visualizations comparing power/area across runs
+- [x] Show utilization metrics on Design History page
 
 ### Phase 5: Upload Custom Verilog
 - [ ] Add drag-and-drop Verilog file uploader to UI
