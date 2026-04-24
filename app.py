@@ -1288,6 +1288,7 @@ menu_option = st.sidebar.radio(
     [
         "Home",
         "🤖 AI Verilog Generator",
+        "📤 Upload Custom Verilog",
         "📚 Design History",
         "Live Viewer",
         "RTL & Simulation",
@@ -1465,11 +1466,68 @@ def page_design_history():
         st.divider()
 
 
+def page_upload_verilog():
+    st.header("📤 Upload Custom Verilog")
+    st.write("Upload your custom RTL and testbench to run them through the pipeline, bypassing AI generation.")
+
+    module_name = st.text_input("Module Name", placeholder="e.g. custom_alu")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        rtl_file = st.file_uploader("Upload RTL (.v)", type=["v"])
+    with col2:
+        tb_file = st.file_uploader("Upload Testbench (.v)", type=["v"])
+
+    if st.button("Run Pipeline", type="primary"):
+        if not module_name:
+            st.error("Please provide a module name.")
+            return
+        if not rtl_file or not tb_file:
+            st.error("Please upload both RTL and Testbench files.")
+            return
+
+        rtl_code = rtl_file.getvalue().decode("utf-8")
+        tb_code = tb_file.getvalue().decode("utf-8")
+
+        with st.spinner("Validating Verilog syntax..."):
+            from verilog_generator import validate_verilog_syntax, save_design, simulate_with_tool, detect_sim_tool
+            
+            validation = validate_verilog_syntax(rtl_code, tb_code, module_name)
+            if validation["errors"]:
+                st.error("Syntax Validation Failed!")
+                st.code("\n".join(validation["errors"]), language="verilog")
+                return
+            
+            st.success("Syntax Validation Passed!")
+
+        with st.spinner("Running Simulation..."):
+            paths = save_design(module_name, rtl_code, tb_code)
+            sim_tool = detect_sim_tool()
+            sim_result = simulate_with_tool(module_name, paths["rtl"], paths["testbench"], tool=sim_tool)
+
+            if not sim_result["success"]:
+                st.error("Simulation Failed!")
+                st.code(sim_result["output"][-1000:], language="bash")
+                return
+
+            st.success("Simulation Passed! Enqueueing physical design...")
+
+        st.session_state["queue"].add_task(
+            module_name,
+            provider="custom_upload",
+            description="Custom user upload",
+            rtl=rtl_code,
+            testbench=tb_code
+        )
+        st.success(f"Task '{module_name}' queued successfully. Check the sidebar for progress.")
+
 # Route to pages
 if menu_option == "Home":
     show_home()
 elif menu_option == "🤖 AI Verilog Generator":
     page_generate_design()
+elif menu_option == "📤 Upload Custom Verilog":
+    page_upload_verilog()
 elif menu_option == "📚 Design History":
     page_design_history()
 elif menu_option == "Live Viewer":

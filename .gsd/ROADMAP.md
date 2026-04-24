@@ -30,6 +30,7 @@
 - [x] Show utilization metrics on Design History page
 
 ### Phase 5: Upload Custom Verilog
-- [ ] Add drag-and-drop Verilog file uploader to UI
-- [ ] Bypass AI generation and run pipeline on uploaded RTL
-- [ ] Provide validation and syntax checking pre-run
+**Status**: ✅ Complete
+- [x] Add drag-and-drop Verilog file uploader to UI
+- [x] Bypass AI generation and run pipeline on uploaded RTL
+- [x] Provide validation and syntax checking pre-run
