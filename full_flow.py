@@ -2293,6 +2293,7 @@ class RTLtoGDSIIFlow:
 
         results = {}
         total_steps = len(steps)
+        latest_log_tail = ""
         for step_idx, (step_name, step_fn) in enumerate(steps, start=1):
             if progress_callback:
                 try:
@@ -2320,6 +2321,18 @@ class RTLtoGDSIIFlow:
                     f"Flow stopped at: {step_name}. "
                     f"Check logs in {self.results_dir}"
                 )
+                
+                # Capture the latest log for LLM repair context
+                latest_log_tail = ""
+                try:
+                    log_files = list(self.results_dir.glob("*.log"))
+                    if log_files:
+                        latest_log = max(log_files, key=lambda f: f.stat().st_mtime)
+                        lines = latest_log.read_text(errors="ignore").splitlines()
+                        latest_log_tail = "\n".join(lines[-50:])
+                except Exception as e:
+                    log.error(f"Failed to read error log: {e}")
+                
                 break
 
         elapsed = time.time() - start_time
@@ -2357,6 +2370,8 @@ class RTLtoGDSIIFlow:
             "status": "TAPE_OUT_READY" if tapeout_ready else "INCOMPLETE",
             "metrics":      final_metrics,
             "evidence_gate": evidence_gate,
+            "error_log":    latest_log_tail if not all_steps_passed else None,
+            "failed_step":  step_name if not all_steps_passed else None,
             "gds_path": str(
                 self.results_dir / f"{self.design_name}.gds"
             ) if tapeout_ready else None

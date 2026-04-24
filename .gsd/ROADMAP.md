@@ -18,9 +18,10 @@
 - [x] Enforce max parallel jobs to fit 16GB RAM constraints
 
 ### Phase 3: Better LLM Repair Prompts
-- [ ] Parse `trace.vcd` failed assertions into LLM repair context
-- [ ] Feed OpenLane physical design log errors back to LLM
-- [ ] Ensure strict JSON response formats from repair prompts
+**Status**: ✅ Complete
+- [x] Parse `trace.vcd` failed assertions into LLM repair context
+- [x] Feed OpenLane physical design log errors back to LLM
+- [x] Ensure strict JSON response formats from repair prompts
 
 ### Phase 4: Design Quality Metrics
 - [ ] Add Area/Power estimates to PostgreSQL schema
