@@ -12,8 +12,8 @@ services:
       - GEMINI_API_KEY=${GEMINI_API_KEY}
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/rtlgenai
     volumes:
-      - C:\tools\OpenLane:/openroad
-      - C:\pdk:/pdk
+      - ./openroad:/openroad
+      - ./pdk:/pdk
     depends_on:
       - db
 

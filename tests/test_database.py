@@ -8,9 +8,22 @@ import os
 import re
 from pathlib import Path
 
-RESULTS_DIR = Path(r"C:\tools\OpenLane\results")
+import json
 
+WORK_DIR = Path(r"C:\tools\OpenLane")
+RESULTS_DIR = WORK_DIR / "results"
 
+runs_index = WORK_DIR / "runs" / "index.json"
+if runs_index.exists():
+    try:
+        runs = json.loads(runs_index.read_text(errors="ignore"))
+        if runs:
+            latest = sorted(runs, key=lambda x: x.get("timestamp", ""))[-1]
+            latest_dir = Path(latest.get("results_dir", ""))
+            if latest_dir.exists():
+                RESULTS_DIR = latest_dir
+    except (json.JSONDecodeError, OSError, TypeError, ValueError):
+        pass
 @pytest.mark.database
 class TestDatabaseSchema:
     """

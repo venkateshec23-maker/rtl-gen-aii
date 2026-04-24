@@ -8,9 +8,26 @@ echo "============================================"
 # Install Python dependencies
 pip install -r requirements.txt
 
+# Start database in background
+if command -v docker-compose &> /dev/null; then
+    echo "Starting PostgreSQL container..."
+    docker-compose up -d db
+elif docker compose version &> /dev/null; then
+    echo "Starting PostgreSQL container (docker compose)..."
+    docker compose up -d db
+else
+    echo "[WARNING] docker-compose not found - database may not start"
+fi
+
 # Pull OpenLane Docker image (background)
 echo "Pulling EDA Docker image (background)..."
 docker pull efabless/openlane:latest &
+
+# Create directory structure
+mkdir -p openroad/designs/adder_8bit
+mkdir -p openroad/designs/counter_4bit
+mkdir -p openroad/runs
+mkdir -p pdk
 
 # Verify iverilog is available
 if command -v iverilog &> /dev/null; then
@@ -19,15 +36,6 @@ else
     echo "[WARNING] iverilog not found - installing..."
     apt-get update && apt-get install -y iverilog 2>/dev/null || true
 fi
-
-# Create directory structure
-mkdir -p openroad/designs/adder_8bit
-mkdir -p openroad/designs/counter_4bit
-mkdir -p openroad/runs
-mkdir -p pdk
-
-# Copy designs
-cp -r designs/ openroad/ 2>/dev/null || true
 
 # Download Liberty file (essential for synthesis)
 PDK_LIB="pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib"

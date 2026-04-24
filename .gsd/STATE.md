@@ -1,11 +1,10 @@
 ## Current Position
-- **Phase**: 5 (completed)
-- **Task**: All tasks complete
-- **Status**: Verified
+- **Phase**: N/A
+- **Task**: N/A
+- **Status**: Milestone Complete
 
 ## Last Session Summary
-Phase 5 executed successfully. 1 plan completed. Users can now upload custom Verilog (RTL + Testbench), bypass AI generation, and submit them directly to the RTL-to-GDSII pipeline.
+Completed "Advanced Production & Cloud Readiness" milestone. Archived phases to `.gsd/milestones/`.
 
 ## Next Steps
-1. The Milestone "Advanced Production & Cloud Readiness" is now entirely complete.
-2. Run `/complete-milestone` to archive.
+1. Run `/new-milestone` to plan the next phase of development.
