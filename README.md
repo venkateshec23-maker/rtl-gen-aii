@@ -30,45 +30,51 @@ Time:   30 seconds
 
 ---
 
-## Quick Start (5 minutes)
+## Quick Start
 
-### Prerequisites
+### Option 1: GitHub Codespaces (No Install)
 
-- **Docker Desktop** - [Install](https://www.docker.com/products/docker-desktop/)
-- **Python 3.10+** - [Install](https://www.python.org/downloads/)
-- **16GB RAM** (8GB minimum)
-- **50GB disk** (PDK + Docker images)
-
-### 1. Clone and Install
+Click the badge above. Wait 3 minutes for setup. Run:
 
 ```bash
+streamlit run app.py
+```
+
+### Option 2: Local (Windows)
+
+```powershell
+# Requirements: Docker Desktop, Python 3.12+
+
+# 1. Clone
 git clone https://github.com/YOUR_USERNAME/rtl-gen-ai.git
 cd rtl-gen-ai
+
+# 2. Install
 pip install -r requirements.txt
-```
 
-### 2. Pull Docker Image (~5GB)
-
-```bash
+# 3. Pull Docker image (5GB, one-time)
 docker pull efabless/openlane:latest
+
+# 4. Run
+streamlit run app.py
 ```
 
-### 3. Download PDK (~2GB)
+### Option 3: Local (Linux/Mac)
 
 ```bash
-# Windows
-mkdir C:\pdk
-# Download from https://github.com/RTimothyEdwards/open_pdks
-# Extract sky130A to C:\pdk\sky130A
+# Requirements: Docker, Python 3.10+
 
-# Linux/Mac
-mkdir -p ~/pdk
-# Same extraction process
-```
+# 1. Clone
+git clone https://github.com/YOUR_USERNAME/rtl-gen-ai.git
+cd rtl-gen-ai
 
-### 4. Run the App
+# 2. Install
+pip install -r requirements.txt
 
-```bash
+# 3. Pull Docker image
+docker pull efabless/openlane:latest
+
+# 4. Run
 streamlit run app.py
 ```
 
