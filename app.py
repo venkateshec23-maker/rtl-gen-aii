@@ -20,6 +20,15 @@ from full_flow import (
 
 log = logging.getLogger(__name__)
 
+# Task Queue for Parallel Runs
+try:
+    from python.task_queue import DesignQueue
+    if "queue" not in st.session_state:
+        # Max parallel = 1 for 8GB RAM, 2 for 16GB RAM as requested in roadmap
+        st.session_state["queue"] = DesignQueue(max_parallel=2)
+except ImportError:
+    pass
+
 # Database layer (SQLite — zero config)
 DB_INIT_ERROR = None
 try:
@@ -1041,132 +1050,17 @@ def page_generate_design():
                 language="text"
             )
 
-        # Run full pipeline
-        status.info("Step 2/3 — Running RTL-to-GDSII pipeline...")
+        # Run full pipeline asynchronously
+        status.info("Step 2/3 — Adding to pipeline queue...")
         progress.progress(50)
-        step_placeholder = st.empty()
-        steps_done = []
-
-        def on_flow_progress(step_name, step_num, total_steps, step_status):
-            if step_status == "PASS":
-                steps_done.append(f"✅ {step_name}")
-            elif step_status == "FAIL":
-                steps_done.append(f"❌ {step_name}")
-            pct = 40 + int((step_num / max(total_steps, 1)) * 55)
-            progress.progress(min(pct, 95))
-            step_placeholder.markdown(
-                "**Pipeline Progress**\n" +
-                "\n".join(steps_done[-8:])
-            )
-
-        with st.spinner(
-            f"Running full pipeline for {module_name} — ~90 seconds..."
-        ):
-            from full_flow import RTLtoGDSIIFlow
-            flow = RTLtoGDSIIFlow(
-                design_name  = module_name,
-                verilog_file = result["paths"]["rtl"],
-                work_dir     = str(WORK_DIR),
-                pdk_dir      = str(PDK_DIR),
-                clock_period = 10.0
-            )
-            summary = flow.run_full_flow(progress_callback=on_flow_progress)
-
-        progress.progress(90)
-        run_results_dir = Path(summary.get("results_dir", str(get_active_results_dir())))
-        st.session_state["active_results_dir"] = str(run_results_dir)
-
-        # Results
-        status.info("Step 3/3 — Collecting results...")
-
-        st.markdown("---")
-        st.subheader("Pipeline Results")
-
-        # Step status
-        all_pass = all(
-            v == "PASS" for v in summary["steps"].values()
+        
+        task_id = st.session_state["queue"].add_task(
+            design_name=module_name,
+            verilog_file=result["paths"]["rtl"],
+            provider=provider
         )
-        if all_pass:
-            st.success(
-                f"## ✅ TAPE-OUT READY in "
-                f"{summary['elapsed_sec']}s"
-            )
-            st.balloons()
-        else:
-            failed = [
-                k for k, v in summary["steps"].items()
-                if v != "PASS"
-            ]
-            st.error(f"❌ Failed steps: {failed}")
-
-        # Show each step
-        for step, result_val in summary["steps"].items():
-            icon = "✅" if result_val == "PASS" else "❌"
-            st.write(f"{icon} {step}")
-
-        # Immediate sign-off summary + GDS download
-        gds_path = run_results_dir / f"{module_name}.gds"
-        lvs_path = run_results_dir / "lvs_report_final.txt"
-        sta_path = run_results_dir / "sta_final.txt"
-
-        lvs_ok = False
-        if lvs_path.exists():
-            lvs_txt = lvs_path.read_text(errors="ignore")
-            lvs_ok = ("equivalent" in lvs_txt) or ("Circuits match uniquely" in lvs_txt)
-
-        slack_val = 0.0
-        if sta_path.exists():
-            sta_txt = sta_path.read_text(errors="ignore")
-            slack_match = re.search(r'([\d.\-]+)\s+slack\s+\((?:MET|VIOLATED)\)', sta_txt)
-            if slack_match:
-                try:
-                    slack_val = float(slack_match.group(1))
-                except ValueError:
-                    slack_val = 0.0
-
-        m1, m2, m3 = st.columns(3)
-        with m1:
-            st.metric("GDS Size", f"{file_kb(gds_path)} KB")
-        with m2:
-            st.metric("LVS", "MATCHED" if lvs_ok else "UNMATCHED")
-        with m3:
-            st.metric("Timing Slack", f"{slack_val} ns")
-
-        if gds_path.exists() and gds_path.stat().st_size > 50000:
-            st.success(
-                f"✅ GDS generated: "
-                f"{round(gds_path.stat().st_size/1024,1)} KB"
-            )
-            with open(gds_path, "rb") as f:
-                st.download_button(
-                    f"⬇️ Download {module_name}.gds",
-                    f,
-                    file_name=f"{module_name}.gds",
-                    mime="application/octet-stream"
-                )
-
+        st.success(f"Task queued: {task_id}. Check the Queue Status in the sidebar.")
         progress.progress(100)
-        status.success("Complete!")
-
-        # Save to DB and session history
-        if DB_AVAILABLE:
-            try:
-                from full_flow import RealMetricsParser
-                parser = RealMetricsParser(str(run_results_dir))
-                save_run_metrics(module_name, parser.get_all_metrics(), provider=provider)
-            except Exception as e:
-                st.caption(f"Database sync note: {e}")
-
-        if "design_history" not in st.session_state:
-            st.session_state["design_history"] = []
-        st.session_state["design_history"].append({
-            "module": module_name,
-            "time":   datetime.now().strftime("%H:%M"),
-            "status": "TAPE-OUT READY" if all_pass else "FAILED",
-            "gds_kb": round(
-                gds_path.stat().st_size/1024, 1
-            ) if gds_path.exists() else 0
-        })
 
 
 # ============================================================
@@ -1423,6 +1317,23 @@ st.sidebar.metric("Timing", f"{timing.get('slack',0)}ns", "MET" if timing.get("m
 st.sidebar.markdown("---")
 st.sidebar.caption(f"Last updated: {datetime.now().strftime('%H:%M:%S')}")
 
+st.sidebar.markdown("---")
+st.sidebar.markdown("**Queue Status**")
+if "queue" in st.session_state:
+    tasks = st.session_state["queue"].list_tasks()
+    if not tasks:
+        st.sidebar.caption("No active tasks")
+    for t in tasks:
+        color = "🟢" if t["status"] == "COMPLETED" else "🟡" if t["status"] == "RUNNING" else "🔴" if t["status"] == "FAILED" else "⚪"
+        st.sidebar.caption(f"{color} {t['name']} - {t['status']} ({t['progress']}%)")
+        
+        # Simple manual refresh button since sidebar doesn't auto-poll
+        if t["status"] == "RUNNING":
+            if st.sidebar.button("🔄 Refresh", key=f"ref_{t['id']}"):
+                st.rerun()
+else:
+    st.sidebar.caption("Queue inactive")
+
 def page_design_history():
     """Design History — database-first, runs index fallback."""
     st.header("📚 Design History — All Runs")
@@ -1444,57 +1355,108 @@ def page_design_history():
         st.info("No designs run yet. Use the AI Generator page to get started.")
         return
 
-    # Newest first
-    runs = sorted(runs, key=lambda x: x.get("timestamp", ""), reverse=True)
+    # --- Analytics ---
+    total_runs = len(runs)
+    tapeout_runs = [r for r in runs if r.get("tapeout_ready")]
+    success_rate = (len(tapeout_runs) / total_runs * 100) if total_runs > 0 else 0
+    avg_slack = sum((r.get("timing_slack_ns") or 0) for r in tapeout_runs) / len(tapeout_runs) if tapeout_runs else 0
+    valid_times = [r.get("elapsed_sec") for r in runs if r.get("elapsed_sec")]
+    avg_time = sum(valid_times) / len(valid_times) if valid_times else 0
 
-    col_total, col_ready, col_fail = st.columns(3)
-    with col_total: st.metric("Total runs", len(runs))
-    with col_ready: st.metric("Tape-out ready", sum(1 for r in runs if r.get("tapeout_ready")))
-    with col_fail:  st.metric("Failed",         sum(1 for r in runs if not r.get("tapeout_ready")))
+    st.markdown("### 📊 Pipeline Analytics")
+    c1, c2, c3, c4 = st.columns(4)
+    c1.metric("Total Runs", total_runs)
+    c2.metric("Success Rate", f"{success_rate:.1f}%")
+    c3.metric("Avg Timing Slack", f"{avg_slack:.2f} ns" if tapeout_runs else "N/A")
+    c4.metric("Avg Run Time", f"{avg_time:.1f} s" if valid_times else "N/A")
+    st.divider()
+
+    # --- Filters and Sort ---
+    st.markdown("### 🔍 Filter & Sort")
+    col_filt, col_sort = st.columns(2)
+    with col_filt:
+        status_filter = st.selectbox("Filter by Status", ["All", "TAPE_OUT_READY", "INCOMPLETE/FAILED"])
+    with col_sort:
+        sort_by = st.selectbox("Sort By", ["Date (Newest First)", "Date (Oldest First)", "GDS Size (Largest)", "Timing Slack (Best)"])
+
+    # Apply Filters
+    if status_filter == "TAPE_OUT_READY":
+        filtered_runs = [r for r in runs if r.get("tapeout_ready")]
+    elif status_filter == "INCOMPLETE/FAILED":
+        filtered_runs = [r for r in runs if not r.get("tapeout_ready")]
+    else:
+        filtered_runs = runs
+
+    # Apply Sort
+    if sort_by == "Date (Newest First)":
+        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("timestamp", ""), reverse=True)
+    elif sort_by == "Date (Oldest First)":
+        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("timestamp", ""))
+    elif sort_by == "GDS Size (Largest)":
+        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("gds_size_bytes") or 0, reverse=True)
+    elif sort_by == "Timing Slack (Best)":
+        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("timing_slack_ns") or -999, reverse=True)
 
     st.divider()
 
-    for run in runs:
-        gds_kb  = 0
+    # --- Table Header ---
+    h1, h2, h3, h4, h5, h6, h7 = st.columns([1.5, 1, 1.2, 1, 1, 1, 1])
+    h1.write("**Design (Time)**")
+    h2.write("**Status**")
+    h3.write("**GDS Size / DL**")
+    h4.write("**Timing**")
+    h5.write("**Cells**")
+    h6.write("**LVS**")
+    h7.write("**Time**")
+    st.markdown("---")
+
+    for run in filtered_runs:
+        gds_bytes = run.get("gds_size_bytes") or 0
+        gds_kb  = round(gds_bytes / 1024, 1)
         gds_path = Path(run.get("gds_path", ""))
-        if gds_path.exists():
+        
+        # If DB size is 0 but file exists (legacy runs), calculate it
+        if gds_kb == 0 and gds_path.exists():
             gds_kb = round(gds_path.stat().st_size / 1024, 1)
 
         ready   = run.get("tapeout_ready", False)
         icon    = "✅" if ready else "❌"
         ts      = run.get("timestamp", "")[:16].replace("T", " ")
+        slack   = run.get("timing_slack_ns", "N/A")
+        cells   = run.get("cell_count", "N/A")
+        lvs_stat= run.get("lvs_status", "N/A")
+        elapsed = run.get("elapsed_sec", "N/A")
 
-        col1, col2, col3, col4, col5 = st.columns([2, 2, 1, 1, 1])
-        with col1:
+        c1, c2, c3, c4, c5, c6, c7 = st.columns([1.5, 1, 1.2, 1, 1, 1, 1])
+        with c1:
             st.write(f"**{icon} {run.get('design_name', '?')}**")
-            st.caption(run.get("run_id", ""))
-        with col2:
             st.caption(ts)
-        with col3:
+        with c2:
             if ready:
                 st.success("READY")
             else:
                 st.error("FAIL")
-        with col4:
-            st.write(f"{run.get('elapsed_sec', '?')}s")
-        with col5:
-            if gds_kb > 50 and gds_path.exists():
+        with c3:
+            if gds_kb > 0 and gds_path.exists():
                 with open(gds_path, "rb") as gf:
                     st.download_button(
-                        "⬇ GDS",
+                        f"⬇ {gds_kb} KB",
                         gf,
                         file_name=f"{run.get('design_name')}.gds",
                         key=f"dl_{run.get('run_id')}",
                         mime="application/octet-stream"
                     )
-            elif gds_kb > 0:
-                st.caption(f"{gds_kb} KB")
             else:
-                st.caption("no GDS")
+                st.caption(f"{gds_kb} KB" if gds_kb > 0 else "no GDS")
+        with c4:
+            st.write(f"{slack} ns" if slack != "N/A" else "N/A")
+        with c5:
+            st.write(str(cells))
+        with c6:
+            st.caption(str(lvs_stat))
+        with c7:
+            st.write(f"{elapsed} s" if elapsed != "N/A" else "N/A")
 
-        # Show results_dir path as small caption
-        if run.get("results_dir"):
-            st.caption(f"📁 {run.get('results_dir', '')}")
         st.divider()
 
 
