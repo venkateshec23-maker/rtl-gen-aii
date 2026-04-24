@@ -1,0 +1,47 @@
+{
+  "top_module": "adder_8bit",
+  "synthesis_date": "2026-03-20T00:06:25.849008",
+  "technology": {
+    "library": "asic",
+    "gates": [
+      "AND",
+      "OR",
+      "NAND",
+      "NOR",
+      "XOR",
+      "XNOR",
+      "BUF",
+      "INV",
+      "DFF",
+      "MUX"
+    ],
+    "area_unit": "um\u00b2",
+    "power_unit": "uW/MHz"
+  },
+  "statistics": {
+    "cells": {
+      "AND": 1,
+      "OR": 1,
+      "NAND": 1,
+      "NOR": 1,
+      "DFF": 1,
+      "INV": 1,
+      "BUF": 1
+    },
+    "area": 20.0,
+    "power": 0.0004,
+    "frequency": 1000.0,
+    "flip_flops": 0,
+    "gates": 4,
+    "inputs": 2,
+    "outputs": 2,
+    "wires": 0,
+    "always_blocks": 0,
+    "mock": true
+  },
+  "files": {
+    "netlist": "adder_8bit_netlist.v",
+    "stats": "synthesis_stats.txt",
+    "work_dir": "outputs\\synthesis\\adder_8bit_20260320_000625"
+  }
+}

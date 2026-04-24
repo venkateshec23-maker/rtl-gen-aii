@@ -1,0 +1,5 @@
+
+read_verilog outputs\synthesis\graph_counter_16bit\counter_16bit.v
+hierarchy -top counter_16bit
+proc; opt
+show -format dot -prefix outputs\synthesis\graph_counter_16bit\counter_16bit

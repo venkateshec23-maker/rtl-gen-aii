@@ -1,0 +1,39 @@
+#! /c/iverilog/bin/vvp
+:ivl_version "12.0 (devel)" "(s20150603-965-g55e06db6)";
+:ivl_delay_selection "TYPICAL";
+:vpi_time_precision + 0;
+:vpi_module "C:\iverilog\lib\ivl\system.vpi";
+:vpi_module "C:\iverilog\lib\ivl\vhdl_sys.vpi";
+:vpi_module "C:\iverilog\lib\ivl\vhdl_textio.vpi";
+:vpi_module "C:\iverilog\lib\ivl\v2005_math.vpi";
+:vpi_module "C:\iverilog\lib\ivl\va_math.vpi";
+:vpi_module "C:\iverilog\lib\ivl\v2009.vpi";
+S_0000000000d35d70 .scope package, "$unit" "$unit" 2 1;
+ .timescale 0 0;
+S_0000000000d35f00 .scope module, "test_tb" "test_tb" 3 2;
+ .timescale 0 0;
+v0000000000e0eb80_0 .var "a", 0 0;
+v0000000000e0ec20_0 .net "b", 0 0, L_0000000000d02b70;  1 drivers
+S_0000000000d36090 .scope module, "dut" "test" 3 5, 4 2 0, S_0000000000d35f00;
+ .timescale 0 0;
+    .port_info 0 /INPUT 1 "a";
+    .port_info 1 /OUTPUT 1 "b";
+L_0000000000d02b70 .functor NOT 1, v0000000000e0eb80_0, C4<0>, C4<0>, C4<0>;
+v0000000000d02d90_0 .net "a", 0 0, v0000000000e0eb80_0;  1 drivers
+v0000000000d028d0_0 .net "b", 0 0, L_0000000000d02b70;  alias, 1 drivers
+    .scope S_0000000000d35f00;
+T_0 ;
+    %pushi/vec4 0, 0, 1;
+    %store/vec4 v0000000000e0eb80_0, 0, 1;
+    %delay 10, 0;
+    %vpi_call/w 3 8 "$display", "Test: PASS" {0 0 0};
+    %vpi_call/w 3 9 "$finish" {0 0 0};
+    %end;
+    .thread T_0;
+# The file index is used to find the file name in the following table.
+:file_names 5;
+    "N/A";
+    "<interactive>";
+    "-";
+    "C:\Users\venka\Documents\rtl-gen-aii\cache\verification\sim_workspace\testbench.v";
+    "C:\Users\venka\Documents\rtl-gen-aii\cache\verification\sim_workspace\rtl.v";

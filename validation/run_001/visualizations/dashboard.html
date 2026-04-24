@@ -1,0 +1,320 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RTL-Gen AI Pipeline Visualization Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 10px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        
+        header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 40px;
+            text-align: center;
+        }
+        
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+        }
+        
+        .subtitle {
+            font-size: 1.1em;
+            opacity: 0.9;
+        }
+        
+        .nav {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            padding: 20px;
+            background: #f5f5f5;
+            border-bottom: 2px solid #ddd;
+            justify-content: center;
+        }
+        
+        .nav button {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 5px;
+            background: #667eea;
+            color: white;
+            cursor: pointer;
+            font-size: 1em;
+            transition: all 0.3s;
+        }
+        
+        .nav button:hover {
+            background: #764ba2;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+        }
+        
+        .nav button.active {
+            background: #764ba2;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+        
+        .content {
+            padding: 40px;
+        }
+        
+        .stage {
+            display: none;
+            animation: fadeIn 0.5s ease-in;
+        }
+        
+        .stage.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .stage h2 {
+            color: #667eea;
+            margin-bottom: 20px;
+            font-size: 2em;
+            border-bottom: 3px solid #667eea;
+            padding-bottom: 10px;
+        }
+        
+        .image-container {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .image-container img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+            border: 3px solid #ddd;
+        }
+        
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-top: 30px;
+        }
+        
+        .card {
+            background: #f9f9f9;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+            border-left: 4px solid #667eea;
+        }
+        
+        .card h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .card p {
+            color: #666;
+            line-height: 1.6;
+        }
+        
+        footer {
+            background: #f5f5f5;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            border-top: 2px solid #ddd;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 30px;
+            background: #ddd;
+            border-radius: 15px;
+            overflow: hidden;
+            margin: 20px 0;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎯 RTL-Gen AI Pipeline Visualization</h1>
+            <p class="subtitle">Interactive 2D Layout & Schematic Viewer</p>
+        </header>
+        
+        <div class="nav">
+            <button class="nav-btn active" onclick="showStage('overview')">📊 Overview</button>
+            <button class="nav-btn" onclick="showStage('rtl')">🔌 RTL</button>
+            <button class="nav-btn" onclick="showStage('synthesis')">⚙️ Synthesis</button>
+            <button class="nav-btn" onclick="showStage('floorplan')">📐 Floorplan</button>
+            <button class="nav-btn" onclick="showStage('placement')">📍 Placement</button>
+            <button class="nav-btn" onclick="showStage('cts')">🕐 CTS</button>
+            <button class="nav-btn" onclick="showStage('routing')">🛣️ Routing</button>
+            <button class="nav-btn" onclick="showStage('gds')">💾 GDS</button>
+        </div>
+        
+        <div class="content">
+            <!-- Overview -->
+            <div id="overview" class="stage active">
+                <h2>Pipeline Overview</h2>
+                <div class="grid">
+                    <div class="card">
+                        <h3>✓ RTL Design</h3>
+                        <p>Verilog module schematic and port analysis</p>
+                    </div>
+                    <div class="card">
+                        <h3>✓ Synthesis</h3>
+                        <p>Logic gates distribution and netlist statistics</p>
+                    </div>
+                    <div class="card">
+                        <h3>✓ Floorplanning</h3>
+                        <p>Core area definition and chip boundary</p>
+                    </div>
+                    <div class="card">
+                        <h3>✓ Placement</h3>
+                        <p>Cell placement visualization with density</p>
+                    </div>
+                    <div class="card">
+                        <h3>✓ Clock Tree</h3>
+                        <p>CTS cells distribution and clock network</p>
+                    </div>
+                    <div class="card">
+                        <h3>✓ Routing</h3>
+                        <p>Net routing paths and interconnects</p>
+                    </div>
+                    <div class="card">
+                        <h3>✓ GDS Output</h3>
+                        <p>Final GDSII stream file for fabrication</p>
+                    </div>
+                    <div class="card">
+                        <h3>📊 Interactive</h3>
+                        <p>Click stage buttons to view detailed visualizations</p>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- RTL Stage -->
+            <div id="rtl" class="stage">
+                <h2>RTL Design Stage</h2>
+                <div class="image-container">
+                    <img src="" alt="RTL Schematic">
+                </div>
+            </div>
+            
+            <!-- Synthesis Stage -->
+            <div id="synthesis" class="stage">
+                <h2>Synthesis Stage</h2>
+                <div class="image-container">
+                    <img src="02_synthesis_report.png" alt="Synthesis Report">
+                </div>
+            </div>
+            
+            <!-- Floorplan Stage -->
+            <div id="floorplan" class="stage">
+                <h2>Floorplanning Stage</h2>
+                <div class="image-container">
+                    <img src="03_floorplan.png" alt="Floorplan">
+                </div>
+            </div>
+            
+            <!-- Placement Stage -->
+            <div id="placement" class="stage">
+                <h2>Cell Placement Stage</h2>
+                <div class="image-container">
+                    <img src="04_placement.png" alt="Placement">
+                </div>
+            </div>
+            
+            <!-- CTS Stage -->
+            <div id="cts" class="stage">
+                <h2>Clock Tree Synthesis (CTS) Stage</h2>
+                <div class="image-container">
+                    <img src="05_cts.png" alt="CTS">
+                </div>
+            </div>
+            
+            <!-- Routing Stage -->
+            <div id="routing" class="stage">
+                <h2>Routing Stage</h2>
+                <div class="image-container">
+                    <img src="06_routing.png" alt="Routing">
+                </div>
+            </div>
+            
+            <!-- GDS Stage -->
+            <div id="gds" class="stage">
+                <h2>GDS Output Stage</h2>
+                <div class="image-container">
+                    <img src="07_gds.png" alt="GDS">
+                </div>
+            </div>
+        </div>
+        
+        <footer>
+            <p>Generated by RTL-Gen AI Pipeline Visualizer | 2026-03-30 23:51:38</p>
+            <p>Free open-source visualization using Matplotlib & HTML5</p>
+        </footer>
+    </div>
+    
+    <script>
+        function showStage(stageId) {
+            // Hide all stages
+            document.querySelectorAll('.stage').forEach(stage => {
+                stage.classList.remove('active');
+            });
+            
+            // Remove active class from all buttons
+            document.querySelectorAll('.nav-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            // Show selected stage
+            document.getElementById(stageId).classList.add('active');
+            
+            // Highlight button
+            event.target.classList.add('active');
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+module my_design (
+    input clk,
+    input reset,
+    input [7:0] data_in,
+    output [7:0] data_out
+);
+    // Add a simple assignment
+    assign data_out = data_in;
+endmodule

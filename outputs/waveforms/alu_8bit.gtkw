@@ -1,0 +1,9 @@
+[*] GTKWave configuration for alu_8bit
+[dumpfile] alu_8bit.vcd
+[timestart] 0
+[treeopen] TOP
+[sst_size] 0
+[signal] 0 a 0 0 0 0 0 0 0
+[signal] 1 op 0 0 0 0 0 0 0
+[signal] 2 result 0 0 0 0 0 0 0
+[signal] 3 zero 0 0 0 0 0 0 0

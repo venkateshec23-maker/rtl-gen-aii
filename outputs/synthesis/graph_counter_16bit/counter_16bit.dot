@@ -1,0 +1,30 @@
+digraph counter_16bit {
+    rankdir=LR;
+    splines=ortho;
+    
+    // Input nodes
+    node [shape=box, style=filled, color=lightblue];
+    in0 [label="in0"];
+
+    // Gates
+    node [shape=circle, style=filled, color=lightgreen];
+    g0 [label="G0"];
+    g1 [label="G1"];
+
+    // Flip-flops
+    node [shape=box, style=filled, color=lightyellow];
+    ff0 [label="FF0"];
+    ff1 [label="FF1"];
+
+    // Outputs
+    node [shape=box, style=filled, color=lightpink];
+    out0 [label="out0"];
+
+    // Connections
+    in0 -> g0;
+    g0 -> ff0;
+    g0 -> out0;
+    in0 -> g1;
+    g1 -> ff1;
+    g1 -> out0;
+}

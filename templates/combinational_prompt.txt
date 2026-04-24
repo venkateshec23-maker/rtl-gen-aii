@@ -1,0 +1,25 @@
+Generate a combinational logic circuit with the following specifications:
+
+DESIGN: {description}
+
+REQUIREMENTS:
+- Module name: {module_name}
+- Bit width: {bit_width} bits
+- Inputs: {inputs}
+- Outputs: {outputs}
+
+SPECIFIC GUIDELINES FOR COMBINATIONAL LOGIC:
+1. Use continuous assignments (assign) or always_comb/always @(*)
+2. All inputs must be in sensitivity list
+3. No clocks, no registers
+4. Output updates immediately when inputs change
+5. Use blocking assignments (=) inside always blocks
+
+EXPECTED OUTPUT:
+1. Module declaration with all ports
+2. Internal signal declarations (if needed)
+3. Combinational logic implementation
+4. Comprehensive comments
+5. Truth table or logic description in comments
+
+Generate complete, production-ready Verilog code.

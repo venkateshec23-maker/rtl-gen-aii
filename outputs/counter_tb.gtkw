@@ -1,0 +1,8 @@
+[*] GTKWave configuration for counter_tb
+[dumpfile] counter_tb.vcd
+[timestart] 0
+[treeopen] TOP
+[sst_size] 0
+[signal] 0 clk 0 0 0 0 0 0 0
+[signal] 1 count 0 0 0 0 0 0 0
+[signal] 2 rst 0 0 0 0 0 0 0

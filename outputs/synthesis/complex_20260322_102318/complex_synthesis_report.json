@@ -1,0 +1,47 @@
+{
+  "top_module": "complex",
+  "synthesis_date": "2026-03-22T10:23:18.017027",
+  "technology": {
+    "library": "asic",
+    "gates": [
+      "AND",
+      "OR",
+      "NAND",
+      "NOR",
+      "XOR",
+      "XNOR",
+      "BUF",
+      "INV",
+      "DFF",
+      "MUX"
+    ],
+    "area_unit": "um\u00b2",
+    "power_unit": "uW/MHz"
+  },
+  "statistics": {
+    "cells": {
+      "AND": 1,
+      "OR": 1,
+      "NAND": 1,
+      "NOR": 1,
+      "DFF": 1,
+      "INV": 1,
+      "BUF": 1
+    },
+    "area": 10.0,
+    "power": 0.0002,
+    "frequency": 1000.0,
+    "flip_flops": 0,
+    "gates": 2,
+    "inputs": 2,
+    "outputs": 1,
+    "wires": 0,
+    "always_blocks": 0,
+    "mock": true
+  },
+  "files": {
+    "netlist": "complex_netlist.v",
+    "stats": "synthesis_stats.txt",
+    "work_dir": "outputs\\synthesis\\complex_20260322_102318"
+  }
+}

@@ -1,0 +1,14 @@
+RTL-Gen AI  –  Tape-out Manifest
+============================================================
+Design       : traffic_controller
+Version      : 1.0
+Process      : Sky130A (130nm)
+Generated    : 2026-03-26 18:12:04
+Total files  : 2
+Total size   : 0.00 MB
+============================================================
+
+File                                                Size  MD5                             
+--------------------------------------------- ----------  --------------------------------
+gds\traffic_controller.gds                           212  a2606aaa5b14aeb303d70e5a17979288  ★
+netlist\netlist.v                                  1,566  31901cca6700361e9bfaafac4976f526

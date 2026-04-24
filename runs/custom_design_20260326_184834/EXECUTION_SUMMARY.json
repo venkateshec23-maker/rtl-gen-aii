@@ -1,0 +1,21 @@
+{
+  "run_name": "custom_design_20260326_184834",
+  "design_name": "custom_design",
+  "timestamp": "2026-03-26T18:48:49.103865",
+  "status": "PARTIAL",
+  "total_time": 13.846729278564453,
+  "stages": {
+    "synthesis": 1.902390718460083,
+    "floorplan": 2.998347282409668,
+    "placement": 1.3110928535461426,
+    "cts": 1.2580358982086182,
+    "routing": 1.217806100845337,
+    "gds": 2.568453788757324,
+    "signoff": 2.5274763107299805,
+    "package": 0.040403127670288086
+  },
+  "drc_violations": 0,
+  "lvs_matched": false,
+  "gds_file": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\runs\\custom_design_20260326_184834\\07_gds\\my_design.gds",
+  "package_dir": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\runs\\custom_design_20260326_184834\\09_tapeout"
+}

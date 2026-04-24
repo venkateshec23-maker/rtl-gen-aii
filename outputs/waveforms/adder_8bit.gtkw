@@ -1,0 +1,8 @@
+[*] GTKWave configuration for adder_8bit
+[dumpfile] adder_8bit.vcd
+[timestart] 0
+[treeopen] TOP
+[sst_size] 0
+[signal] 0 a 0 0 0 0 0 0 0
+[signal] 1 carry 0 0 0 0 0 0 0
+[signal] 2 sum 0 0 0 0 0 0 0

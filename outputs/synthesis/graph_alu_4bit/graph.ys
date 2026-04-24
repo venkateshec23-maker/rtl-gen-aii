@@ -1,0 +1,5 @@
+
+read_verilog outputs\synthesis\graph_alu_4bit\alu_4bit.v
+hierarchy -top alu_4bit
+proc; opt
+show -format dot -prefix outputs\synthesis\graph_alu_4bit\alu_4bit

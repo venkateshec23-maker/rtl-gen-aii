@@ -1,0 +1,66 @@
+#! /c/iverilog/bin/vvp
+:ivl_version "12.0 (devel)" "(s20150603-965-g55e06db6)";
+:ivl_delay_selection "TYPICAL";
+:vpi_time_precision - 12;
+:vpi_module "C:\iverilog\lib\ivl\system.vpi";
+:vpi_module "C:\iverilog\lib\ivl\vhdl_sys.vpi";
+:vpi_module "C:\iverilog\lib\ivl\vhdl_textio.vpi";
+:vpi_module "C:\iverilog\lib\ivl\v2005_math.vpi";
+:vpi_module "C:\iverilog\lib\ivl\va_math.vpi";
+:vpi_module "C:\iverilog\lib\ivl\v2009.vpi";
+S_00000000010dbb90 .scope package, "$unit" "$unit" 2 1;
+ .timescale 0 0;
+S_00000000010dbd20 .scope module, "adder_8bit_tb" "adder_8bit_tb" 3 11;
+ .timescale -9 -12;
+v00000000011939e0_0 .var "a", 7 0;
+v0000000001193a80_0 .var "b", 7 0;
+v0000000001193b20_0 .net "carry", 0 0, L_0000000001193df0;  1 drivers
+v0000000001193e90_0 .net "sum", 7 0, L_00000000011942f0;  1 drivers
+S_0000000001196370 .scope module, "dut" "adder_8bit" 3 16, 4 12 0, S_00000000010dbd20;
+ .timescale 0 0;
+    .port_info 0 /INPUT 8 "a";
+    .port_info 1 /INPUT 8 "b";
+    .port_info 2 /OUTPUT 8 "sum";
+    .port_info 3 /OUTPUT 1 "carry";
+L_00000000011de8a0 .functor BUFT 1, C4<0>, C4<0>, C4<0>, C4<0>;
+v0000000001163270_0 .net *"_ivl_10", 0 0, L_00000000011de8a0;  1 drivers
+v0000000001162e40_0 .net *"_ivl_11", 8 0, L_0000000001194430;  1 drivers
+v00000000010dbeb0_0 .net *"_ivl_3", 8 0, L_0000000001194390;  1 drivers
+L_00000000011de858 .functor BUFT 1, C4<0>, C4<0>, C4<0>, C4<0>;
+v00000000010da920_0 .net *"_ivl_6", 0 0, L_00000000011de858;  1 drivers
+v0000000001196500_0 .net *"_ivl_7", 8 0, L_0000000001193f30;  1 drivers
+v00000000011965a0_0 .net "a", 7 0, v00000000011939e0_0;  1 drivers
+v0000000001196640_0 .net "b", 7 0, v0000000001193a80_0;  1 drivers
+v00000000011966e0_0 .net "carry", 0 0, L_0000000001193df0;  alias, 1 drivers
+v0000000001196780_0 .net "sum", 7 0, L_00000000011942f0;  alias, 1 drivers
+L_0000000001193df0 .part L_0000000001194430, 8, 1;
+L_00000000011942f0 .part L_0000000001194430, 0, 8;
+L_0000000001194390 .concat [ 8 1 0 0], v00000000011939e0_0, L_00000000011de858;
+L_0000000001193f30 .concat [ 8 1 0 0], v0000000001193a80_0, L_00000000011de8a0;
+L_0000000001194430 .arith/sum 9, L_0000000001194390, L_0000000001193f30;
+    .scope S_00000000010dbd20;
+T_0 ;
+    %vpi_call/w 3 19 "$dumpfile", "adder.vcd" {0 0 0};
+    %vpi_call/w 3 20 "$dumpvars", 32'sb00000000000000000000000000000000, S_00000000010dbd20 {0 0 0};
+    %pushi/vec4 10, 0, 8;
+    %store/vec4 v00000000011939e0_0, 0, 8;
+    %pushi/vec4 20, 0, 8;
+    %store/vec4 v0000000001193a80_0, 0, 8;
+    %delay 10000, 0;
+    %vpi_call/w 3 22 "$display", "10 + 20 = %d carry=%b", v0000000001193e90_0, v0000000001193b20_0 {0 0 0};
+    %pushi/vec4 255, 0, 8;
+    %store/vec4 v00000000011939e0_0, 0, 8;
+    %pushi/vec4 1, 0, 8;
+    %store/vec4 v0000000001193a80_0, 0, 8;
+    %delay 10000, 0;
+    %vpi_call/w 3 24 "$display", "255 + 1 = %d carry=%b", v0000000001193e90_0, v0000000001193b20_0 {0 0 0};
+    %vpi_call/w 3 25 "$finish" {0 0 0};
+    %end;
+    .thread T_0;
+# The file index is used to find the file name in the following table.
+:file_names 5;
+    "N/A";
+    "<interactive>";
+    "-";
+    "C:\Users\venka\Documents\rtl-gen-aii\cache\verification\sim_workspace\testbench.v";
+    "C:\Users\venka\Documents\rtl-gen-aii\cache\verification\sim_workspace\rtl.v";

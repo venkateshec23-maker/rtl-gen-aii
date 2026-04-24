@@ -1,0 +1,13 @@
+@28
+outputs\alu_8bit_tb.vcd
+@2
+alu_8bit_tb
+@28
+@7
+a
+@7
+op
+@7
+result
+@7
+zero

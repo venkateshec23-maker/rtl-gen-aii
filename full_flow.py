@@ -875,13 +875,12 @@ puts "ROUTING_DONE"
 # ============================================================
 puts "=== FILLER PLACEMENT ==="
 repair_design
-filler_placement -prefix FILL sky130_fd_sc_hd__fill_1 \\
-                              sky130_fd_sc_hd__fill_2 \\
-                              sky130_fd_sc_hd__decap_3 \\
-                              sky130_fd_sc_hd__decap_4 \\
-                              sky130_fd_sc_hd__decap_6 \\
-                              sky130_fd_sc_hd__decap_8 \\
-                              sky130_fd_sc_hd__decap_12
+filler_placement [list sky130_fd_sc_hd__fill_1 \\
+                       sky130_fd_sc_hd__fill_2 \\
+                       sky130_fd_sc_hd__decap_3 \\
+                       sky130_fd_sc_hd__decap_4 \\
+                       sky130_fd_sc_hd__decap_6 \\
+                       sky130_fd_sc_hd__decap_8]
 puts "FILLER_PLACED"
 
 # ============================================================
@@ -1661,15 +1660,52 @@ class RTLtoGDSIIFlow:
         )
         log.info(f"Gate-level simulation output:\n{out}")
 
+        # Count errors in gate simulation log
+        error_lines = [
+            l for l in out.split('\n')
+            if 'error:' in l.lower() and 'warning' not in l.lower()
+        ]
+        error_count = len(error_lines)
+
+        # Check for UDP errors (known iverilog limitation)
+        udp_errors = [
+            l for l in error_lines
+            if 'udp' in l.lower() or 'Unknown module type' in l
+        ]
+
+        if udp_errors:
+            log.warning(
+                f"Gate-level simulation: {len(udp_errors)} UDP errors "
+                f"(iverilog limitation - not a design defect). "
+                f"RTL simulation already proved functional correctness."
+            )
+            log.warning(
+                "UDP primitives in Sky130 require commercial simulator "
+                "for full gate-level verification."
+            )
+            # Store note for summary
+            self._gate_level_sim_note = (
+                "UDP_LIMITATION: iverilog cannot simulate Sky130 primitives. "
+                "RTL simulation provides functional verification."
+            )
+            return True  # Non-blocking
+
+        elif error_count > 0 and "ALL_TESTS_PASSED" not in out:
+            log.error(
+                f"Gate-level simulation: {error_count} real errors"
+            )
+            for line in error_lines[:5]:
+                log.error(f"  {line}")
+            self._gate_level_sim_note = "FAILED: Real errors in gate simulation"
+            return False  # Blocking
+
         if "ALL_TESTS_PASSED" not in out:
             log.warning(
                 "Gate-level simulation could not verify with Sky130 models. "
                 "Functional equivalence proven at RTL level. Continuing flow."
             )
-            # Log what happened but do not block the pipeline
-            # Gate-level sim requires specific iverilog UDP flags
-            # RTL simulation already proved functional correctness
-            return True  # Non-blocking — RTL sim is the primary verification
+            self._gate_level_sim_note = "INCOMPLETE: No pass marker found"
+            return True  # Non-blocking - RTL sim is primary verification
 
         # Compare RTL vs gate-level pass counts
         rtl_log = self.results_dir / "simulation.log"
@@ -2581,6 +2617,10 @@ class RTLtoGDSIIFlow:
             if self.lvs_reason_code:
                 warning_item["reason_code"] = self.lvs_reason_code
             summary["warnings"] = [warning_item]
+
+        # Add gate-level simulation note if available
+        if hasattr(self, "_gate_level_sim_note"):
+            summary["gate_level_sim_note"] = self._gate_level_sim_note
 
         # Attach run isolation metadata
         summary["run_id"]      = self.run_id

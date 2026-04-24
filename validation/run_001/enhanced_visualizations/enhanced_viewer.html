@@ -1,0 +1,327 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Enhanced RTL-to-Layout Visualization</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: #333;
+            min-height: 100vh;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            overflow: hidden;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        
+        .header h1 {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        
+        .header p {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        
+        .nav-tabs {
+            display: flex;
+            background: #f5f5f5;
+            border-bottom: 2px solid #ddd;
+            flex-wrap: wrap;
+        }
+        
+        .nav-tabs button {
+            flex: 1;
+            min-width: 150px;
+            padding: 15px;
+            border: none;
+            background: none;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s ease;
+            border-bottom: 3px solid transparent;
+            margin-bottom: -2px;
+        }
+        
+        .nav-tabs button:hover {
+            background: #e8e8e8;
+        }
+        
+        .nav-tabs button.active {
+            color: #667eea;
+            border-bottom-color: #667eea;
+        }
+        
+        .content {
+            padding: 30px;
+            min-height: 600px;
+        }
+        
+        .tab-pane {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+        
+        .tab-pane.active {
+            display: block;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .visualization {
+            text-align: center;
+            margin: 20px 0;
+        }
+        
+        .visualization img {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            margin: 20px 0;
+        }
+        
+        .info-box {
+            background: #f0f0f0;
+            border-left: 4px solid #667eea;
+            padding: 15px;
+            margin: 15px 0;
+            border-radius: 4px;
+        }
+        
+        .info-box h3 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        .footer {
+            background: #f5f5f5;
+            padding: 20px;
+            text-align: center;
+            color: #666;
+            font-size: 12px;
+            border-top: 1px solid #ddd;
+        }
+        
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 30px 0;
+        }
+        
+        .feature-card {
+            background: white;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+            transition: transform 0.3s ease;
+        }
+        
+        .feature-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 8px 20px rgba(0,0,0,0.1);
+        }
+        
+        .feature-card h4 {
+            color: #667eea;
+            margin-bottom: 10px;
+        }
+        
+        code {
+            background: #f5f5f5;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎯 Enhanced RTL-to-Layout Visualization</h1>
+            <p>Complete design flow from RTL through synthesis to final chip layout</p>
+        </div>
+        
+        <div class="nav-tabs">
+            <button class="tab-btn active" onclick="switchTab(event, 'overview')">📊 Overview</button>
+            <button class="tab-btn" onclick="switchTab(event, 'rtl')">🔧 RTL Schematic</button>
+            <button class="tab-btn" onclick="switchTab(event, 'synthesis')">⚙️ Synthesis Progression</button>
+            <button class="tab-btn" onclick="switchTab(event, 'waveform')">📈 Waveform Simulation</button>
+            <button class="tab-btn" onclick="switchTab(event, 'guide')">📖 How to Use</button>
+        </div>
+        
+        <div class="content">
+            <!-- Overview Tab -->
+            <div id="overview" class="tab-pane active">
+                <h2>Design Visualization Suite</h2>
+                <p>This tool provides comprehensive visualization of your digital design from RTL through final layout.</p>
+                
+                <div class="feature-grid">
+                    <div class="feature-card">
+                        <h4>🔧 RTL Schematic</h4>
+                        <p>Detailed gate-level netlist visualization showing all logic gates and connections</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>⚙️ Synthesis Flow</h4>
+                        <p>Trace design transformation from behavioral RTL through generic to technology-mapped gates</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>📈 Waveforms</h4>
+                        <p>Timing diagrams and behavioral simulation showing signal transitions</p>
+                    </div>
+                    <div class="feature-card">
+                        <h4>🎯 Complete Flow</h4>
+                        <p>View the entire design pipeline: RTL → Synthesis → Place & Route → Layout</p>
+                    </div>
+                </div>
+                
+                <div class="info-box">
+                    <h3>Design Information</h3>
+                    <p><strong>Input File:</strong> adder.v</p>
+                    <p><strong>Generated:</strong> Multiple visualization stages with detailed analysis</p>
+                    <p><strong>Format:</strong> High-resolution PNG images (150 DPI) + Interactive HTML</p>
+                </div>
+            </div>
+            
+            <!-- RTL Tab -->
+            <div id="rtl" class="tab-pane">
+                <h2>RTL Schematic Visualization</h2>
+                <p>Gate-level netlist extracted from Verilog RTL. Shows all logic gates, ports, and connections.</p>
+                <div class="visualization">
+                    <img src="01_rtl_schematic.png" alt="RTL Schematic">
+                </div>
+                <div class="info-box">
+                    <h3>What You're Seeing</h3>
+                    <ul style="text-align: left; margin-left: 20px;">
+                        <li><strong>Blue boxes:</strong> Input ports of the design</li>
+                        <li><strong>Red boxes:</strong> Output ports</li>
+                        <li><strong>Colored rectangles:</strong> Logic gates (color-coded by type)</li>
+                        <li><strong>Lines:</strong> Nets connecting gates and ports</li>
+                    </ul>
+                </div>
+            </div>
+            
+            <!-- Synthesis Tab -->
+            <div id="synthesis" class="tab-pane">
+                <h2>Synthesis Progression</h2>
+                <p>Visual representation of the three synthesis stages:</p>
+                <div class="visualization">
+                    <img src="synthesis_progression.png" alt="Synthesis Progression">
+                </div>
+                <div class="info-box">
+                    <h3>Stages Explained</h3>
+                    <p><strong>Stage 1 - Behavioral RTL:</strong> Initial Verilog description with module ports</p>
+                    <p><strong>Stage 2 - Generic Synthesis:</strong> Technology-independent gate mapping</p>
+                    <p><strong>Stage 3 - Technology Mapping:</strong> Mapping to actual library cells (SKY130)</p>
+                </div>
+            </div>
+            
+            <!-- Waveform Tab -->
+            <div id="waveform" class="tab-pane">
+                <h2>Waveform Simulation</h2>
+                <p>Timing diagram showing signal behavior during behavioral simulation.</p>
+                <div class="visualization">
+                    <img src="waveform_diagram.png" alt="Waveform Diagram">
+                </div>
+                <div class="info-box">
+                    <h3>How to Read</h3>
+                    <p>Each horizontal line represents a signal. Vertical transitions show clock edges and signal changes. Gray vertical lines mark clock cycle boundaries.</p>
+                </div>
+            </div>
+            
+            <!-- Guide Tab -->
+            <div id="guide" class="tab-pane">
+                <h2>User Guide</h2>
+                
+                <h3>Understanding RTL Schematics</h3>
+                <p>The RTL schematic shows the actual gate-level implementation extracted from your Verilog code. Each colored box represents a logic gate:</p>
+                <ul style="margin-left: 20px;">
+                    <li><span style="background: #FFE5E5;">■</span> AND gates</li>
+                    <li><span style="background: #E5E5FF;">■</span> OR gates</li>
+                    <li><span style="background: #FFFFE5;">■</span> NOT/Inverter gates</li>
+                    <li><span style="background: #FFE5FF;">■</span> NAND gates</li>
+                    <li><span style="background: #E5FFFF;">■</span> NOR gates</li>
+                </ul>
+                
+                <h3>Synthesis Progression</h3>
+                <p>Design synthesis transforms your behavioral description through three stages:</p>
+                <ol style="margin-left: 20px;">
+                    <li><strong>Behavioral RTL:</strong> High-level description written in Verilog</li>
+                    <li><strong>Generic Synthesis:</strong> Conversion to abstract logic gates</li>
+                    <li><strong>Technology Mapping:</strong> Binding to physical standard cells from library</li>
+                </ol>
+                
+                <h3>Reading Waveforms</h3>
+                <p>The waveform diagram shows signal values over time:</p>
+                <ul style="margin-left: 20px;">
+                    <li>Horizontal: Time progression (measured in clock cycles)</li>
+                    <li>Vertical: Signal transitions between 0 and 1</li>
+                    <li>Edges: Show exact moment of signal change</li>
+                </ul>
+                
+                <div class="info-box">
+                    <h3>Advanced Topics</h3>
+                    <p><strong>Gate Sizing:</strong> Modern synthesis tools optimize gate sizes for timing and power</p>
+                    <p><strong>Clock Tree:</strong> Special routing for clock signal to minimize skew</p>
+                    <p><strong>Optimization:</strong> Tools like Yosys and Cadence Genus apply multiple passes</p>
+                </div>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Enhanced RTL-to-Layout Visualization System | Generated with Python Matplotlib + HTML5</p>
+            <p>All visualizations are 150 DPI high-quality images suitable for presentations and technical reports</p>
+        </div>
+    </div>
+    
+    <script>
+        function switchTab(evt, tabName) {
+            var i, tabcontent, tablinks;
+            
+            tabcontent = document.getElementsByClassName("tab-pane");
+            for (i = 0; i < tabcontent.length; i++) {
+                tabcontent[i].classList.remove("active");
+            }
+            
+            tablinks = document.getElementsByClassName("tab-btn");
+            for (i = 0; i < tablinks.length; i++) {
+                tablinks[i].classList.remove("active");
+            }
+            
+            document.getElementById(tabName).classList.add("active");
+            evt.currentTarget.classList.add("active");
+        }
+    </script>
+</body>
+</html>

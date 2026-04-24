@@ -1,0 +1,18 @@
+cells:
+  AND: 1
+  OR: 1
+  NAND: 1
+  NOR: 1
+  DFF: 2
+  INV: 1
+  BUF: 1
+area: 60.0
+power: 0.0012
+frequency: 1000.0
+flip_flops: 2
+gates: 2
+inputs: 1
+outputs: 1
+wires: 0
+always_blocks: 1
+mock: True

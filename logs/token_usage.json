@@ -1,0 +1,102 @@
+{
+  "calls": [
+    {
+      "timestamp": "2026-03-30T14:32:34.341409",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-03-30T14:32:34.504464",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-03-30T14:32:34.743406",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-03-30T14:32:34.872857",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-03-30T14:32:35.009301",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-03-30T14:32:35.112813",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-03-30T14:32:35.217338",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-03-30T14:32:35.320729",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-03-30T14:32:36.551635",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    }
+  ],
+  "daily_totals": {
+    "2026-03-30": {
+      "total_tokens": 2700,
+      "total_cost": 0.0,
+      "successful": 9,
+      "failed": 0
+    }
+  }
+}

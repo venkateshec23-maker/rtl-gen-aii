@@ -1,0 +1,47 @@
+{
+  "top_module": "alu_8bit",
+  "synthesis_date": "2026-03-19T23:56:32.388250",
+  "technology": {
+    "library": "asic",
+    "gates": [
+      "AND",
+      "OR",
+      "NAND",
+      "NOR",
+      "XOR",
+      "XNOR",
+      "BUF",
+      "INV",
+      "DFF",
+      "MUX"
+    ],
+    "area_unit": "um\u00b2",
+    "power_unit": "uW/MHz"
+  },
+  "statistics": {
+    "cells": {
+      "AND": 2,
+      "OR": 2,
+      "NAND": 2,
+      "NOR": 2,
+      "DFF": 1,
+      "INV": 1,
+      "BUF": 1
+    },
+    "area": 50.0,
+    "power": 0.001,
+    "frequency": 1000.0,
+    "flip_flops": 0,
+    "gates": 10,
+    "inputs": 2,
+    "outputs": 2,
+    "wires": 0,
+    "always_blocks": 1,
+    "mock": true
+  },
+  "files": {
+    "netlist": "alu_8bit_netlist.v",
+    "stats": "synthesis_stats.txt",
+    "work_dir": "outputs\\synthesis\\alu_8bit_20260319_235632"
+  }
+}

@@ -1,0 +1,14 @@
+RTL-Gen AI  –  Tape-out Manifest
+============================================================
+Design       : counter_4bit
+Version      : 1.0
+Process      : Sky130A (130nm)
+Generated    : 2026-03-28 22:09:46
+Total files  : 2
+Total size   : 0.00 MB
+============================================================
+
+File                                                Size  MD5                             
+--------------------------------------------- ----------  --------------------------------
+gds\counter_4bit.gds                                 212  6789157377f04482b4bf8fc907fcf0e7  ★
+netlist\netlist.v                                  1,661  59a1dc341a52dd46f4f4a613e2e9a8e4

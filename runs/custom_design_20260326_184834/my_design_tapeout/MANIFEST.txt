@@ -1,0 +1,14 @@
+RTL-Gen AI  –  Tape-out Manifest
+============================================================
+Design       : my_design
+Version      : 1.0
+Process      : Sky130A (130nm)
+Generated    : 2026-03-26 18:48:49
+Total files  : 2
+Total size   : 0.00 MB
+============================================================
+
+File                                                Size  MD5                             
+--------------------------------------------- ----------  --------------------------------
+gds\my_design.gds                                    212  fd937e220a2f6c30abeca9fdd962dab0  ★
+netlist\netlist.v                                    315  beb4b4d3548ea51fb725ad88447ace0a

@@ -1,0 +1,47 @@
+{
+  "top_module": "simple",
+  "synthesis_date": "2026-03-29T14:36:25.842995",
+  "technology": {
+    "library": "asic",
+    "gates": [
+      "AND",
+      "OR",
+      "NAND",
+      "NOR",
+      "XOR",
+      "XNOR",
+      "BUF",
+      "INV",
+      "DFF",
+      "MUX"
+    ],
+    "area_unit": "um\u00b2",
+    "power_unit": "uW/MHz"
+  },
+  "statistics": {
+    "cells": {
+      "AND": 1,
+      "OR": 1,
+      "NAND": 1,
+      "NOR": 1,
+      "DFF": 1,
+      "INV": 1,
+      "BUF": 1
+    },
+    "area": 0.0,
+    "power": 0.0,
+    "frequency": 1000.0,
+    "flip_flops": 0,
+    "gates": 0,
+    "inputs": 1,
+    "outputs": 1,
+    "wires": 0,
+    "always_blocks": 0,
+    "mock": true
+  },
+  "files": {
+    "netlist": "simple_netlist.v",
+    "stats": "synthesis_stats.txt",
+    "work_dir": "outputs\\synthesis\\simple_20260329_143625"
+  }
+}

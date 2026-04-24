@@ -1,0 +1,14 @@
+RTL-Gen AI  –  Tape-out Manifest
+============================================================
+Design       : adder_8bit
+Version      : 1.0
+Process      : Sky130A (130nm)
+Generated    : 2026-03-30 20:37:12
+Total files  : 2
+Total size   : 0.00 MB
+============================================================
+
+File                                                Size  MD5                             
+--------------------------------------------- ----------  --------------------------------
+gds\adder_8bit.gds                                   178  82164120a18adfd4a3a2c776c2d08654  ★
+netlist\netlist.v                                  3,532  a769c8b6e681bae2ecd900d371f18150

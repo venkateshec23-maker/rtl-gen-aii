@@ -1,0 +1,9 @@
+[*] GTKWave configuration for design_tb
+[dumpfile] design_tb.vcd
+[timestart] 0
+[treeopen] TOP
+[sst_size] 0
+[signal] 0 clk 0 0 0 0 0 0 0
+[signal] 1 count 0 0 0 0 0 0 0
+[signal] 2 enable 0 0 0 0 0 0 0
+[signal] 3 reset 0 0 0 0 0 0 0

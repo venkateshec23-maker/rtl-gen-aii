@@ -1,0 +1,17 @@
+// Mock Synthesis Netlist
+// Original RTL:
+
+module adder_8bit(
+    input [7:0] a, b,
+    input carry_in,
+    output [7:0] sum,
+    output carry_out
+);
+    assign {carry_out, sum} = a + b + carry_in;
+endmodule
+
+
+// Synthesis Report:
+// Gates: 10
+// Flip-flops: 0
+// Estimated Area: 100 µm²

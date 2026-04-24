@@ -1,0 +1,57 @@
+Generate a comprehensive testbench for the following module:
+
+MODULE CODE:
+{rtl_code}
+
+TESTBENCH REQUIREMENTS:
+1. Module name: {module_name}_tb
+2. Instantiate DUT (Device Under Test)
+3. Generate appropriate stimulus
+4. Check outputs against expected values
+5. Report PASS/FAIL for each test
+6. Generate VCD waveform file
+
+FOR COMBINATIONAL CIRCUITS:
+- Test all input combinations (if feasible)
+- Test corner cases (all 0s, all 1s)
+- Test random samples (if too many combinations)
+
+FOR SEQUENTIAL CIRCUITS:
+- Generate clock (10ns period)
+- Apply reset sequence
+- Test multiple clock cycles
+- Verify state transitions
+
+TESTBENCH STRUCTURE:
+```verilog
+`timescale 1ns/1ps
+
+module {module_name}_tb;
+    // Signal declarations
+    reg [...] inputs;
+    wire [...] outputs;
+    
+    // Clock generation (if needed)
+    reg clk = 0;
+    always #5 clk = ~clk;
+    
+    // DUT instantiation
+    {module_name} dut (...);
+    
+    // Test stimulus
+    initial begin
+        // VCD dump
+        $dumpfile("{module_name}.vcd");
+        $dumpvars(0, {module_name}_tb);
+        
+        // Test cases
+        // ...
+        
+        // Summary
+        $display("Tests completed: %d passed, %d failed", passed, failed);
+        $finish;
+    end
+endmodule
+```
+
+Generate complete, self-checking testbench.

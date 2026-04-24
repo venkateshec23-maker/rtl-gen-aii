@@ -1701,18 +1701,11 @@ def show_viewer():
 menu_option = st.sidebar.radio(
     "NAVIGATION",
     [
-        "Home",
-        "🤖 AI Verilog Generator",
-        "📤 Upload / Describe",
+        "🏠 Home",
+        "🤖 Generate / Upload",
         "📚 Design History",
-        "Live Viewer",
-        "RTL & Simulation",
-        "Synthesis",
-        "Physical Design",
-        "GDS Layout",
-        "Sign-Off",
-        "Download Files",
-        "Pipeline Status"
+        "✅ Sign-Off",
+        "📊 Pipeline Monitor"
     ],
     label_visibility="collapsed"
 )
@@ -2273,27 +2266,13 @@ def _run_custom_pipeline(module_name, rtl_code, tb_code):
             st.code(traceback.format_exc(), language="text")
 
 # Route to pages
-if menu_option == "Home":
+if menu_option == "🏠 Home":
     show_home()
-elif menu_option == "🤖 AI Verilog Generator":
-    page_generate_design()
-elif menu_option == "📤 Upload Custom Verilog":
+elif menu_option == "🤖 Generate / Upload":
     page_upload_custom()
 elif menu_option == "📚 Design History":
     page_design_history()
-elif menu_option == "Live Viewer":
-    show_viewer()
-elif menu_option == "RTL & Simulation":
-    show_simulation()
-elif menu_option == "Synthesis":
-    show_synthesis()
-elif menu_option == "Physical Design":
-    show_physical_design()
-elif menu_option == "GDS Layout":
-    show_gds_layout()
-elif menu_option == "Sign-Off":
+elif menu_option == "✅ Sign-Off":
     show_signoff()
-elif menu_option == "Download Files":
-    show_downloads()
-elif menu_option == "Pipeline Status":
+elif menu_option == "📊 Pipeline Monitor":
     show_status()

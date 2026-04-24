@@ -72,7 +72,7 @@ module MODULE_NAME_tb;
     );
 
     initial begin
-        $dumpfile("/work/results/trace.vcd");
+        $dumpfile("trace.vcd");
         $dumpvars(0, MODULE_NAME_tb);
 
         // Initialize clock and reset
@@ -858,7 +858,7 @@ def auto_fix_testbench(
     if "dumpfile" not in fixed:
         fixed = re.sub(
             r'(initial\s+begin\s*\n)',
-            r'\1    $dumpfile("/work/results/trace.vcd");\n'
+            r'\1    $dumpfile("trace.vcd");\n'
             r'    $dumpvars(0, ' + module_name + r'_tb);\n',
             fixed,
             count=1

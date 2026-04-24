@@ -1,0 +1,13 @@
+@28
+outputs\adder_8bit_tb.vcd
+@2
+adder_8bit_tb
+@28
+@7
+a
+@7
+carry_in
+@7
+carry_out
+@7
+sum

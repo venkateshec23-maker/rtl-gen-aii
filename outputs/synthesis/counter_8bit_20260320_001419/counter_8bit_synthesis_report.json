@@ -1,0 +1,47 @@
+{
+  "top_module": "counter_8bit",
+  "synthesis_date": "2026-03-20T00:14:19.953619",
+  "technology": {
+    "library": "asic",
+    "gates": [
+      "AND",
+      "OR",
+      "NAND",
+      "NOR",
+      "XOR",
+      "XNOR",
+      "BUF",
+      "INV",
+      "DFF",
+      "MUX"
+    ],
+    "area_unit": "um\u00b2",
+    "power_unit": "uW/MHz"
+  },
+  "statistics": {
+    "cells": {
+      "AND": 1,
+      "OR": 1,
+      "NAND": 1,
+      "NOR": 1,
+      "DFF": 2,
+      "INV": 1,
+      "BUF": 1
+    },
+    "area": 60.0,
+    "power": 0.0012,
+    "frequency": 1000.0,
+    "flip_flops": 2,
+    "gates": 2,
+    "inputs": 3,
+    "outputs": 1,
+    "wires": 0,
+    "always_blocks": 1,
+    "mock": true
+  },
+  "files": {
+    "netlist": "counter_8bit_netlist.v",
+    "stats": "synthesis_stats.txt",
+    "work_dir": "outputs\\synthesis\\counter_8bit_20260320_001419"
+  }
+}

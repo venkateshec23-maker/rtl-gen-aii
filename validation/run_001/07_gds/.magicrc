@@ -1,0 +1,2 @@
+# Minimal startup to disable GUI
+set tcl_interactive 0

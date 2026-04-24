@@ -1,0 +1,5 @@
+
+read_verilog outputs\synthesis\graph_adder_8bit\adder_8bit.v
+hierarchy -top adder_8bit
+proc; opt
+show -format dot -prefix outputs\synthesis\graph_adder_8bit\adder_8bit

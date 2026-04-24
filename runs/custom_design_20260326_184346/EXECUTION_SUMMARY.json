@@ -1,0 +1,12 @@
+{
+  "run_name": "custom_design_20260326_184346",
+  "design_name": "custom_design",
+  "timestamp": "2026-03-26T18:43:48.595702",
+  "status": "PARTIAL",
+  "total_time": 1.8645834922790527,
+  "stages": {},
+  "drc_violations": 0,
+  "lvs_matched": false,
+  "gds_file": null,
+  "package_dir": null
+}

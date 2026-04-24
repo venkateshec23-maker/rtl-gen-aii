@@ -1,0 +1,51 @@
+Generate a Finite State Machine with the following specifications:
+
+DESIGN: {description}
+
+REQUIREMENTS:
+- Module name: {module_name}
+- States: {states}
+- Inputs: {inputs}
+- Outputs: {outputs}
+
+SPECIFIC GUIDELINES FOR FSM:
+1. Use three-block or two-block FSM style
+2. Explicitly declare all states using parameters or enums
+3. Separate state register, next-state logic, and output logic
+4. Include reset to initial state
+5. Handle all possible state transitions
+6. Consider invalid state handling
+
+FSM STRUCTURE:
+```verilog
+// State declarations
+localparam STATE1 = 2'b00;
+localparam STATE2 = 2'b01;
+...
+
+// State register
+always @(posedge clk) begin
+    if (reset)
+        current_state <= STATE1;
+    else
+        current_state <= next_state;
+end
+
+// Next state logic
+always @(*) begin
+    case (current_state)
+        STATE1: ...
+        STATE2: ...
+    endcase
+end
+
+// Output logic
+always @(*) begin
+    case (current_state)
+        STATE1: ...
+        STATE2: ...
+    endcase
+end
+```
+
+Generate complete FSM implementation following this structure.

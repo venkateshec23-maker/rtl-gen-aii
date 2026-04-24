@@ -1,0 +1,47 @@
+{
+  "top_module": "alu_4bit",
+  "synthesis_date": "2026-03-19T23:51:44.948870",
+  "technology": {
+    "library": "asic",
+    "gates": [
+      "AND",
+      "OR",
+      "NAND",
+      "NOR",
+      "XOR",
+      "XNOR",
+      "BUF",
+      "INV",
+      "DFF",
+      "MUX"
+    ],
+    "area_unit": "um\u00b2",
+    "power_unit": "uW/MHz"
+  },
+  "statistics": {
+    "cells": {
+      "AND": 3,
+      "OR": 3,
+      "NAND": 3,
+      "NOR": 3,
+      "DFF": 1,
+      "INV": 1,
+      "BUF": 1
+    },
+    "area": 60.0,
+    "power": 0.0012000000000000001,
+    "frequency": 333.3333333333333,
+    "flip_flops": 0,
+    "gates": 12,
+    "inputs": 2,
+    "outputs": 2,
+    "wires": 0,
+    "always_blocks": 1,
+    "mock": true
+  },
+  "files": {
+    "netlist": "alu_4bit_netlist.v",
+    "stats": "synthesis_stats.txt",
+    "work_dir": "outputs\\synthesis\\alu_4bit_20260319_235144"
+  }
+}
