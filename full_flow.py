@@ -380,8 +380,8 @@ class RealMetricsParser:
         # Parse pass/fail from simulation log
         if sim_log.exists():
             log_content = sim_log.read_text(errors="ignore")
-            passes = len(re.findall(r'\bPASS\b', log_content))
-            fails  = len(re.findall(r'\bFAIL\b', log_content))
+            passes = len(re.findall(r'^\s*PASS\s+Test', log_content, re.MULTILINE))
+            fails  = len(re.findall(r'^\s*FAIL\s+Test', log_content, re.MULTILINE))
             result["tests_passed"] = passes
             result["tests_failed"] = fails
             result["all_passed"]   = fails == 0 and passes > 0
@@ -2226,6 +2226,189 @@ class RTLtoGDSIIFlow:
             log.error(f"Timing FAILED: {timing}")
             return False
 
+    def step8_post_layout_simulation(self) -> bool:
+        """
+        Run post-layout simulation with SDF back-annotation.
+        Uses iverilog with SDF annotator for timing-accurate simulation.
+        This verifies the design works correctly with real extracted delays.
+        """
+        log.info("=== STEP 8: POST-LAYOUT SIMULATION (SDF) ===")
+
+        # Check if Docker is available
+        docker_available = False
+        try:
+            result = subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                timeout=5
+            )
+            docker_available = result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired):
+            docker_available = False
+
+        if not docker_available:
+            log.error("Docker not available - post-layout simulation cannot run")
+            return False
+
+        # Required files
+        routed_netlist = self.results_dir / f"{self.design_name}_routed.v"
+        if not routed_netlist.exists():
+            routed_netlist = self.results_dir / f"{self.design_name}_sky130.v"
+        
+        if not routed_netlist.exists():
+            log.error("Routed netlist not found - run physical design first")
+            return False
+
+        sdf_file = self.results_dir / f"{self.design_name}.sdf"
+        
+        # Generate SDF if not present
+        if not sdf_file.exists() or sdf_file.stat().st_size < 1000:
+            log.info("Generating SDF file from routed design...")
+            c_routed_def = f"{self.c_results}/routed.def"
+            c_sdf_out = f"{self.c_results}/{self.design_name}.sdf"
+            
+            sdf_cmd = (
+                f"openroad -exit << 'SDFEOF'\n"
+                f"read_lef {self.c_tlef}\n"
+                f"read_lef {self.c_lef}\n"
+                f"read_liberty {self.c_liberty}\n"
+                f"read_def {c_routed_def}\n"
+                f"read_sdc {self.c_sdc}\n"
+                f"set_propagated_clock [all_clocks]\n"
+                f"estimate_parasitics -global_routing\n"
+                f"write_sdf -divider / -edges noedge {c_sdf_out}\n"
+                f"puts SDF_COMPLETE\n"
+                f"SDFEOF"
+            )
+            
+            rc, out, err = self.docker.run_command(
+                sdf_cmd, timeout=300, log_file="sdf_generation.log"
+            )
+            
+            if not sdf_file.exists():
+                log.error("SDF file generation failed")
+                log.error(f"Output: {out}")
+                return False
+            
+            log.info(f"SDF generated: {sdf_file.stat().st_size} bytes")
+
+        # Find testbench
+        tb_path = self.work_dir / "designs" / self.design_name / f"{self.design_name}_tb.v"
+        if not tb_path.exists():
+            log.error(f"Testbench not found: {tb_path}")
+            return False
+
+        # Sky130 timing models ( behavioral with specify blocks for SDF)
+        c_sky130_timing = (
+            f"{self.c_pdk}/sky130A/libs.ref/"
+            f"sky130_fd_sc_hd/verilog/"
+            f"sky130_fd_sc_hd.v"
+        )
+
+        c_netlist = f"{self.c_results}/{routed_netlist.name}"
+        c_tb = f"{WORK_CONTAINER}/designs/{self.design_name}/{self.design_name}_tb.v"
+        c_sdf = f"{self.c_results}/{self.design_name}.sdf"
+        c_post_sim_log = f"{self.c_results}/post_layout_simulation.log"
+
+        # Check if Sky130 timing models exist
+        check_cmd = f"ls {c_sky130_timing} 2>&1"
+        rc_check, out_check, _ = self.docker.run_command(check_cmd)
+
+        if rc_check != 0:
+            log.warning(
+                "Sky130 verilog timing models not found. "
+                "Using SDF with standard cell wrapper."
+            )
+            # Simplified simulation with just SDF
+            sim_cmd = (
+                f"cd {self.c_results} && "
+                f"iverilog -o /tmp/post_sim "
+                f"-s {self.design_name}_tb "
+                f"-DPOST_LAYOUT "
+                f"{c_netlist} {c_tb} 2>&1 && "
+                f"vvp -M /usr/lib/ivl "
+                f"-msdf "
+                f"/tmp/post_sim "
+                f"+sdf_file={c_sdf} "
+                f"+sdf_module={self.design_name} "
+                f"2>&1 | tee {c_post_sim_log}"
+            )
+        else:
+            # Full post-layout simulation with SDF back-annotation
+            # The -msdf flag enables SDF annotation in iverilog
+            sim_cmd = (
+                f"cd {self.c_results} && "
+                f"iverilog -o /tmp/post_sim "
+                f"-s {self.design_name}_tb "
+                f"-DPOST_LAYOUT "
+                f"-I {self.c_pdk}/sky130A/libs.ref/sky130_fd_sc_hd/verilog/ "
+                f"{c_sky130_timing} "
+                f"{c_netlist} {c_tb} 2>&1 && "
+                f"vvp -M /usr/lib/ivl "
+                f"-msdf "
+                f"/tmp/post_sim "
+                f"+sdf_file={c_sdf} "
+                f"+sdf_module={self.design_name} "
+                f"+sdf_scale=1.0 "
+                f"2>&1 | tee {c_post_sim_log}"
+            )
+
+        log.info("Running post-layout simulation with SDF back-annotation...")
+        rc, out, err = self.docker.run_command(
+            sim_cmd, timeout=600, log_file="post_layout_simulation.log"
+        )
+
+        log.info(f"Post-layout simulation output:\n{out}")
+
+        # Check for success markers
+        post_sim_log = self.results_dir / "post_layout_simulation.log"
+        if post_sim_log.exists():
+            content = post_sim_log.read_text(errors="ignore")
+        else:
+            content = out
+
+        # Look for ALL_TESTS_PASSED marker
+        if "ALL_TESTS_PASSED" in content:
+            passes = len(re.findall(r'^\s*PASS\s+Test', content, re.MULTILINE))
+            fails = len(re.findall(r'^\s*FAIL\s+Test', content, re.MULTILINE))
+            log.info(
+                f"STEP 8 COMPLETE - Post-layout simulation: "
+                f"{passes} PASS / {fails} FAIL"
+            )
+            return True
+
+        # Check for SDF annotation errors
+        if "SDF annotation" in content and "error" in content.lower():
+            log.error("SDF annotation error detected")
+            for line in content.split('\n'):
+                if 'sdf' in line.lower() or 'error' in line.lower():
+                    log.error(f"  {line}")
+            return False
+
+        # Check for timing violations (x or z in outputs can indicate timing issues)
+        if " xxxx " in content or " zzzz " in content:
+            log.warning(
+                "Post-layout simulation shows X or Z states - "
+                "possible timing violations"
+            )
+            # Still check if tests passed despite warnings
+            passes = len(re.findall(r'^\s*PASS\s+Test', content, re.MULTILINE))
+            fails = len(re.findall(r'^\s*FAIL\s+Test', content, re.MULTILINE))
+            if fails == 0 and passes > 0:
+                log.info(
+                    f"Tests passed despite X/Z warnings: "
+                    f"{passes} PASS / {fails} FAIL"
+                )
+                return True
+            return False
+
+        # No test markers found
+        log.error(
+            "Post-layout simulation output missing ALL_TESTS_PASSED marker. "
+            "Check testbench for proper $display statements."
+        )
+        return False
+
     def run_full_flow(self, progress_callback=None) -> Dict:
         """
         Execute complete RTL to GDSII flow.
@@ -2289,6 +2472,7 @@ class RTLtoGDSIIFlow:
             ("DRC",                  self.step5_drc),
             ("LVS",                  self.step6_lvs),
             ("Timing",               self.step7_sta),
+            ("Post-Layout Simulation", self.step8_post_layout_simulation),
         ]
 
         results = {}
