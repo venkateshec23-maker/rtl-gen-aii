@@ -1780,134 +1780,240 @@ st.sidebar.markdown(f"""
 """, unsafe_allow_html=True)
 
 def page_design_history():
-    """Design History — database-first, runs index fallback."""
-    st.header("📚 Design History — All Runs")
+    st.markdown("""
+    <div style="
+        font-family:'Share Tech Mono',monospace;
+        font-size:0.7rem;
+        letter-spacing:2px;
+        color:#00d4ff;
+        text-transform:uppercase;
+        border-bottom:1px solid #30363d;
+        padding-bottom:8px;
+        margin-bottom:20px">
+        DESIGN RUN HISTORY
+    </div>
+    """, unsafe_allow_html=True)
 
-    runs = []
     try:
-        from database import get_all_runs
+        from database import get_all_runs, get_db_status
+        db_status = get_db_status()
         runs = get_all_runs()
-    except (ImportError, RuntimeError, OSError, ValueError) as e:
-        log.warning("Database history lookup failed: %s", e)
-        runs = []
-
-    if not runs:
-        runs_index = WORK_DIR / "runs" / "index.json"
-        if runs_index.exists():
-            runs = json.loads(runs_index.read_text(errors="ignore"))
-
-    if not runs:
-        st.info("No designs run yet. Use the AI Generator page to get started.")
+        if db_status["connected"]:
+            st.caption(
+                f"PostgreSQL - {len(runs)} total runs"
+            )
+        else:
+            st.caption(
+                f"JSON fallback - {len(runs)} total runs"
+            )
+    except Exception as e:
+        st.error(f"Could not load history: {e}")
         return
 
-    # --- Analytics ---
-    total_runs = len(runs)
-    tapeout_runs = [r for r in runs if r.get("tapeout_ready")]
-    success_rate = (len(tapeout_runs) / total_runs * 100) if total_runs > 0 else 0
-    avg_slack = sum((r.get("timing_slack_ns") or 0) for r in tapeout_runs) / len(tapeout_runs) if tapeout_runs else 0
-    valid_times = [r.get("elapsed_sec") for r in runs if r.get("elapsed_sec")]
-    avg_time = sum(valid_times) / len(valid_times) if valid_times else 0
+    if not runs:
+        st.info(
+            "No runs yet. Go to Generate/Upload to run a design."
+        )
+        return
 
-    st.markdown("### 📊 Pipeline Analytics")
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total Runs", total_runs)
-    c2.metric("Success Rate", f"{success_rate:.1f}%")
-    c3.metric("Avg Timing Slack", f"{avg_slack:.2f} ns" if tapeout_runs else "N/A")
-    c4.metric("Avg Run Time", f"{avg_time:.1f} s" if valid_times else "N/A")
-    st.divider()
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        status_filter = st.selectbox(
+            "Filter by status",
+            ["All", "TAPE_OUT_READY", "INCOMPLETE", "IN_PROGRESS"]
+        )
+    with col2:
+        sort_by = st.selectbox(
+            "Sort by",
+            ["Newest first", "Oldest first",
+             "Largest GDS", "Best timing"]
+        )
+    with col3:
+        design_filter = st.text_input(
+            "Search design name", placeholder="e.g. adder"
+        )
 
-    # --- Filters and Sort ---
-    st.markdown("### 🔍 Filter & Sort")
-    col_filt, col_sort = st.columns(2)
-    with col_filt:
-        status_filter = st.selectbox("Filter by Status", ["All", "TAPE_OUT_READY", "INCOMPLETE/FAILED"])
-    with col_sort:
-        sort_by = st.selectbox("Sort By", ["Date (Newest First)", "Date (Oldest First)", "GDS Size (Largest)", "Timing Slack (Best)"])
-
-    # Apply Filters
+    filtered = runs
     if status_filter == "TAPE_OUT_READY":
-        filtered_runs = [r for r in runs if r.get("tapeout_ready")]
-    elif status_filter == "INCOMPLETE/FAILED":
-        filtered_runs = [r for r in runs if not r.get("tapeout_ready")]
-    else:
-        filtered_runs = runs
+        filtered = [
+            r for r in filtered
+            if r.get("tapeout_ready")
+        ]
+    elif status_filter == "INCOMPLETE":
+        filtered = [
+            r for r in filtered
+            if not r.get("tapeout_ready")
+        ]
+    if design_filter:
+        filtered = [
+            r for r in filtered
+            if design_filter.lower() in
+            r.get("design_name","").lower()
+        ]
 
-    # Apply Sort
-    if sort_by == "Date (Newest First)":
-        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("timestamp", ""), reverse=True)
-    elif sort_by == "Date (Oldest First)":
-        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("timestamp", ""))
-    elif sort_by == "GDS Size (Largest)":
-        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("gds_size_bytes") or 0, reverse=True)
-    elif sort_by == "Timing Slack (Best)":
-        filtered_runs = sorted(filtered_runs, key=lambda x: x.get("timing_slack_ns") or -999, reverse=True)
+    if sort_by == "Newest first":
+        filtered = sorted(
+            filtered,
+            key=lambda x: x.get("timestamp",""),
+            reverse=True
+        )
+    elif sort_by == "Oldest first":
+        filtered = sorted(
+            filtered,
+            key=lambda x: x.get("timestamp","")
+        )
+    elif sort_by == "Largest GDS":
+        filtered = sorted(
+            filtered,
+            key=lambda x: x.get("gds_size_bytes",0) or 0,
+            reverse=True
+        )
+    elif sort_by == "Best timing":
+        filtered = sorted(
+            filtered,
+            key=lambda x: x.get("timing_slack_ns",0) or -999,
+            reverse=True
+        )
 
-    st.divider()
+    total   = len(filtered)
+    ready   = sum(1 for r in filtered if r.get("tapeout_ready"))
+    avg_gds = sum(
+        r.get("gds_size_bytes",0) or 0 for r in filtered
+    ) / max(total,1) / 1024
 
-    # --- Table Header ---
-    h1, h2, h3, h4, h5, h6, h7, h8 = st.columns([1.5, 1, 1.2, 1, 0.8, 1, 1, 0.8])
-    h1.write("**Design (Time)**")
-    h2.write("**Status**")
-    h3.write("**GDS Size / DL**")
-    h4.write("**Timing**")
-    h5.write("**Area (um2)**")
-    h6.write("**Cells**")
-    h7.write("**LVS**")
-    h8.write("**Time**")
+    c1, c2, c3, c4 = st.columns(4)
+    with c1:
+        st.metric("Showing", total)
+    with c2:
+        st.metric("Tape-Out Ready",
+                  f"{ready}/{total}")
+    with c3:
+        pct = int(ready/max(total,1)*100)
+        st.metric("Success Rate", f"{pct}%")
+    with c4:
+        st.metric("Avg GDS",
+                  f"{avg_gds:.1f} KB")
+
     st.markdown("---")
 
-    for run in filtered_runs:
-        gds_bytes = run.get("gds_size_bytes") or 0
-        gds_kb  = round(gds_bytes / 1024, 1)
-        gds_path = Path(run.get("gds_path", ""))
-        
-        # If DB size is 0 but file exists (legacy runs), calculate it
-        if gds_kb == 0 and gds_path.exists():
-            gds_kb = round(gds_path.stat().st_size / 1024, 1)
+    for run in filtered:
+        name      = run.get("design_name","unknown")
+        status    = run.get("status","UNKNOWN")
+        ready_ok  = run.get("tapeout_ready", False)
+        elapsed   = run.get("elapsed_sec", 0) or 0
+        gds_bytes = run.get("gds_size_bytes", 0) or 0
+        gds_kb    = round(gds_bytes/1024,1)
+        slack     = run.get("timing_slack_ns", "N/A")
+        cells     = run.get("cell_count", 0) or 0
+        timestamp = run.get("timestamp","")[:16].replace("T", " ")
+        run_id    = run.get("run_id", name)
 
-        ready   = run.get("tapeout_ready", False)
-        icon    = "✅" if ready else "❌"
-        ts      = run.get("timestamp", "")[:16].replace("T", " ")
-        slack   = run.get("timing_slack_ns", "N/A")
-        cells   = run.get("cell_count", "N/A")
-        lvs_stat= run.get("lvs_status", "N/A")
-        elapsed = run.get("elapsed_sec", "N/A")
+        border = "#00ff9d" if ready_ok else "#ff3333"
 
-        area    = run.get("area_um2", 0.0)
+        with st.container():
+            st.markdown(f"""
+            <div style="
+                border:1px solid {border};
+                border-left:4px solid {border};
+                border-radius:4px;
+                padding:12px 16px;
+                margin:6px 0;
+                background:#1c2128;">
+                <div style="
+                    display:flex;
+                    justify-content:space-between;
+                    align-items:center">
+                    <span style="
+                        font-family:'Rajdhani',sans-serif;
+                        font-weight:700;
+                        font-size:1.1rem;
+                        color:#f0f6fc">
+                        {name}
+                    </span>
+                    <span style="
+                        font-family:'Share Tech Mono',monospace;
+                        font-size:0.75rem;
+                        color:{'#00ff9d' if ready_ok else '#ff3333'}">
+                        {'TAPE-OUT READY' if ready_ok else status}
+                    </span>
+                </div>
+                <div style="
+                    font-family:'Share Tech Mono',monospace;
+                    font-size:0.75rem;
+                    color:#8b949e;
+                    margin-top:6px">
+                    {timestamp} &nbsp;|&nbsp;
+                    GDS: <span style="color:#00d4ff">{gds_kb} KB</span>
+                    &nbsp;|&nbsp;
+                    Cells: <span style="color:#00d4ff">{cells}</span>
+                    &nbsp;|&nbsp;
+                    Slack: <span style="color:#00d4ff">{slack} ns</span>
+                    &nbsp;|&nbsp;
+                    Time: <span style="color:#00d4ff">{elapsed}s</span>
+                </div>
+            </div>
+            """, unsafe_allow_html=True)
 
-        c1, c2, c3, c4, c5, c6, c7, c8 = st.columns([1.5, 1, 1.2, 1, 0.8, 1, 1, 0.8])
-        with c1:
-            st.write(f"**{icon} {run.get('design_name', '?')}**")
-            st.caption(ts)
-        with c2:
-            if ready:
-                st.success("READY")
-            else:
-                st.error("FAIL")
-        with c3:
-            if gds_kb > 0 and gds_path.exists():
-                with open(gds_path, "rb") as gf:
-                    st.download_button(
-                        f"⬇ {gds_kb} KB",
-                        gf,
-                        file_name=f"{run.get('design_name')}.gds",
-                        key=f"dl_{run.get('run_id')}",
-                        mime="application/octet-stream"
-                    )
-            else:
-                st.caption(f"{gds_kb} KB" if gds_kb > 0 else "no GDS")
-        with c4:
-            st.write(f"{slack} ns" if slack != "N/A" else "N/A")
-        with c5:
-            st.write(f"{area:.1f}" if area else "N/A")
-        with c6:
-            st.write(str(cells))
-        with c7:
-            st.caption(str(lvs_stat))
-        with c8:
-            st.write(f"{elapsed} s" if elapsed != "N/A" else "N/A")
+            with st.expander(f"Details - {run_id}"):
+                dcol1, dcol2 = st.columns(2)
 
-        st.divider()
+                with dcol1:
+                    steps = run.get("steps", {})
+                    if steps:
+                        st.caption("PIPELINE STEPS")
+                        for step, result in steps.items():
+                            icon = "PASS" if result == "PASS" else "FAIL"
+                            st.markdown(
+                                f"`{icon} {step}: {result}`"
+                            )
+                    else:
+                        st.caption("No step data available")
+
+                with dcol2:
+                    st.caption("DOWNLOADS")
+                    results_dir = run.get("results_dir","")
+                    gds_path = run.get("gds_path","")
+
+                    if gds_path and Path(gds_path).exists():
+                        with open(gds_path,"rb") as f:
+                            st.download_button(
+                                f"Download GDS ({gds_kb} KB)",
+                                f,
+                                file_name=f"{name}.gds",
+                                mime="application/octet-stream",
+                                key=f"gds_{run_id}"
+                            )
+
+                    if results_dir:
+                        rd = Path(results_dir)
+                        lvs = rd / "lvs_report_final.txt"
+                        sta = rd / "sta_final.txt"
+                        sim = rd / "simulation.log"
+
+                        if lvs.exists():
+                            with open(lvs,"rb") as f:
+                                st.download_button(
+                                    "Download LVS Report",
+                                    f,
+                                    file_name="lvs_report.txt",
+                                    key=f"lvs_{run_id}"
+                                )
+                        if sta.exists():
+                            with open(sta,"rb") as f:
+                                st.download_button(
+                                    "Download STA Report",
+                                    f,
+                                    file_name="sta_report.txt",
+                                    key=f"sta_{run_id}"
+                                )
+                        if sim.exists():
+                            with open(sim,"rb") as f:
+                                st.download_button(
+                                    "Download Simulation Log",
+                                    f,
+                                    file_name="simulation.log",
+                                    key=f"sim_{run_id}"
+                                )
 
 
 def page_upload_custom():

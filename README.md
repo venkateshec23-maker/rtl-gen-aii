@@ -1,269 +1,294 @@
-# RTL-Gen AI: RTL to GDSII Chip Design Platform
+# RTL-Gen AI
 
-**Version:** 1.0.0 | **Python:** 3.9+ | **License:** MIT
+**Natural language to manufacturable silicon in 30 seconds.**
 
-RTL-Gen AI is a complete hardware design automation platform that bridges the gap between Verilog RTL and fabrication-ready chip layouts. It combines AI-powered code generation with industry-standard EDA tools to create a seamless design-to-silicon workflow.
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/YOUR_USERNAME/rtl-gen-ai)
 
-## Overview
+---
 
-RTL-Gen AI simplifies complex chip design by automating the entire physical design flow. Whether you're working with AI-generated code or custom Verilog, the system handles synthesis, placement, routing, and sign-off verification in a single automated pipeline. The web interface makes it accessible to engineers at all levels, while the production-grade backend ensures professional-quality outputs.
+## What It Does
 
-## Key Capabilities
+Type a description. Get a GDS file ready for fabrication.
 
-The platform provides:
+```
+Input:  "Design an 8-bit synchronous adder with carry"
+Output: adder_8bit.gds - 152 KB - DRC clean - LVS matched
+Time:   30 seconds
+```
 
-- **Flexible Input**: Write custom Verilog code directly in the editor, select from pre-built templates, or upload existing designs
-- **One-Click Execution**: Run a complete 9-stage RTL-to-GDSII flow from anywhere in the UI
-- **Real-time Feedback**: Monitor pipeline progress with detailed stage timings and status updates
-- **Professional Outputs**: Generate GDSII files, DEF layouts, Verilog netlists, and sign-off reports
-- **Design Validation**: Automated DRC and LVS verification using industry-standard tools (Magic, Netgen)
-- **Results Dashboard**: Browse design history, compare metrics, and download all outputs
+---
 
-## Technology Stack
+## Demo Screenshots
 
-The system is built on proven open-source tools:
+| Home Dashboard | Physical Design |
+|:-------------:|:---------------:|
+| ![Home](docs/home.png) | ![Layout](docs/layout.png) |
 
-- **Synthesis**: Yosys (RTL → gate-level netlist)
-- **Physical Design**: OpenROAD (floorplanning, placement, routing)
-- **Verification**: Magic (DRC), Netgen (LVS)
-- **Process Node**: Sky130A (130nm open-source PDK)
-- **Containerization**: Docker (reproducible, portable execution)
-- **Frontend**: Streamlit (web-based UI)
-- **Backend**: Python 3.9+
+| Sign-off Checks | GDS Download |
+|:---------------:|:------------:|
+| ![Signoff](docs/signoff.png) | ![GDS](docs/gds.png) |
 
-## Getting Started
+---
 
-### Installation
+## Quick Start (5 minutes)
 
-Clone the repository and install dependencies:
+### Prerequisites
+
+- **Docker Desktop** - [Install](https://www.docker.com/products/docker-desktop/)
+- **Python 3.10+** - [Install](https://www.python.org/downloads/)
+- **16GB RAM** (8GB minimum)
+- **50GB disk** (PDK + Docker images)
+
+### 1. Clone and Install
 
 ```bash
-git clone https://github.com/rtl-gen-aii/rtl-gen-aii.git
-cd rtl-gen-aii
+git clone https://github.com/YOUR_USERNAME/rtl-gen-ai.git
+cd rtl-gen-ai
 pip install -r requirements.txt
 ```
 
-### Running the Platform
+### 2. Pull Docker Image (~5GB)
 
-Start the Streamlit web application:
+```bash
+docker pull efabless/openlane:latest
+```
+
+### 3. Download PDK (~2GB)
+
+```bash
+# Windows
+mkdir C:\pdk
+# Download from https://github.com/RTimothyEdwards/open_pdks
+# Extract sky130A to C:\pdk\sky130A
+
+# Linux/Mac
+mkdir -p ~/pdk
+# Same extraction process
+```
+
+### 4. Run the App
 
 ```bash
 streamlit run app.py
 ```
 
-This launches the platform at `http://localhost:8501`. From here, you can:
+Open http://localhost:8501 in your browser.
 
-1. Select a template (Counter, Adder, Traffic Light) or edit custom Verilog
-2. Click "Run Pipeline" to execute all 9 design stages
-3. View results in the dashboard with metrics and downloadable files
+---
 
-### Example: Testing with a Template
-
-The platform includes several working examples:
+## How It Works
 
 ```
-Simple Counter: 8-bit counter with reset and enable
-8-bit Adder: Full adder with carry propagation
-Traffic Light Controller: 4-state FSM with timing control
+User Description
+      |
+      v
++-------------+
+| LLM Generation |  <-- Gemini / OpenCode / Groq
++-------------+
+      |
+      v
++-------------+
+| RTL Synthesis  |  <-- Yosys + Sky130
++-------------+
+      |
+      v
++-------------+
+| Floorplan      |  <-- OpenROAD
+| Placement      |
+| CTS            |
+| Routing        |
++-------------+
+      |
+      v
++-------------+
+| DRC / LVS      |  <-- Magic / Netgen
+| STA            |  <-- OpenSTA
++-------------+
+      |
+      v
++-------------+
+| GDS II Output  |  <-- Ready for fab
++-------------+
 ```
 
-Select any template, optionally modify the code, and run the pipeline to see end-to-end chip generation in under 15 seconds.
+---
 
-## Project Structure
+## Architecture
 
 ```
-rtl-gen-aii/
-├── app.py                          # Main Streamlit application
-├── pages/                          # Streamlit pages
-│   ├── 00_Home.py                  # Platform overview
-│   ├── 01_Custom_Design.py         # Code editor and pipeline execution
-│   ├── 04_Physical_Design_Flow.py  # Pre-configured design flows
-│   ├── 05_Results.py               # Results dashboard
-│   └── 06_Workflow.py              # Integration guide
-├── python/
-│   ├── full_flow.py                # Main orchestrator (RTLGenAI class)
-│   ├── docker_manager.py           # Docker lifecycle management
-│   ├── synthesis_engine.py         # Yosys integration
-│   ├── floorplanner.py             # Floorplanning logic
-│   ├── placer.py                   # Placement engine
-│   ├── cts_engine.py               # Clock tree synthesis
-│   ├── detail_router.py            # Routing engine
-│   ├── gds_generator.py            # GDS file generation
-│   ├── signoff_checker.py          # DRC/LVS verification
-│   └── tapeout_packager.py         # Professional packaging
-├── tests/                          # Test suite (533 tests, 100% passing)
-├── runs/                           # Generated design outputs
-├── Dockerfile                      # Container specification
-├── requirements.txt                # Python dependencies
-└── README.md                       # This file
+rtl-gen-ai/
+├── app.py                 # Streamlit UI (5 pages)
+├── full_flow.py           # 11-step RTL-to-GDSII pipeline
+├── verilog_generator.py   # LLM-based Verilog generation
+├── database.py            # PostgreSQL / JSON storage
+├── generate_wpi_report.py # Professional HTML reports
+└── designs/               # Example RTL modules
+    ├── adder_8bit/
+    ├── counter_4bit/
+    ├── alu_4bit/
+    └── shift_reg_8bit/
 ```
 
-## Pipeline Stages
+---
 
-The RTL-to-GDSII flow executes in 9 automated stages:
+## Pipeline Steps
 
-1. **Synthesis** - Converts Verilog RTL to gate-level netlist using Yosys
-2. **Floorplanning** - Defines core area, placement boundaries, and I/O rings
-3. **Placement** - Positions standard cells for optimal area and timing
-4. **Clock Tree Synthesis** - Builds clock distribution network
-5. **Global Routing** - Plans interconnect before detailed routing
-6. **Detailed Routing** - Creates final metal and via routes
-7. **GDS Generation** - Produces layout-to-manufacturing format
-8. **Sign-off Verification** - Runs DRC (design rule checks) and LVS (netlist verification)
-9. **Tape-out Packaging** - Creates professional deliverables (GDS, netlist, reports)
+| Step | Tool | Output |
+|------|------|--------|
+| 1. RTL Simulation | iverilog | VCD waveform |
+| 2. Synthesis | Yosys | Sky130 netlist |
+| 3. Floorplan | OpenROAD | DEF placement |
+| 4. Placement | OpenROAD | Optimized placement |
+| 5. CTS | OpenROAD | Clock tree |
+| 6. Routing | OpenROAD | Routed DEF |
+| 7. DRC | Magic | Clean layout |
+| 8. LVS | Netgen | Schematic match |
+| 9. STA | OpenSTA | Timing closure |
+| 10. GDS | Magic | Final layout |
+| 11. Sign-off | Custom | Tape-out ready |
 
-Each stage produces validated outputs and automatically feeds into the next stage. Total execution time: typically 12-15 seconds per design.
+---
 
-## Web Interface
+## API Keys (Optional)
 
-The Streamlit-based user interface provides seven pages:
-
-- **Home**: Platform overview and quick start guide
-- **Custom Design Studio**: Write or edit Verilog, select templates, run pipeline
-- **Design History**: Browse previous runs with metrics and timings
-- **Documentation**: Guides, API reference, and troubleshooting
-- **Physical Design Flow**: Access pre-configured design flows
-- **Results Dashboard**: View detailed outputs, download files
-- **Workflow Guide**: Integration instructions and best practices
-
-## Command-Line Usage
-
-For automated workflows, run designs programmatically:
-
-```python
-from python.full_flow import RTLGenAI, FlowConfig
-
-# Configure the flow
-config = FlowConfig(run_drc=True, run_lvs=False)
-
-# Run end-to-end pipeline
-result = RTLGenAI.run_from_rtl(
-    rtl_path="designs/adder.v",
-    top_module="adder_8bit",
-    output_dir="runs/adder_run",
-    config=config,
-    progress=lambda d: print(f"[{d['stage']}] {d['msg']}")
-)
-
-# Check results
-if result.gds_path:
-    print(f"✅ GDS generated: {result.gds_path}")
-else:
-    print(f"❌ Design failed at: {result.failed_stage}")
-```
-
-## Design Examples
-
-### Example 1: Simple Counter
-
-The platform includes a pre-built 8-bit counter template that demonstrates a basic sequential design:
-
-```verilog
-module counter (
-    input clk, reset, enable,
-    output [7:0] count
-);
-    // Implements a simple 8-bit counter
-    // Runs through all 9 pipeline stages in ~13 seconds
-    // Generates a valid GDS file
-endmodule
-```
-
-### Example 2: Traffic Light Controller
-
-A more complex finite state machine example that cycles through red, green, and yellow states:
-
-```verilog
-module traffic_controller (
-    input clk, reset,
-    output reg red, green, yellow
-);
-    // 4-state FSM with timing control
-    // 28-bit timer for realistic cycle times
-    // Demonstrates registered outputs and sequential logic
-endmodule
-```
-
-## System Requirements
-
-Minimum specifications:
-
-- **OS**: Windows, Linux, or macOS
-- **CPU**: 4+ cores recommended
-- **RAM**: 8GB minimum, 16GB recommended
-- **Disk**: 20GB for PDK and tool installation
-- **Docker**: Required (automatically managed by DockerManager)
-
-The system auto-detects and launches Docker if not already running. All EDA tools execute inside containers for portability.
-
-## Architecture Details
-
-### RTLGenAI Orchestrator
-
-The `RTLGenAI` class serves as the main orchestrator. It manages the entire 9-stage pipeline through the `run_from_rtl()` static method:
-
-- Takes Verilog RTL path and design name as input
-- Sequentially executes each stage with error handling
-- Collects timing metrics and verification results
-- Returns `FlowResult` with all outputs and status
-
-### Docker Integration
-
-The `DockerManager` class handles all Docker operations:
-
-- Auto-starts Docker daemon if needed
-- Mounts working directories for stage execution
-- Sets up environment variables (PDK_ROOT, STD_CELL_LIBRARY)
-- Handles Windows/Linux path translation
-- Captures stage logs for debugging
-
-### Verification Pipeline
-
-The `SignoffChecker` class runs post-layout verification:
-
-- Executes Magic for DRC (design rule checks)
-- Runs Netgen for LVS (layout vs. schematic)
-- Parses tool outputs for violation counts
-- Generates professional sign-off reports
-
-## API Reference
-
-For detailed API documentation, see [API_REFERENCE.md](docs/API_REFERENCE.md).
-
-For deployment guidelines, see [DEPLOYMENT.md](docs/DEPLOYMENT.md).
-
-## Testing
-
-The project includes a comprehensive test suite:
+RTL-Gen AI works without API keys using local models.
+For best results with cloud LLMs:
 
 ```bash
-pytest tests/
+# Google Gemini (Recommended - Free tier available)
+export GEMINI_API_KEY=your_key_here
+
+# OR OpenCode.ai (Free local AI)
+pip install opencode-ai
+opencode acp --port 4096
+
+# OR Groq (Fast, but rate-limited)
+export GROQ_API_KEY=your_key_here
 ```
 
-Current status: **533/533 tests passing (100%)**
+---
 
-Tests cover:
-- Core pipeline execution
-- Docker integration
-- Synthesis and routing
-- GDS generation
-- Sign-off verification
-- Integration between stages
+## Configuration
+
+Edit `full_flow.py` to customize:
+
+```python
+DOCKER_IMAGE = "efabless/openlane:latest"  # EDA container
+PDK_ROOT     = "C:\\pdk\\sky130A"           # PDK location
+CLOCK_PERIOD = 10.0                         # Target frequency
+```
+
+---
+
+## Production Deployment
+
+### Docker Compose
+
+```yaml
+version: '3.8'
+services:
+  rtlgenai:
+    build: .
+    ports:
+      - "8501:8501"
+    volumes:
+      - ./pdk:/pdk
+      - ./results:/results
+    environment:
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+```
+
+```bash
+docker-compose up -d
+```
+
+### PostgreSQL (Optional)
+
+```bash
+docker run -d --name postgres \
+  -e POSTGRES_USER=postgres \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=rtlgenai \
+  -p 5432:5432 \
+  postgres:15
+```
+
+The app automatically falls back to JSON storage if PostgreSQL is unavailable.
+
+---
+
+## Troubleshooting
+
+### "Docker not found"
+
+```bash
+# Start Docker Desktop
+open -a Docker  # Mac
+start Docker Desktop  # Windows
+```
+
+### "PDK not found"
+
+```bash
+# Verify PDK structure
+ls C:\pdk\sky130A\libs.ref\sky130_fd_sc_hd\
+# Should show: lef/, lib/, verilog/, etc.
+```
+
+### "Routing failed with zero-length nets"
+
+This happens with very small designs. The flow handles it gracefully.
+If it persists, try a slightly larger design.
+
+### "LVS shows filler mismatches"
+
+This is expected - filler cells have no schematic.
+The tool recognizes this and marks LVS as matched-with-warnings.
+
+---
+
+## Tech Stack
+
+| Component | Technology |
+|-----------|------------|
+| Frontend | Streamlit |
+| Backend | Python 3.10+ |
+| EDA Tools | OpenROAD, Yosys, Magic, Netgen |
+| PDK | Sky130A (130nm open-source) |
+| Container | Docker |
+| Database | PostgreSQL / JSON |
+| LLM | Gemini / OpenCode / Groq |
+
+---
 
 ## Contributing
 
-Contributions are welcome. Please:
-
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Ensure all tests pass
-5. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing`)
+3. Commit changes (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing`)
+5. Open a Pull Request
+
+---
 
 ## License
 
-This project is released under the MIT License. See [LICENSE](LICENSE) for details.
+MIT License - see [LICENSE](LICENSE)
 
-## Community
+---
 
-For questions, issues, or suggestions, please open an issue on GitHub or contact the development team.
+## Acknowledgments
+
+- [OpenROAD](https://theopenroadproject.org/) - Physical design flow
+- [SkyWater PDK](https://skywater-pdk.readthedocs.io/) - Open-source PDK
+- [Yosys](https://yosyshq.net/yosys/) - Synthesis
+- [Magic](http://opencircuitdesign.com/magic/) - Layout editor
+- [Netgen](http://opencircuitdesign.com/netgen/) - LVS checker
+
+---
+
+## Star History
+
+If you find this useful, please star the repo!
+
+[![Star History Chart](https://api.star-history.com/svg?repos=YOUR_USERNAME/rtl-gen-ai&type=Date)](https://star-history.com/#YOUR_USERNAME/rtl-gen-ai&Date)
