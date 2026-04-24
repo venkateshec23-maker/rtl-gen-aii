@@ -18,103 +18,66 @@ Time:   30 seconds
 
 ---
 
-## Demo Screenshots
-
-| Home Dashboard | Physical Design |
-|:-------------:|:---------------:|
-| ![Home](docs/home.png) | ![Layout](docs/layout.png) |
-
-| Sign-off Checks | GDS Download |
-|:---------------:|:------------:|
-| ![Signoff](docs/signoff.png) | ![GDS](docs/gds.png) |
-
----
-
 ## Quick Start
 
-### Option 1: GitHub Codespaces (No Install)
-
-Click the badge above. Wait 3 minutes for setup. Run:
-
 ```bash
-streamlit run app.py
-```
-
-### Option 2: Local (Windows)
-
-```powershell
-# Requirements: Docker Desktop, Python 3.12+
-
-# 1. Clone
-git clone https://github.com/YOUR_USERNAME/rtl-gen-ai.git
+git clone https://github.com/YOUR_USERNAME/rtl-gen-ai
 cd rtl-gen-ai
-
-# 2. Install
 pip install -r requirements.txt
 
-# 3. Pull Docker image (5GB, one-time)
+# Copy and fill in API keys
+cp .env.example .env
+
+# Pull EDA Docker image (2.5 GB, one-time)
 docker pull efabless/openlane:latest
 
-# 4. Run
+# Start
 streamlit run app.py
 ```
-
-### Option 3: Local (Linux/Mac)
-
-```bash
-# Requirements: Docker, Python 3.10+
-
-# 1. Clone
-git clone https://github.com/YOUR_USERNAME/rtl-gen-ai.git
-cd rtl-gen-ai
-
-# 2. Install
-pip install -r requirements.txt
-
-# 3. Pull Docker image
-docker pull efabless/openlane:latest
-
-# 4. Run
-streamlit run app.py
-```
-
-Open http://localhost:8501 in your browser.
 
 ---
 
-## How It Works
+## API Keys Required
+
+| Key | Provider | Free Tier |
+|-----|----------|-----------|
+| ANTHROPIC_API_KEY | Claude | $5 credit |
+| GOOGLE_API_KEY | Gemini | Free |
+| GROQ_API_KEY | Groq | Free |
+
+---
+
+## Architecture
 
 ```
-User Description
+Natural Language
       |
       v
-+-------------+
-| LLM Generation |  <-- Gemini / OpenCode / Groq
-+-------------+
+AI Verilog Generator (Claude/Gemini/Groq)
       |
       v
-+-------------+
-| RTL Synthesis  |  <-- Yosys + Sky130
-+-------------+
+Validation (syntax + testbench honesty check)
       |
       v
-+-------------+
-| Floorplan      |  <-- OpenROAD
-| Placement      |
-| CTS            |
-| Routing        |
-+-------------+
+RTL Simulation (65K+ vectors)
       |
       v
-+-------------+
-| DRC / LVS      |  <-- Magic / Netgen
-| STA            |  <-- OpenSTA
-+-------------+
+Yosys Synthesis -> Sky130A standard cells
       |
       v
-+-------------+
-| GDS II Output  |  <-- Ready for fab
-+-------------+
+OpenROAD Physical Design -> Routed DEF
+      |
+      v
+Magic -> GDS + DRC
+      |
+      v
+Netgen -> LVS
+      |
+      v
+OpenSTA -> Timing
+      |
+      v
+GDSII File (ready for fabrication)
 ```
 
 ---
@@ -163,107 +126,12 @@ User Description
 
 ---
 
-## Architecture
+## Silent Failure Detection
 
-```
-rtl-gen-ai/
-├── app.py                 # Streamlit UI (5 pages)
-├── full_flow.py           # 11-step RTL-to-GDSII pipeline
-├── verilog_generator.py   # LLM-based Verilog generation
-├── database.py            # PostgreSQL / JSON storage
-├── generate_wpi_report.py # Professional HTML reports
-└── designs/               # Example RTL modules
-    ├── adder_8bit/
-    ├── counter_4bit/
-    ├── alu_4bit/
-    └── shift_reg_8bit/
-```
-
----
-
-## Pipeline Steps
-
-| Step | Tool | Output |
-|------|------|--------|
-| 1. RTL Simulation | iverilog | VCD waveform |
-| 2. Synthesis | Yosys | Sky130 netlist |
-| 3. Floorplan | OpenROAD | DEF placement |
-| 4. Placement | OpenROAD | Optimized placement |
-| 5. CTS | OpenROAD | Clock tree |
-| 6. Routing | OpenROAD | Routed DEF |
-| 7. DRC | Magic | Clean layout |
-| 8. LVS | Netgen | Schematic match |
-| 9. STA | OpenSTA | Timing closure |
-| 10. GDS | Magic | Final layout |
-| 11. Sign-off | Custom | Tape-out ready |
-
----
-
-## API Keys (Optional)
-
-RTL-Gen AI works without API keys using local models.
-For best results with cloud LLMs:
-
-```bash
-# Google Gemini (Recommended - Free tier available)
-export GEMINI_API_KEY=your_key_here
-
-# OR OpenCode.ai (Free local AI)
-pip install opencode-ai
-opencode acp --port 4096
-
-# OR Groq (Fast, but rate-limited)
-export GROQ_API_KEY=your_key_here
-```
-
----
-
-## Configuration
-
-Edit `full_flow.py` to customize:
-
-```python
-DOCKER_IMAGE = "efabless/openlane:latest"  # EDA container
-PDK_ROOT     = "C:\\pdk\\sky130A"           # PDK location
-CLOCK_PERIOD = 10.0                         # Target frequency
-```
-
----
-
-## Production Deployment
-
-### Docker Compose
-
-```yaml
-version: '3.8'
-services:
-  rtlgenai:
-    build: .
-    ports:
-      - "8501:8501"
-    volumes:
-      - ./pdk:/pdk
-      - ./results:/results
-    environment:
-      - GEMINI_API_KEY=${GEMINI_API_KEY}
-```
-
-```bash
-docker-compose up -d
-```
-
-### PostgreSQL (Optional)
-
-```bash
-docker run -d --name postgres \
-  -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres \
-  -e POSTGRES_DB=rtlgenai \
-  -p 5432:5432 \
-  postgres:15
-```
-
-The app automatically falls back to JSON storage if PostgreSQL is unavailable.
+Three specific checks prevent false tape-out reports:
+1. `routed.def != cts.def` - catches routing SIGSEGV
+2. `GDS > 50 KB` - catches Magic stub output
+3. `DRC on real GDS` - invalidates DRC on empty layout
 
 ---
 
@@ -271,59 +139,32 @@ The app automatically falls back to JSON storage if PostgreSQL is unavailable.
 
 ### "Docker not found"
 
-```bash
-# Start Docker Desktop
-open -a Docker  # Mac
-start Docker Desktop  # Windows
-```
+Start Docker Desktop first.
 
 ### "PDK not found"
 
-```bash
-# Verify PDK structure
-ls C:\pdk\sky130A\libs.ref\sky130_fd_sc_hd\
-# Should show: lef/, lib/, verilog/, etc.
-```
-
-### "Routing failed with zero-length nets"
-
-This happens with very small designs. The flow handles it gracefully.
-If it persists, try a slightly larger design.
+Verify PDK structure: `C:\pdk\sky130A\libs.ref\sky130_fd_sc_hd\`
 
 ### "LVS shows filler mismatches"
 
-This is expected - filler cells have no schematic.
-The tool recognizes this and marks LVS as matched-with-warnings.
-
----
-
-## Tech Stack
-
-| Component | Technology |
-|-----------|------------|
-| Frontend | Streamlit |
-| Backend | Python 3.10+ |
-| EDA Tools | OpenROAD, Yosys, Magic, Netgen |
-| PDK | Sky130A (130nm open-source) |
-| Container | Docker |
-| Database | PostgreSQL / JSON |
-| LLM | Gemini / OpenCode / Groq |
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing`)
-3. Commit changes (`git commit -m 'Add amazing feature'`)
-4. Push to branch (`git push origin feature/amazing`)
-5. Open a Pull Request
+Expected - filler cells have no schematic. Marked as matched-with-warnings.
 
 ---
 
 ## License
 
-MIT License - see [LICENSE](LICENSE)
+MIT License - Open source, free to use and modify.
+
+---
+
+## Citation
+
+If you use this in research:
+```
+RTL-Gen AI: Automated RTL-to-GDSII Pipeline
+using Large Language Models and Open-Source EDA
+[Your Name], 2026
+```
 
 ---
 
@@ -334,11 +175,3 @@ MIT License - see [LICENSE](LICENSE)
 - [Yosys](https://yosyshq.net/yosys/) - Synthesis
 - [Magic](http://opencircuitdesign.com/magic/) - Layout editor
 - [Netgen](http://opencircuitdesign.com/netgen/) - LVS checker
-
----
-
-## Star History
-
-If you find this useful, please star the repo!
-
-[![Star History Chart](https://api.star-history.com/svg?repos=YOUR_USERNAME/rtl-gen-ai&type=Date)](https://star-history.com/#YOUR_USERNAME/rtl-gen-ai&Date)
