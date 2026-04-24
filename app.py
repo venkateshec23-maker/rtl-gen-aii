@@ -10,6 +10,7 @@ import subprocess
 import re
 import base64
 import logging
+import os
 from pathlib import Path
 from datetime import datetime
 from full_flow import (
@@ -2190,7 +2191,9 @@ def page_upload_custom():
             validate_testbench_has_real_checks,
             auto_fix_testbench,
             inject_real_checks_into_testbench,
-            generate_verilog_claude
+            generate_verilog_gemini,
+            generate_verilog_groq,
+            generate_verilog_opencode
         )
 
         val = validate_verilog_syntax(
@@ -2221,10 +2224,17 @@ def page_upload_custom():
         else:
             st.info("Generating testbench automatically...")
             try:
-                _, tb_code = generate_verilog_claude(
-                    f"Write only the testbench for this module:\n{rtl_code}",
-                    module_name
-                )
+                api_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+                if api_key:
+                    _, tb_code = generate_verilog_gemini(
+                        f"Write only the testbench for this module:\n{rtl_code}",
+                        module_name
+                    )
+                else:
+                    _, tb_code = generate_verilog_opencode(
+                        f"Write only the testbench for this module:\n{rtl_code}",
+                        module_name
+                    )
                 if tb_code:
                     tb_code = auto_fix_testbench(
                         tb_code, module_name, rtl_code
