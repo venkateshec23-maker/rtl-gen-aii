@@ -871,6 +871,20 @@ write_def {results_dir}/routed.def
 puts "ROUTING_DONE"
 
 # ============================================================
+# FIX MINIMUM AREA VIOLATIONS - Fill metal stubs
+# ============================================================
+puts "=== FILLER PLACEMENT ==="
+repair_design
+filler_placement -prefix FILL sky130_fd_sc_hd__fill_1 \\
+                              sky130_fd_sc_hd__fill_2 \\
+                              sky130_fd_sc_hd__decap_3 \\
+                              sky130_fd_sc_hd__decap_4 \\
+                              sky130_fd_sc_hd__decap_6 \\
+                              sky130_fd_sc_hd__decap_8 \\
+                              sky130_fd_sc_hd__decap_12
+puts "FILLER_PLACED"
+
+# ============================================================
 # TIMING - Real OpenSTA analysis on routed design
 # ============================================================
 puts "=== TIMING ==="
@@ -2275,8 +2289,9 @@ class RTLtoGDSIIFlow:
                 f"read_def {c_routed_def}\n"
                 f"read_sdc {self.c_sdc}\n"
                 f"set_propagated_clock [all_clocks]\n"
+                f"global_route -congestion_iterations 30\n"
                 f"estimate_parasitics -global_routing\n"
-                f"write_sdf -divider / -edges noedge {c_sdf_out}\n"
+                f"write_sdf -divider / {c_sdf_out}\n"
                 f"puts SDF_COMPLETE\n"
                 f"SDFEOF"
             )
