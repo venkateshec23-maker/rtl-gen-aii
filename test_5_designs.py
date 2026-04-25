@@ -10,14 +10,15 @@ designs = [
 
 passed = 0
 for name, path in designs:
-    flow = RTLtoGDSIIFlow(name, path, r'C:\tools\OpenLane', r'C:\pdk')
-    s = flow.run_full_flow()
-    ok = s['tapeout_ready']
-    if ok:
-        passed += 1
-    status = "PASS" if ok else "FAIL"
-    print(f"  {status}: {name} - {s['status']}")
+    try:
+        flow = RTLtoGDSIIFlow(name, path, r'C:\tools\OpenLane', r'C:\pdk')
+        s = flow.run_full_flow()
+        ok = s['tapeout_ready']
+        if ok: passed += 1
+        lvs = s['steps'].get('LVS', 'NOT_RUN')
+        status_str = "PASS" if ok else "FAIL"
+        print(f"  {status_str}: {name} | LVS:{lvs}")
+    except Exception as e:
+        print(f"  ERROR: {name} — {e}")
 
-print(f"\nSUCCESS RATE: {passed}/{len(designs)} ({passed/len(designs)*100:.0f}%)")
-print(f"BEFORE FIXES: 32% (21/65)")
-print(f"IMPROVEMENT: {passed/len(designs)*100 - 32:.0f}% better")
+print(f"\nSUCCESS RATE: {passed}/5")
