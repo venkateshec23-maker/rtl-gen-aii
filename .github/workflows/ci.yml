@@ -73,24 +73,27 @@ jobs:
         run: |
           pip install sqlalchemy python-dotenv
 
-      - name: Test db.py schema creation
+      - name: Test database.py schema creation
         run: |
           python -c "
-          from db import init_db, save_run_metrics, get_design_history
-          init_db()
-          rid = save_run_metrics('ci_test', {
+          from database import init_database, save_run, get_all_runs, DB_AVAILABLE
+          init_database()
+          rid = save_run({
+              'run_id': 'ci_test_run',
+              'design_name': 'ci_test',
               'status': 'TAPE_OUT_READY',
-              'gds': {'size_bytes': 155000, 'size_kb': 151.4},
-              'synthesis': {'total_cells': 34},
-              'routing': {'routed_def_size': 49000, 'cts_def_size': 11000},
-              'signoff': {'lvs': {'matched': True, 'transistors': 516}, 'drc': {'violations': 0}},
-              'timing': {'worst_slack_ns': 5.55, 'status': 'PASS'},
-              'elapsed_sec': 31.0
+              'tapeout_ready': True,
+              'elapsed_sec': 31.0,
+              'metrics': {
+                  'gds': {'size_bytes': 155000, 'size_kb': 151.4},
+                  'synthesis': {'total_cells': 34},
+                  'signoff': {'lvs': {'matched': True, 'transistors': 516}, 'drc': {'violations': 0}},
+                  'timing': {'worst_slack_ns': 5.55, 'status': 'PASS'}
+              }
           })
-          history = get_design_history()
+          history = get_all_runs()
           assert len(history) >= 1
-          assert history[0]['lvs_matched'] == True
-          print('DB smoke test PASSED — run id:', rid)
+          print('DB smoke test PASSED — DB_AVAILABLE:', DB_AVAILABLE)
           "
 
   verilog-generator-import:

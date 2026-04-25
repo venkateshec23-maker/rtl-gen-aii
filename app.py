@@ -34,20 +34,20 @@ log = logging.getLogger(__name__)
 try:
     from python.task_queue import DesignQueue
     if "queue" not in st.session_state:
-        st.session_state["queue"] = DesignQueue(max_parallel=2)
+        st.session_state["queue"] = DesignQueue(max_parallel=3)
 except ImportError:
     pass
 
-# Database layer (SQLite — zero config)
+# Database layer (PostgreSQL + JSON fallback)
 DB_INIT_ERROR = None
 try:
-    from db import (
-        save_run_metrics as _save_run_metrics,
-        get_design_history as _get_design_history,
-        init_db,
+    from database import (
+        save_run,
+        get_all_runs,
+        init_database,
+        DB_AVAILABLE
     )
-    init_db()
-    DB_AVAILABLE = True
+    init_database()
 except ImportError as e:
     DB_AVAILABLE = False
     DB_INIT_ERROR = f"Database module import failed: {e}"
@@ -56,17 +56,25 @@ except Exception as e:
     DB_INIT_ERROR = f"Database initialization failed: {e}"
 
 
-def save_run_metrics(*a, **kw):
+def save_run_metrics(design_name: str, metrics: dict, provider: str = "unknown"):
     if not DB_AVAILABLE:
         log.debug("Skipping DB write: %s", DB_INIT_ERROR)
         return None
-    return _save_run_metrics(*a, **kw)
+    summary = {
+        "run_id": f"{design_name}_{metrics.get('elapsed_sec', 0)}",
+        "design_name": design_name,
+        "status": metrics.get("status"),
+        "tapeout_ready": metrics.get("tapeout_ready", False),
+        "elapsed_sec": metrics.get("elapsed_sec"),
+        "metrics": metrics,
+    }
+    return save_run(summary)
 
 
-def get_design_history(*a, **kw):
+def get_design_history(limit: int = 20):
     if not DB_AVAILABLE:
         return []
-    return _get_design_history(*a, **kw)
+    return get_all_runs()[:limit]
 
 # Visualization module (GDS, waveform, schematic)
 VIZ_IMPORT_ERROR = None

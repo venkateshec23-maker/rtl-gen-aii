@@ -32,9 +32,18 @@ log = logging.getLogger(__name__)
 # CONFIGURATION
 # ============================================================
 
+import platform
+
+if platform.system() == "Windows":
+    _DEFAULT_PDK  = r"C:\pdk"
+    _DEFAULT_WORK = r"C:\tools\OpenLane"
+else:
+    _DEFAULT_PDK  = "/pdk"
+    _DEFAULT_WORK = "/opt/openlane"
+
 DOCKER_IMAGE   = "efabless/openlane:latest"
-PDK_HOST       = os.getenv("PDK_ROOT",      r"C:\pdk")
-OPENLANE_HOST  = os.getenv("OPENLANE_WORK", r"C:\tools\OpenLane")
+PDK_HOST       = os.getenv("PDK_ROOT",      _DEFAULT_PDK)
+OPENLANE_HOST  = os.getenv("OPENLANE_WORK", _DEFAULT_WORK)
 PDK_CONTAINER  = "/pdk"
 WORK_CONTAINER = "/work"
 

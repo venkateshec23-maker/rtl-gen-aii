@@ -9,12 +9,10 @@ log = logging.getLogger(__name__)
 
 # Safe database import — DB may not be available in all environments
 try:
-    from database import DB_AVAILABLE, save_run_metrics as _db_save_run_metrics
-    def save_run_metrics(design_name, metrics, provider="unknown"):
-        return _db_save_run_metrics(design_name, metrics, provider=provider)
+    from database import DB_AVAILABLE, save_run
 except ImportError:
     DB_AVAILABLE = False
-    def save_run_metrics(design_name, metrics, provider="unknown"):
+    def save_run(summary):
         return False
 
 # Safe RealMetricsParser import
@@ -91,7 +89,15 @@ class DesignQueue:
             # Save to DB (use module-level RealMetricsParser import)
             if DB_AVAILABLE and RealMetricsParser is not None:
                 parser = RealMetricsParser(task.result.get("results_dir"))
-                save_run_metrics(task.design_name, parser.get_all_metrics(), provider=task.provider)
+                metrics = parser.get_all_metrics()
+                save_run({
+                    "run_id": f"{task.design_name}_{int(time.time())}",
+                    "design_name": task.design_name,
+                    "status": task.result.get("status"),
+                    "tapeout_ready": task.result.get("tapeout_ready", False),
+                    "elapsed_sec": task.result.get("elapsed_sec"),
+                    "metrics": metrics,
+                })
                 
         except Exception as e:
             task.status = "ERROR"
