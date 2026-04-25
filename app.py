@@ -5,6 +5,14 @@ Professional Cadence-style UI
 """
 
 import streamlit as st
+
+# MUST BE FIRST STREAMLIT CALL — before any st.session_state or st.* usage
+st.set_page_config(
+    page_title="RTL-Gen AI | Physical Design",
+    page_icon="🔲",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 import json
 import subprocess
 import re
@@ -489,13 +497,7 @@ def render_sidebar_header():
     """, unsafe_allow_html=True)
 
 
-# Set page config FIRST
-st.set_page_config(
-    page_title="RTL-Gen AI | Physical Design",
-    page_icon="🔲",
-    layout="wide",
-    initial_sidebar_state="expanded"
-)
+# set_page_config was moved to top of file (immediately after imports)
 
 # Apply Cadence-style theme
 apply_cadence_theme()

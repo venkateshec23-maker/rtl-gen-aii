@@ -89,7 +89,9 @@ def analyze_lvs_report(lvs_content: str) -> Dict[str, object]:
     is_filler_only_mismatch = (
         has_no_matching_element and
         has_pin_lists_equivalent and
-        "device classes" in lvs_lower and "are equivalent" in lvs_lower
+        "device classes" in lvs_lower and "are equivalent" in lvs_lower and
+        # A hard "Netlists do not match" verdict overrides the filler classification
+        "netlists do not match" not in lvs_lower
     )
 
     device_pairs = re.findall(
@@ -104,12 +106,20 @@ def analyze_lvs_report(lvs_content: str) -> Dict[str, object]:
         device_pair = (int(left), int(right))
         device_counts_equal = device_pair[0] == device_pair[1]
 
+    # Hard structural failure: 'no matching element' + clear 'Netlists do not match' verdict
+    # This must NOT be classified as a pin ambiguity warning
+    is_hard_structural_failure = (
+        has_no_matching_element and
+        "netlists do not match" in lvs_lower
+    )
+
     pin_ambiguity_warning = (
         has_mismatch and
         has_match and
         device_counts_equal and
         not has_hard_structural_marker and
         not is_filler_only_mismatch and
+        not is_hard_structural_failure and
         (
             has_pin_match_fail or
             (has_pin_table_mismatch and (has_pin_list_altered_to_match or has_pin_lists_equivalent))
@@ -1255,6 +1265,12 @@ class RTLtoGDSIIFlow:
             f"{self.c_pdk}/sky130A/libs.tech/"
             f"netgen/sky130A_setup.tcl"
         )
+        # Full PDK SPICE library — needed by Netgen to resolve all standard cells
+        self.c_pdk_spice = (
+            f"{self.c_pdk}/sky130A/libs.ref/"
+            f"sky130_fd_sc_hd/spice/"
+            f"sky130_fd_sc_hd.spice"
+        )
 
         # Normalize RTL path and stage into OpenLane workspace if needed.
         work_root = self.work_dir.resolve()
@@ -2175,13 +2191,27 @@ class RTLtoGDSIIFlow:
                     log.info("Aligned netlist SPICE pin order with extracted SPICE")
 
         # Stage 6c: Netgen LVS
-        log.info("Step 6c: Netgen LVS comparison...")
+        # Build a small Tcl wrapper so Netgen can read the full PDK SPICE
+        # library before running the LVS comparison. Without this, cells
+        # like sky130_fd_sc_hd__nor2b_1 are unknown and LVS fails.
+        lvs_tcl_host = self.results_dir / "run_lvs.tcl"
+        lvs_tcl_container = f"{self.c_results}/run_lvs.tcl"
+        lvs_tcl_content = f"""\
+puts "Loading PDK SPICE library..."
+readnet spice {self.c_pdk_spice}
+puts "Running Netgen LVS..."
+set result [lvs \
+    "{{{c_extracted_spice} {extracted_cell}}}" \
+    "{{{c_netlist_spice} {self.design_name}}}" \
+    {self.c_netgen_setup} \
+    {c_lvs_report} -json]
+puts "LVS done: $result"
+exit
+"""
+        lvs_tcl_host.write_text(lvs_tcl_content)
+        log.info("Step 6c: Netgen LVS comparison (with full PDK SPICE)...")
         cmd = (
-            f"netgen -batch lvs "
-            f"'{c_extracted_spice} {extracted_cell}' "
-            f"'{c_netlist_spice} {self.design_name}' "
-            f"{self.c_netgen_setup} "
-            f"{c_lvs_report} 2>&1 && "
+            f"netgen -batch source {lvs_tcl_container} 2>&1 && "
             f"cat {c_lvs_report}"
         )
 

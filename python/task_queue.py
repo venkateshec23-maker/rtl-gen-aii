@@ -7,6 +7,23 @@ from concurrent.futures import ThreadPoolExecutor
 
 log = logging.getLogger(__name__)
 
+# Safe database import — DB may not be available in all environments
+try:
+    from database import DB_AVAILABLE, save_run_metrics as _db_save_run_metrics
+    def save_run_metrics(design_name, metrics, provider="unknown"):
+        return _db_save_run_metrics(design_name, metrics, provider=provider)
+except ImportError:
+    DB_AVAILABLE = False
+    def save_run_metrics(design_name, metrics, provider="unknown"):
+        return False
+
+# Safe RealMetricsParser import
+try:
+    from full_flow import RealMetricsParser
+except ImportError:
+    RealMetricsParser = None
+
+
 class DesignTask:
     def __init__(self, design_name: str, verilog_file: str, provider: str = "gemini"):
         self.design_name = design_name
@@ -48,7 +65,7 @@ class DesignQueue:
     def _run_task(self, task_id: str, task: DesignTask):
         from full_flow import RTLtoGDSIIFlow
         import os
-        from database import save_run_metrics, DB_AVAILABLE
+        # DB_AVAILABLE and save_run_metrics imported at module level
         
         task.status = "RUNNING"
         task.start_time = time.time()
@@ -71,9 +88,8 @@ class DesignQueue:
             task.result = flow.run_full_flow(progress_callback=on_progress)
             task.status = "COMPLETED" if task.result.get("tapeout_ready") else "FAILED"
             
-            # Save to DB
-            if DB_AVAILABLE:
-                from full_flow import RealMetricsParser
+            # Save to DB (use module-level RealMetricsParser import)
+            if DB_AVAILABLE and RealMetricsParser is not None:
                 parser = RealMetricsParser(task.result.get("results_dir"))
                 save_run_metrics(task.design_name, parser.get_all_metrics(), provider=task.provider)
                 

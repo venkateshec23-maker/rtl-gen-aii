@@ -42,6 +42,18 @@ def get_connection():
         return None
 
 
+def _test_connection() -> bool:
+    """Test DB connectivity at import time for DB_AVAILABLE flag."""
+    conn = get_connection()
+    if conn:
+        conn.close()
+        return True
+    return False
+
+
+# Exported flag: True if PostgreSQL is reachable, False = JSON fallback
+DB_AVAILABLE: bool = _test_connection()
+
 def init_database() -> bool:
     """Create tables if they don't exist. Returns True on success."""
     conn = get_connection()
