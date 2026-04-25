@@ -13,6 +13,7 @@ from typing import Optional, Dict, Tuple
 
 WORK_DIR    = Path(r"C:\tools\OpenLane")
 DESIGNS_DIR = WORK_DIR / "designs"
+TEMPLATES_DIR = WORK_DIR / "templates"
 
 # Load .env if present
 try:
@@ -117,6 +118,21 @@ module MODULE_NAME_tb;
 
 endmodule
 ```
+
+FORBIDDEN PATTERNS (cause synthesis failure):
+- initial blocks with logic (only $dumpfile/$display allowed in testbench)
+- for loops inside always blocks (use generate or parameters instead)
+- delays (#) inside always @(posedge clk) blocks
+- automatic tasks with timing
+- non-constant case expressions
+- #0 delays (race condition)
+
+ALWAYS REQUIRED:
+- output reg for all registered outputs
+- default case in every case statement
+- <= for ALL sequential assignments in always @(posedge clk)
+- = for combinational logic only
+- `timescale directive at top of both files
 
 CRITICAL RULES:
 1. Pure Verilog-2001 ONLY - NO SystemVerilog (no tasks, functions, class, property, sequence, etc)
@@ -1073,6 +1089,28 @@ def repair_with_gemini(prompt: str, module_name: str) -> Tuple[str, str]:
     return parse_verilog_response(response.text)
 
 
+def find_matching_template(description: str, module_name: str) -> Optional[str]:
+    """
+    Check if request matches a proven template.
+    Returns template file path or None.
+    """
+    keywords = {
+        "counter.v":    ["counter", "count", "increment", "up counter", "down counter"],
+        "adder.v":      ["adder", "add", "sum", "arithmetic unit"],
+        "shift_reg.v":  ["shift", "serial", "sipo", "piso", "shift register"],
+        "mux.v":        ["multiplex", "mux", "selector", "select"],
+        "decoder.v":    ["decoder", "decode", "one-hot"],
+        "encoder.v":    ["encoder", "priority encoder", "encode"],
+    }
+    desc_lower = description.lower()
+    for template_file, words in keywords.items():
+        if any(w in desc_lower for w in words):
+            template_path = TEMPLATES_DIR / template_file
+            if template_path.exists():
+                return str(template_path)
+    return None
+
+
 def repair_verilog(
     rtl_code: str,
     testbench_code: str,
@@ -1090,18 +1128,26 @@ def repair_verilog(
         return rtl_code, testbench_code
 
     error_list = "\n".join(f"- {e}" for e in errors)
-    sim_tail = sim_output[-1000:] if sim_output else "No simulation output"
+
+    # Extract specific failure lines from simulation output
+    fail_lines = [
+        l for l in sim_output.split("\n")
+        if l.strip().startswith("FAIL") or "error" in l.lower() or "Error" in l
+    ] if sim_output else []
+
+    fail_context = "\n".join(fail_lines[:10]) if fail_lines else \
+                   "Simulation did not complete or no FAIL messages found"
+
     repair_prompt = f"""
 DESIGN: {module_name}
-DESCRIPTION: {description or 'No description provided'}
 
-VALIDATION ERRORS (must fix all):
+ERRORS TO FIX:
 {error_list}
 
-SIMULATION OUTPUT (shows what actually failed):
-{sim_tail}
+ACTUAL SIMULATION FAILURES:
+{fail_context}
 
-CURRENT RTL:
+CURRENT RTL (with bugs):
 ```verilog
 {rtl_code}
 ```
@@ -1111,7 +1157,7 @@ CURRENT TESTBENCH:
 {testbench_code}
 ```
 
-REQUIREMENTS:
+FIX REQUIREMENTS:
 - Module name must be exactly: {module_name}
 - always @(posedge clk) for synchronous logic
 - if (!reset_n) active low reset inside clock block
@@ -1121,6 +1167,9 @@ REQUIREMENTS:
 - if/else checks with !== comparisons
 - if (fail_count == 0) $display("ALL_TESTS_PASSED")
 - $dumpfile("trace.vcd")
+- NO delays (#) inside always blocks
+- NO for loops inside always blocks
+- Use <= for sequential, = for combinational only
 
 Return ONLY two code blocks:
 ```rtl
@@ -1133,15 +1182,14 @@ Return ONLY two code blocks:
 
     if vcd_context and "empty" not in vcd_context and "No VCD trace" not in vcd_context:
         repair_prompt += f"""
-        
+
 SIMULATION FAILURE TRACE (Last known truth-table states before failure):
-Observe exactly what values the internal signals held here:
 ```text
 {vcd_context}
 ```
 """
 
-    repair_prompt = repair_prompt + "\nMaintain functionality and do not use SystemVerilog.\n"
+    repair_prompt = repair_prompt + "\nMaintain functionality. Pure Verilog-2001 only.\n"
 
     try:
         if llm_provider == "gemini":
@@ -1163,7 +1211,7 @@ def generate_and_validate(
     """
     Generate Verilog + validate + simulate.
     Provider priority: nvidia (default) -> groq -> opencode
-
+    
     Returns complete result dict with status READY_FOR_PIPELINE or GENERATION_FAILED.
     """
     print(f"\n{'='*60}")
@@ -1185,46 +1233,73 @@ def generate_and_validate(
         "verdict": "NOT_CHECKED"
     }
 
+    # ---- Check for matching template first ----
+    template_path = find_matching_template(description, module_name)
+    if template_path:
+        print(f"[TEMPLATE] Using proven template: {Path(template_path).name}")
+        template_content = Path(template_path).read_text()
+        # Rename module in template
+        import re as _re
+        match = _re.search(r'module\s+(\w+)', template_content)
+        if match:
+            orig_name = match.group(1)
+            rtl = _re.sub(rf'\bmodule\s+{orig_name}\b', f'module {module_name}', template_content)
+        else:
+            rtl = template_content
+        # Still need to generate testbench via LLM
+        print("Generating testbench for template-based RTL...")
+        try:
+            if llm_provider == "groq":
+                _, tb = generate_verilog_groq(description, module_name)
+            elif llm_provider == "gemini":
+                _, tb = generate_verilog_gemini(description, module_name)
+            else:
+                _, tb = generate_verilog_nvidia(description, module_name)
+        except Exception as e:
+            print(f"Testbench generation failed for template: {e}")
+            tb = ""
+
     for attempt in range(1, max_retries + 1):
         print(f"\nAttempt {attempt}/{max_retries}...")
 
         # ---- Generate ----
-        try:
-            if llm_provider == "groq":
-                rtl, tb = generate_verilog_groq(description, module_name)
-            elif llm_provider == "gemini":
-                rtl, tb = generate_verilog_gemini(description, module_name)
-            elif llm_provider == "nvidia":
-                rtl, tb = generate_verilog_nvidia(description, module_name)
-            elif llm_provider == "opencode":
-                rtl, tb = generate_verilog_opencode(description, module_name)
-            else:
-                raise ValueError(
-                    f"Unknown provider '{llm_provider}'. "
-                    "Use 'gemini', 'groq', 'nvidia', or 'opencode'."
-                )
-        except Exception as e:
-            err = str(e)
-            print(f"Generation failed: {err}")
-            # Auto-fallback: if Groq rate-limited, try NVIDIA via openai SDK
-            if llm_provider == "groq" and "rate_limit" in err.lower():
-                print("Groq rate limit hit -- falling back to NVIDIA...")
-                try:
+        if not rtl or not tb:
+            try:
+                if llm_provider == "groq":
+                    rtl, tb = generate_verilog_groq(description, module_name)
+                elif llm_provider == "gemini":
+                    rtl, tb = generate_verilog_gemini(description, module_name)
+                elif llm_provider == "nvidia":
                     rtl, tb = generate_verilog_nvidia(description, module_name)
-                    err = None
-                except Exception as e2:
-                    err = str(e2)
-            if err and attempt == max_retries:
-                return {
-                    "status":      "GENERATION_FAILED",
-                    "module_name": module_name,
-                    "rtl": "", "testbench": "",
-                    "validation": {}, "simulation": {},
-                    "attempts": attempt,
-                    "error": err
-                }
-            if err:
-                continue
+                elif llm_provider == "opencode":
+                    rtl, tb = generate_verilog_opencode(description, module_name)
+                else:
+                    raise ValueError(
+                        f"Unknown provider '{llm_provider}'. "
+                        "Use 'gemini', 'groq', 'nvidia', or 'opencode'."
+                    )
+            except Exception as e:
+                err = str(e)
+                print(f"Generation failed: {err}")
+                # Auto-fallback: if Groq rate-limited, try NVIDIA via openai SDK
+                if llm_provider == "groq" and "rate_limit" in err.lower():
+                    print("Groq rate limit hit -- falling back to NVIDIA...")
+                    try:
+                        rtl, tb = generate_verilog_nvidia(description, module_name)
+                        err = None
+                    except Exception as e2:
+                        err = str(e2)
+                if err and attempt == max_retries:
+                    return {
+                        "status":      "GENERATION_FAILED",
+                        "module_name": module_name,
+                        "rtl": "", "testbench": "",
+                        "validation": {}, "simulation": {},
+                        "attempts": attempt,
+                        "error": err
+                    }
+                if err:
+                    continue
 
         rtl, tb, renamed_from = normalize_module_name(
             rtl, tb, module_name
@@ -1344,7 +1419,6 @@ def generate_and_validate(
                 # Attaching the truth-table VCD context
                 vcd_path_opt = None
                 if paths and "testbench" in paths:
-                    from pathlib import Path
                     trace_vcd = Path(paths["testbench"]).parent / "trace.vcd"
                     if trace_vcd.exists():
                         import vcd_parser
