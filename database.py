@@ -6,6 +6,7 @@
 import os
 import json
 import logging
+import platform
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, List, Optional
@@ -17,7 +18,13 @@ DB_URL = os.getenv(
     "postgresql://postgres:postgres@localhost:5432/rtlgenai"
 )
 
-_JSON_INDEX = Path(r"C:\tools\OpenLane\runs\index.json")
+# Cross-platform JSON fallback path
+if platform.system() == "Windows":
+    _DEFAULT_WORK = r"C:\tools\OpenLane"
+else:
+    _DEFAULT_WORK = os.getenv("OPENLANE_WORK", "/workspaces/rtl-gen-aii/openroad")
+
+_JSON_INDEX = Path(os.getenv("OPENLANE_WORK", _DEFAULT_WORK)) / "runs" / "index.json"
 
 
 def get_connection():
@@ -222,8 +229,8 @@ def save_run(summary: Dict) -> bool:
 
 def _save_run_json(summary: Dict) -> bool:
     """JSON fallback storage."""
-    # Use WORK_DIR/runs/index.json or default path
-    work_dir = os.getenv("OPENLANE_WORK", r"C:\tools\OpenLane")
+    # Use OPENLANE_WORK env or platform-specific default
+    work_dir = os.getenv("OPENLANE_WORK", _DEFAULT_WORK)
     index_path = Path(work_dir) / "runs" / "index.json"
     index_path.parent.mkdir(parents=True, exist_ok=True)
 
@@ -297,7 +304,7 @@ def get_all_runs() -> List[Dict]:
             log.error(f"PostgreSQL query failed: {e}")
 
     # JSON fallback
-    work_dir   = os.getenv("OPENLANE_WORK", r"C:\tools\OpenLane")
+    work_dir   = os.getenv("OPENLANE_WORK", _DEFAULT_WORK)
     index_path = Path(work_dir) / "runs" / "index.json"
     if index_path.exists():
         try:
@@ -318,7 +325,7 @@ def get_db_status() -> Dict:
             "type":      "PostgreSQL",
             "url":       DB_URL
         }
-    work_dir   = os.getenv("OPENLANE_WORK", r"C:\tools\OpenLane")
+    work_dir   = os.getenv("OPENLANE_WORK", _DEFAULT_WORK)
     index_path = Path(work_dir) / "runs" / "index.json"
     return {
         "connected": False,

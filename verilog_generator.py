@@ -7,12 +7,19 @@ import os
 import re
 import json
 import subprocess
+import platform
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Tuple
 
-WORK_DIR    = Path(r"C:\tools\OpenLane")
-DESIGNS_DIR = WORK_DIR / "designs"
+# Cross-platform path defaults
+if platform.system() == "Windows":
+    _DEFAULT_WORK = r"C:\tools\OpenLane"
+else:
+    _DEFAULT_WORK = "/workspaces/rtl-gen-aii/openroad"
+
+WORK_DIR      = Path(os.getenv("OPENLANE_WORK", _DEFAULT_WORK))
+DESIGNS_DIR   = WORK_DIR / "designs"
 TEMPLATES_DIR = WORK_DIR / "templates"
 
 # Load .env if present
