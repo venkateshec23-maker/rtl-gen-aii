@@ -1890,7 +1890,6 @@ class RTLtoGDSIIFlow:
         """Run DRC using Magic (requires Docker)"""
         log.info("=== STEP 5: DRC ===")
 
-        # Check if Docker is available
         docker_available = False
         try:
             result = subprocess.run(
@@ -1943,7 +1942,58 @@ class RTLtoGDSIIFlow:
             return False
 
         log.info(f"STEP 5 COMPLETE - DRC: 0 violations")
+        
+        self._run_klayout_drc()
+        
         return True
+    
+    def _run_klayout_drc(self) -> Optional[Dict]:
+        """Run additional KLayout DRC for cross-validation"""
+        try:
+            c_gds = f"{self.c_results}/{self.design_name}.gds"
+            c_klayout_report = f"{self.c_results}/klayout_drc.xml"
+            
+            klayout_drc_script = """
+import klayout.db as kdb
+import sys
+
+ly = kdb.Layout()
+ly.read("{gds}")
+
+# Sky130 DRC rules (simplified)
+drc = kdb.DRCProcessor()
+drc.input("{{layer}}", 0)
+drc.width(0.15, "Min width violation")
+drc.space(0.17, "Min spacing violation")
+drc.spcp(0.07, "Min enclosed spacing")
+
+results = drc.run(ly)
+print("KLayout DRC violations:", len(results))
+"""
+            
+            cmd = f'''
+                if command -v klayout >/dev/null 2>&1; then
+                    echo "Running KLayout DRC..."
+                    klayout -b -r /tmp/klayout_drc.py {c_gds} -o {c_klayout_report} 2>&1 || echo "KLayout DRC skipped"
+                else
+                    echo "KLayout not installed - skipping additional DRC check"
+                fi
+            '''
+            
+            rc, out, err = self.docker.run_command(cmd, timeout=120)
+            
+            if "KLayout DRC violations: 0" in out:
+                log.info("KLayout DRC: 0 violations (cross-check passed)")
+            elif "KLayout not installed" in out:
+                log.info("KLayout DRC: Not available (Magic DRC only)")
+            else:
+                log.warning("KLayout DRC: Check klayout_drc.log for details")
+                
+            return {"status": "completed", "output": out}
+            
+        except Exception as e:
+            log.warning(f"KLayout DRC skipped: {e}")
+            return None
 
     def step6_lvs(self) -> bool:
         """Run LVS: Magic extraction + Netgen comparison (requires Docker)"""

@@ -146,6 +146,224 @@ module {name} (
     end
 endmodule
 ''',
+
+"fifo": '''
+module {name} #(
+    parameter DATA_W = 8,
+    parameter DEPTH  = {depth}
+)(
+    input                   clk,
+    input                   reset_n,
+    input                   wr_en,
+    input                   rd_en,
+    input  [DATA_W-1:0]     din,
+    output reg [DATA_W-1:0] dout,
+    output reg              empty,
+    output reg              full
+);
+    localparam PTR_W = $clog2(DEPTH);
+    reg [PTR_W:0] wr_ptr, rd_ptr;
+    reg [DATA_W-1:0] mem [0:DEPTH-1];
+
+    always @(posedge clk) begin
+        if (!reset_n) begin
+            wr_ptr <= 0; rd_ptr <= 0;
+            empty <= 1; full <= 0;
+            dout <= 0;
+        end else begin
+            if (wr_en && !full) begin
+                mem[wr_ptr[PTR_W-1:0]] <= din;
+                wr_ptr <= wr_ptr + 1;
+            end
+            if (rd_en && !empty) begin
+                dout <= mem[rd_ptr[PTR_W-1:0]];
+                rd_ptr <= rd_ptr + 1;
+            end
+            empty <= (wr_ptr == rd_ptr);
+            full  <= (wr_ptr[PTR_W] != rd_ptr[PTR_W]) && 
+                     (wr_ptr[PTR_W-1:0] == rd_ptr[PTR_W-1:0]);
+        end
+    end
+endmodule
+''',
+
+"spi_master": '''
+module {name} #(
+    parameter DATA_W = 8
+)(
+    input               clk,
+    input               reset_n,
+    input               start,
+    input  [DATA_W-1:0] tx_data,
+    output reg [DATA_W-1:0] rx_data,
+    output reg          mosi,
+    input               miso,
+    output reg          sclk,
+    output reg          cs_n,
+    output reg          busy,
+    output reg          done
+);
+    reg [3:0] bit_cnt;
+    reg [DATA_W-1:0] shift_reg;
+    reg sclk_en;
+    
+    always @(posedge clk) begin
+        if (!reset_n) begin
+            bit_cnt <= 0; shift_reg <= 0; rx_data <= 0;
+            mosi <= 0; sclk <= 0; cs_n <= 1;
+            busy <= 0; done <= 0; sclk_en <= 0;
+        end else begin
+            done <= 0;
+            if (start && !busy) begin
+                busy <= 1; cs_n <= 0; sclk_en <= 1;
+                shift_reg <= tx_data;
+                bit_cnt <= DATA_W;
+            end else if (busy && bit_cnt > 0) begin
+                sclk <= ~sclk;
+                if (sclk) begin
+                    mosi <= shift_reg[DATA_W-1];
+                    shift_reg <= {shift_reg[DATA_W-2:0], miso};
+                end else begin
+                    bit_cnt <= bit_cnt - 1;
+                    if (bit_cnt == 1) begin
+                        rx_data <= {shift_reg[DATA_W-2:0], miso};
+                    end
+                end
+            end else if (busy && bit_cnt == 0) begin
+                busy <= 0; cs_n <= 1; sclk_en <= 0; done <= 1;
+            end
+            if (!sclk_en) sclk <= 0;
+        end
+    end
+endmodule
+''',
+
+"i2c_master": '''
+module {name} (
+    input           clk,
+    input           reset_n,
+    input           start,
+    input   [6:0]   addr,
+    input           rw,
+    input   [7:0]   tx_data,
+    output reg [7:0] rx_data,
+    inout           sda,
+    output reg      scl,
+    output reg      busy,
+    output reg      done,
+    output reg      ack_error
+);
+    reg [3:0] state;
+    reg [3:0] bit_cnt;
+    reg [7:0] shift_reg;
+    reg sda_out;
+    reg scl_en;
+    
+    localparam IDLE = 0, START = 1, ADDR = 2, ACK1 = 3,
+               DATA = 4, ACK2 = 5, STOP = 6;
+    
+    assign sda = sda_out ? 1'bz : 1'b0;
+    
+    always @(posedge clk) begin
+        if (!reset_n) begin
+            state <= IDLE; bit_cnt <= 0; shift_reg <= 0;
+            sda_out <= 1; scl <= 1; scl_en <= 0;
+            busy <= 0; done <= 0; ack_error <= 0; rx_data <= 0;
+        end else begin
+            done <= 0;
+            case (state)
+                IDLE: begin
+                    if (start) begin
+                        state <= START; busy <= 1; scl_en <= 1;
+                    end
+                end
+                START: begin
+                    sda_out <= 0;
+                    state <= ADDR;
+                    shift_reg <= {addr, rw};
+                    bit_cnt <= 8;
+                end
+                ADDR: begin
+                    scl <= ~scl;
+                    if (!scl) begin
+                        sda_out <= shift_reg[7];
+                        shift_reg <= {shift_reg[6:0], 1'b1};
+                    end else if (scl && bit_cnt > 0) begin
+                        bit_cnt <= bit_cnt - 1;
+                        if (bit_cnt == 1) state <= ACK1;
+                    end
+                end
+                ACK1: begin
+                    scl <= ~scl;
+                    if (!scl) begin
+                        state <= DATA;
+                        bit_cnt <= 8;
+                        if (rw) shift_reg <= 8'hFF;
+                        else shift_reg <= tx_data;
+                    end else if (scl) begin
+                        ack_error <= sda;
+                    end
+                end
+                DATA: begin
+                    scl <= ~scl;
+                    if (!scl) begin
+                        sda_out <= shift_reg[7];
+                        shift_reg <= {shift_reg[6:0], 1'b1};
+                    end else if (scl) begin
+                        if (rw) shift_reg <= {shift_reg[6:0], sda};
+                        bit_cnt <= bit_cnt - 1;
+                        if (bit_cnt == 0) state <= ACK2;
+                    end
+                end
+                ACK2: begin
+                    scl <= ~scl;
+                    if (!scl) begin
+                        sda_out <= 1;
+                        state <= STOP;
+                    end
+                end
+                STOP: begin
+                    scl <= ~scl;
+                    if (!scl) begin
+                        sda_out <= 1;
+                    end else begin
+                        state <= IDLE; busy <= 0; done <= 1; scl_en <= 0;
+                        if (rw) rx_data <= shift_reg;
+                    end
+                end
+            endcase
+            if (!scl_en) scl <= 1;
+        end
+    end
+endmodule
+''',
+
+"ram": '''
+module {name} #(
+    parameter DATA_W = 8,
+    parameter DEPTH  = {depth},
+    parameter ADDR_W = $clog2(DEPTH)
+)(
+    input                   clk,
+    input                   reset_n,
+    input                   wr_en,
+    input                   rd_en,
+    input  [ADDR_W-1:0]     addr,
+    input  [DATA_W-1:0]     din,
+    output reg [DATA_W-1:0] dout
+);
+    reg [DATA_W-1:0] mem [0:DEPTH-1];
+    
+    always @(posedge clk) begin
+        if (!reset_n) begin
+            dout <= 0;
+        end else begin
+            if (wr_en) mem[addr] <= din;
+            if (rd_en) dout <= mem[addr];
+        end
+    end
+endmodule
+''',
 }
 
 TEMPLATES_TB = {
@@ -256,6 +474,200 @@ module {name}_tb();
 endmodule
 ''',
 
+"fifo": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n, wr_en, rd_en;
+    reg [7:0] din;
+    wire [7:0] dout;
+    wire empty, full;
+    integer pass_count = 0;
+    integer fail_count = 0;
+
+    {name} #(.DATA_W(8), .DEPTH({depth})) dut(.*);
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    initial begin
+        $dumpfile("trace.vcd");
+        $dumpvars(0, {name}_tb);
+        reset_n = 0; wr_en = 0; rd_en = 0; din = 0;
+        repeat(4) @(posedge clk); #1;
+        reset_n = 1;
+
+        wr_en = 1; din = 8'hA5; @(posedge clk); #1;
+        din = 8'h3C; @(posedge clk); #1;
+        wr_en = 0;
+
+        rd_en = 1; @(posedge clk); #1;
+        if (dout === 8'hA5) begin
+            $display("PASS Test 1: FIFO read correct");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL Test 1: got %h expected A5", dout);
+            fail_count = fail_count + 1;
+        end
+
+        @(posedge clk); #1;
+        if (dout === 8'h3C) begin
+            $display("PASS Test 2: FIFO second read correct");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL Test 2: got %h expected 3C", dout);
+            fail_count = fail_count + 1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"spi_master": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n, start;
+    reg [7:0] tx_data;
+    wire [7:0] rx_data;
+    wire mosi, miso, sclk, cs_n, busy, done;
+
+    integer pass_count = 0;
+    integer fail_count = 0;
+
+    {name} dut(.*);
+
+    assign miso = mosi;
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    initial begin
+        $dumpfile("trace.vcd");
+        $dumpvars(0, {name}_tb);
+        reset_n = 0; start = 0; tx_data = 8'hAC;
+        repeat(4) @(posedge clk); #1;
+        reset_n = 1;
+
+        start = 1; @(posedge clk); #1; start = 0;
+
+        wait(done);
+        @(posedge clk);
+
+        if (rx_data === 8'hAC) begin
+            $display("PASS Test 1: SPI loopback correct");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL Test 1: got %h expected AC", rx_data);
+            fail_count = fail_count + 1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"i2c_master": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n, start;
+    reg [6:0] addr;
+    reg rw;
+    reg [7:0] tx_data;
+    wire [7:0] rx_data;
+    wire sda, scl, busy, done, ack_error;
+
+    integer pass_count = 0;
+    integer fail_count = 0;
+
+    {name} dut(.*);
+
+    pullup(sda);
+    pullup(scl);
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    initial begin
+        $dumpfile("trace.vcd");
+        $dumpvars(0, {name}_tb);
+        reset_n = 0; start = 0; addr = 7'h50; rw = 0; tx_data = 8'hBE;
+        repeat(4) @(posedge clk); #1;
+        reset_n = 1;
+
+        start = 1; @(posedge clk); #1; start = 0;
+
+        wait(done);
+        @(posedge clk);
+
+        pass_count = pass_count + 1;
+        $display("PASS Test 1: I2C transaction completed");
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"ram": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n, wr_en, rd_en;
+    reg [3:0] addr;
+    reg [7:0] din;
+    wire [7:0] dout;
+    integer pass_count = 0;
+    integer fail_count = 0;
+
+    {name} #(.DATA_W(8), .DEPTH({depth})) dut(.*);
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    initial begin
+        $dumpfile("trace.vcd");
+        $dumpvars(0, {name}_tb);
+        reset_n = 0; wr_en = 0; rd_en = 0; addr = 0; din = 0;
+        repeat(4) @(posedge clk); #1;
+        reset_n = 1;
+
+        wr_en = 1; addr = 4'h5; din = 8'hDE; @(posedge clk); #1;
+        addr = 4'hA; din = 8'hAD; @(posedge clk); #1;
+        wr_en = 0;
+
+        rd_en = 1; addr = 4'h5; @(posedge clk); #1;
+        if (dout === 8'hDE) begin
+            $display("PASS Test 1: RAM read addr 5 correct");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL Test 1: got %h expected DE", dout);
+            fail_count = fail_count + 1;
+        end
+
+        addr = 4'hA; @(posedge clk); #1;
+        if (dout === 8'hAD) begin
+            $display("PASS Test 2: RAM read addr A correct");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL Test 2: got %h expected AD", dout);
+            fail_count = fail_count + 1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
 "default": '''
 `timescale 1ns/1ps
 module {name}_tb();
@@ -295,6 +707,11 @@ def classify_design(description: str, bits: int = 8) -> Dict:
         "mux":     ["mux", "multiplex", "select", "choose"],
         "alu":     ["alu", "arithmetic logic", "operations"],
         "fsm":     ["fsm", "state machine", "states", "sequence"],
+        "fifo":    ["fifo", "queue", "buffer", "first in first out"],
+        "spi_master": ["spi", "serial peripheral", "miso", "mosi", "sclk"],
+        "i2c_master": ["i2c", "iic", "two wire", "sda", "scl"],
+        "ram":     ["ram", "memory", "sram", "storage", "memory array"],
+    }
     }
 
     for template_type, words in keywords.items():
@@ -319,18 +736,35 @@ def extract_bits_from_description(description: str) -> int:
     return 8
 
 
+def extract_depth_from_description(description: str) -> int:
+    """Extract depth/size from description for FIFO/RAM."""
+    patterns = [
+        r'depth\s*[:=]?\s*(\d+)',
+        r'(\d+)\s*(?:deep|entries|locations)',
+        r'size\s*[:=]?\s*(\d+)',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, description, re.IGNORECASE)
+        if m:
+            depth = int(m.group(1))
+            if 2 <= depth <= 1024:
+                return depth
+    return 16
+
+
 def build_from_template(module_name: str, description: str) -> Tuple[str, str]:
     bits = extract_bits_from_description(description)
+    depth = extract_depth_from_description(description)
     classified = classify_design(description, bits)
     template_type = classified["type"]
 
     rtl_template = TEMPLATES_RTL.get(template_type, TEMPLATES_RTL["adder"])
     tb_template  = TEMPLATES_TB.get(template_type, TEMPLATES_TB["default"])
 
-    rtl = rtl_template.format(name=module_name, bits=bits)
-    tb  = tb_template.format(name=module_name, bits=bits)
+    rtl = rtl_template.format(name=module_name, bits=bits, depth=depth)
+    tb  = tb_template.format(name=module_name, bits=bits, depth=depth)
 
-    log.info(f"Built from template: {template_type} {bits}-bit")
+    log.info(f"Built from template: {template_type} {bits}-bit depth={depth}")
     return rtl.strip(), tb.strip()
 
 
