@@ -712,7 +712,6 @@ def classify_design(description: str, bits: int = 8) -> Dict:
         "i2c_master": ["i2c", "iic", "two wire", "sda", "scl"],
         "ram":     ["ram", "memory", "sram", "storage", "memory array"],
     }
-    }
 
     for template_type, words in keywords.items():
         if any(w in desc for w in words):
@@ -752,6 +751,19 @@ def extract_depth_from_description(description: str) -> int:
     return 16
 
 
+def safe_format(template: str, **kwargs) -> str:
+    """Format template while preserving Verilog {} concatenation syntax"""
+    result = template.replace('{name}', '<<<NAME>>>')
+    result = result.replace('{bits}', '<<<BITS>>>')
+    result = result.replace('{depth}', '<<<DEPTH>>>')
+    
+    for key, value in kwargs.items():
+        placeholder = f'<<<{key.upper()}>>>'
+        result = result.replace(placeholder, str(value))
+    
+    return result
+
+
 def build_from_template(module_name: str, description: str) -> Tuple[str, str]:
     bits = extract_bits_from_description(description)
     depth = extract_depth_from_description(description)
@@ -761,8 +773,8 @@ def build_from_template(module_name: str, description: str) -> Tuple[str, str]:
     rtl_template = TEMPLATES_RTL.get(template_type, TEMPLATES_RTL["adder"])
     tb_template  = TEMPLATES_TB.get(template_type, TEMPLATES_TB["default"])
 
-    rtl = rtl_template.format(name=module_name, bits=bits, depth=depth)
-    tb  = tb_template.format(name=module_name, bits=bits, depth=depth)
+    rtl = safe_format(rtl_template, name=module_name, bits=bits, depth=depth)
+    tb  = safe_format(tb_template, name=module_name, bits=bits, depth=depth)
 
     log.info(f"Built from template: {template_type} {bits}-bit depth={depth}")
     return rtl.strip(), tb.strip()
