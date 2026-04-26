@@ -326,6 +326,55 @@ def generate_verilog_groq(
 
 
 # ============================================================
+# PROVIDER 2b: GITHUB MODELS (OpenAI-compatible, Edu pack)
+# ============================================================
+
+def generate_verilog_github(
+    description: str,
+    module_name: str,
+    api_key: str = None,
+    model: str = None
+) -> Tuple[str, str]:
+    """
+    Generate Verilog using GitHub Models (OpenAI-compatible endpoint).
+    Free with GitHub Education pack - includes GPT-4o, GPT-4-turbo.
+    Returns (rtl_code, testbench_code)
+    """
+    import openai
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env", override=True)
+    
+    _key = api_key or os.getenv("GITHUB_TOKEN")
+    _model = model or os.getenv("GITHUB_MODEL", "gpt-4o")
+    _base_url = os.getenv("GITHUB_BASE_URL", "https://models.inference.ai.azure.com")
+    
+    if not _key:
+        raise ValueError(
+            "GITHUB_TOKEN not set. Add it to .env:\n"
+            "GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx\n"
+            "Get your token at: https://github.com/settings/tokens"
+        )
+    
+    client = openai.OpenAI(
+        api_key=_key,
+        base_url=_base_url
+    )
+    
+    chat = client.chat.completions.create(
+        model=_model,
+        messages=[
+            {"role": "system", "content": VERILOG_SYSTEM_PROMPT},
+            {"role": "user", "content": f"Design name: {module_name}\n\nDescription: {description}"}
+        ],
+        temperature=0.3,
+        max_tokens=4000
+    )
+    
+    text = chat.choices[0].message.content
+    return parse_verilog_response(text)
+
+
+# ============================================================
 # PROVIDER 3: OPENCODE (ACP REST API — port 4096)
 # ============================================================
 
@@ -1256,7 +1305,9 @@ def generate_and_validate(
         # Still need to generate testbench via LLM
         print("Generating testbench for template-based RTL...")
         try:
-            if llm_provider == "groq":
+            if llm_provider == "github":
+                _, tb = generate_verilog_github(description, module_name)
+            elif llm_provider == "groq":
                 _, tb = generate_verilog_groq(description, module_name)
             elif llm_provider == "gemini":
                 _, tb = generate_verilog_gemini(description, module_name)
@@ -1272,7 +1323,9 @@ def generate_and_validate(
         # ---- Generate ----
         if not rtl or not tb:
             try:
-                if llm_provider == "groq":
+                if llm_provider == "github":
+                    rtl, tb = generate_verilog_github(description, module_name)
+                elif llm_provider == "groq":
                     rtl, tb = generate_verilog_groq(description, module_name)
                 elif llm_provider == "gemini":
                     rtl, tb = generate_verilog_gemini(description, module_name)
@@ -1283,19 +1336,30 @@ def generate_and_validate(
                 else:
                     raise ValueError(
                         f"Unknown provider '{llm_provider}'. "
-                        "Use 'gemini', 'groq', 'nvidia', or 'opencode'."
+                        "Use 'github', 'gemini', 'groq', 'nvidia', or 'opencode'."
                     )
             except Exception as e:
                 err = str(e)
                 print(f"Generation failed: {err}")
-                # Auto-fallback: if Groq rate-limited, try NVIDIA via openai SDK
-                if llm_provider == "groq" and "rate_limit" in err.lower():
-                    print("Groq rate limit hit -- falling back to NVIDIA...")
-                    try:
-                        rtl, tb = generate_verilog_nvidia(description, module_name)
-                        err = None
-                    except Exception as e2:
-                        err = str(e2)
+                # Auto-fallback chain: try other providers
+                fallback_order = []
+                if llm_provider != "github":
+                    fallback_order.append(("github", generate_verilog_github))
+                if llm_provider != "gemini":
+                    fallback_order.append(("gemini", generate_verilog_gemini))
+                if llm_provider != "groq":
+                    fallback_order.append(("groq", generate_verilog_groq))
+                
+                for fb_name, fb_func in fallback_order:
+                    if "rate" in err.lower() or "quota" in err.lower() or "429" in err:
+                        print(f"Rate limit hit -- falling back to {fb_name}...")
+                        try:
+                            rtl, tb = fb_func(description, module_name)
+                            err = None
+                            break
+                        except Exception as e2:
+                            err = str(e2)
+                
                 if err and attempt == max_retries:
                     return {
                         "status":      "GENERATION_FAILED",

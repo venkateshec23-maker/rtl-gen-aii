@@ -1293,8 +1293,8 @@ def page_generate_design():
     with col1:
         provider = st.selectbox(
             "🧠 Select LLM Provider",
-            ["gemini", "opencode", "groq", "nvidia"],
-            help="gemini (1.5 Flash - Best Output), opencode (big-pickle - Local unlimited), groq (Llama-3 - Cloud limit)"
+            ["github", "gemini", "groq", "opencode", "nvidia"],
+            help="github (GPT-4o - Free with Edu pack), gemini (2.5 Flash), groq (Llama-3), opencode (local)"
         )
     with col2:
         max_retries = st.slider(
