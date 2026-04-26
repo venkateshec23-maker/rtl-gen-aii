@@ -1208,6 +1208,45 @@ class RTLtoGDSIIFlow:
 
         log.info(f"RTLtoGDSII initialized for: {design_name}")
 
+    # ----------------------------------------------------------------
+    # DOCKER HEALTH GATE — shared by every step that needs Docker
+    # ----------------------------------------------------------------
+
+    def _wait_for_docker(self, max_wait: int = 90) -> bool:
+        """
+        Wait up to max_wait seconds for Docker daemon to become ready.
+        Retries every 5 seconds.  Returns True once docker info succeeds.
+        """
+        poll = 5
+        deadline = time.time() + max_wait
+        attempt = 0
+        while time.time() < deadline:
+            attempt += 1
+            try:
+                result = subprocess.run(
+                    ["docker", "info"],
+                    capture_output=True,
+                    timeout=5
+                )
+                if result.returncode == 0:
+                    if attempt > 1:
+                        log.info(f"Docker ready after {attempt} attempts")
+                    return True
+            except (FileNotFoundError, subprocess.TimeoutExpired):
+                pass
+            remaining = int(deadline - time.time())
+            if remaining > 0:
+                log.warning(
+                    f"Docker not ready (attempt {attempt}). "
+                    f"Retrying in {poll}s ({remaining}s left)..."
+                )
+                time.sleep(poll)
+        log.error(
+            f"Docker daemon did not become ready within {max_wait}s. "
+            "Is Docker Desktop running?"
+        )
+        return False
+
     def _verify_step(
         self,
         step_name: str,
@@ -1404,11 +1443,17 @@ class RTLtoGDSIIFlow:
                 docker_available = False
 
             if not docker_available:
-                log.error(
-                    "No usable RTL simulation backend available "
-                    "(local iverilog unavailable and Docker unavailable)."
+                # Docker may still be starting up — wait before giving up
+                log.warning(
+                    "Docker not immediately available for RTL sim. "
+                    "Waiting for Docker to become ready..."
                 )
-                return False
+                if not self._wait_for_docker(max_wait=90):
+                    log.error(
+                        "No usable RTL simulation backend available "
+                        "(local iverilog unavailable and Docker unavailable)."
+                    )
+                    return False
 
             try:
                 tb_rel = tb_path.resolve().relative_to(self.work_dir.resolve())
@@ -1717,20 +1762,8 @@ class RTLtoGDSIIFlow:
         """Run complete OpenROAD physical design flow"""
         log.info("=== STEP 3: PHYSICAL DESIGN (Floorplanâ†’CTSâ†’PDNâ†’Route) ===")
 
-        # Check if Docker is available
-        docker_available = False
-        try:
-            result = subprocess.run(
-                ["docker", "info"],
-                capture_output=True,
-                timeout=5
-            )
-            docker_available = result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            docker_available = False
-
-        if not docker_available:
-            log.error("Docker not available - Physical Design cannot run")
+        # Wait for Docker daemon (handles Docker Desktop still booting)
+        if not self._wait_for_docker(max_wait=90):
             log.error("Physical Design requires Docker + OpenROAD")
             return False
 
@@ -1752,12 +1785,24 @@ class RTLtoGDSIIFlow:
             c_pdk        = self.c_pdk
         )
 
-        rc, out, err = self.docker.run_script(
-            script_path,
-            interpreter = "openroad -exit",
-            timeout     = 1800,
-            log_file    = "openroad.log"
-        )
+        # Retry loop — handles OOM kills and transient Docker timeouts
+        rc, out, err = -1, "", ""
+        for attempt in range(1, 4):
+            rc, out, err = self.docker.run_script(
+                script_path,
+                interpreter = "openroad -exit",
+                timeout     = 1800,
+                log_file    = "openroad.log"
+            )
+            if rc == 0 and "=== OPENROAD_COMPLETE ===" in out:
+                break
+            log.warning(
+                f"Physical design attempt {attempt}/3 did not complete cleanly "
+                f"(rc={rc}). "
+                + ("Retrying in 10s..." if attempt < 3 else "Giving up.")
+            )
+            if attempt < 3:
+                time.sleep(10)
 
         log.info(f"OpenROAD output:\n{out[-3000:]}")
 
@@ -1794,17 +1839,13 @@ class RTLtoGDSIIFlow:
         """Generate GDS using Magic (requires Docker)"""
         log.info("=== STEP 4: GDS GENERATION ===")
 
-        # Check if Docker is available
-        docker_available = False
-        try:
-            result = subprocess.run(
-                ["docker", "info"],
-                capture_output=True,
-                timeout=5
-            )
-            docker_available = result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
+        # Wait for Docker daemon
+        if not self._wait_for_docker(max_wait=90):
+            log.error("Docker not available - GDS generation cannot run")
+            # keep rest of original block intact
             docker_available = False
+        else:
+            docker_available = True
 
         if not docker_available:
             log.error("Docker not available - GDS generation cannot run")
