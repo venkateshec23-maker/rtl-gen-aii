@@ -1,67 +1,31 @@
-# Python
+# Build artifacts
 __pycache__/
 *.pyc
 *.pyo
-*.pyd
-.Python
-.venv/
-venv/
-env/
 *.egg-info/
+.eggs/
+*.egg
 dist/
 build/
 
-# Environment
-.env
-*.env
-.env.local
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Database files
+*.db
 
 # Logs
 *.log
-full_flow.log
-run*.log
-verify_output.txt
-verify_final.txt
-unit_test_results.txt
-integration_test_results.txt
+logs/
 
-# Temporary scripts
-verify_task1_run.py
-check_status.py
-final_status.py
-run_signoff.py
-audit_100.py
-fix_*.py
-validate_*.py
-test_*.py.bak
+# Environment
+.env
+.venv/
+venv/
+env/
 
-# EDA outputs (too large for git)
-C:\tools\OpenLane\runs\
-C:\tools\OpenLane\results\
-*.gds
-*.def
-*.vcd
-*.sdf
-*.spice
-exhaustive_trace.vcd
-drc_klayout_full.xml
-
-# OS
-.DS_Store
-Thumbs.db
-desktop.ini
-
-# VS Code
-.vscode/settings.json
-.vscode/launch.json
-
-# Streamlit
-.streamlit/secrets.toml
-
-# GSD
-.gsd/cache/
-
-# Reports
-verify_output.txt
-verify_final.txt
-verification_results.json
+# Temporary/untracked files
+*.tmp
+*.bak
