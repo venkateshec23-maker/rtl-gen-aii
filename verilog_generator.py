@@ -269,7 +269,7 @@ def generate_verilog_gemini(
         raise ValueError("GEMINI_API_KEY not set in .env")
 
     genai.configure(api_key=_key)
-    model = genai.GenerativeModel("gemini-2.0-flash", system_instruction=VERILOG_SYSTEM_PROMPT)
+    model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=VERILOG_SYSTEM_PROMPT)
     
     response = model.generate_content(
         f"Design name: {module_name}\n\nDescription: {description}"
@@ -1091,7 +1091,7 @@ def repair_with_gemini(prompt: str, module_name: str) -> Tuple[str, str]:
     load_dotenv(override=True)
     _key = os.getenv("GEMINI_API_KEY")
     genai.configure(api_key=_key)
-    model = genai.GenerativeModel("gemini-2.0-flash")
+    model = genai.GenerativeModel("gemini-2.5-flash")
     response = model.generate_content(prompt)
     return parse_verilog_response(response.text)
 
