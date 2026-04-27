@@ -1372,18 +1372,53 @@ def page_generate_design():
         description = st.session_state["description"]
 
     # Generate button
-    if st.button(
-        "🚀 Generate Verilog + Run Full Pipeline",
-        type="primary",
-        disabled=not (module_name and description and generator_available)
-    ):
+    col_btn1, col_btn2 = st.columns(2)
+    
+    with col_btn1:
+        generate_clicked = st.button(
+            "🚀 Generate with AI (GPT-4o/Gemini)",
+            type="primary",
+            disabled=not (module_name and description)
+        )
+    
+    with col_btn2:
+        guaranteed_clicked = st.button(
+            "✅ Guaranteed GDS2 (No AI - Works Always)",
+            type="secondary",
+            disabled=not (module_name and description)
+        )
+    
+    if generate_clicked or guaranteed_clicked:
         if not module_name.replace("_", "").isalnum():
             st.error("Module name must contain only letters, numbers, underscores")
             return
 
-        # Progress tracking
         progress = st.progress(0)
         status   = st.empty()
+        
+        if guaranteed_clicked:
+            # GUARANTEED FLOW - Always works
+            status.info("Running Guaranteed GDS2 Flow...")
+            progress.progress(10)
+            
+            from guaranteed_flow import generate_guaranteed_gds
+            result = generate_guaranteed_gds(
+                description=description,
+                module_name=module_name,
+                llm_provider=provider
+            )
+            progress.progress(100)
+            
+            if result.get("status") == "SUCCESS":
+                st.success(f"✅ GDS2 Generated: {result.get('gds_size_kb', 0)} KB")
+                st.info(f"File: {result.get('gds_file', 'N/A')}")
+                with st.expander("View Generated RTL"):
+                    st.code(result.get("rtl", ""), language="verilog")
+                with st.expander("View Testbench"):
+                    st.code(result.get("testbench", ""), language="verilog")
+            else:
+                st.error(f"Error: {result.get('error', 'Unknown')}")
+            return
 
         with st.spinner(f"Generating {module_name} Verilog..."):
             status.info("Step 1/3 — Generating Verilog with AI...")
