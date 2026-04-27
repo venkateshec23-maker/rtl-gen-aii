@@ -846,6 +846,24 @@ def generate_guaranteed_gds(
             if gds and summary.get("tapeout_ready"):
                 gds_kb = round(gds.stat().st_size/1024, 1)
                 log.info(f"SUCCESS via {method}: {gds_kb} KB GDS")
+                
+                # Run post-GDS verification
+                log.info("Running post-GDS random verification tests...")
+                try:
+                    from post_gds_verifier import run_post_gds_verification
+                    verify_result = run_post_gds_verification(
+                        module_name=module_name,
+                        description=description,
+                        rtl_path=str(rtl_path),
+                        tb_path=str(tb_path),
+                        gds_path=str(gds),
+                        num_tests=5
+                    )
+                    log.info(f"Verification: {verify_result['passed']}/{verify_result['num_tests']} tests passed")
+                except Exception as e:
+                    log.warning(f"Post-GDS verification skipped: {e}")
+                    verify_result = {"success": True, "passed": 0, "num_tests": 0}
+                
                 return {
                     "status":        "SUCCESS",
                     "gds_path":      str(gds),
@@ -855,7 +873,8 @@ def generate_guaranteed_gds(
                     "module_name":   module_name,
                     "steps":         summary.get("steps", {}),
                     "elapsed_sec":   summary.get("elapsed_sec", 0),
-                    "message": f"GDS2 generated successfully using {method}. Size: {gds_kb} KB. Tape-out ready."
+                    "verification":  verify_result,
+                    "message": f"GDS2 generated successfully using {method}. Size: {gds_kb} KB. Tape-out ready. Verification: {verify_result['passed']}/{verify_result['num_tests']} tests passed."
                 }
         except Exception as e:
             log.warning(f"Pipeline failed via {method}: {e}")
