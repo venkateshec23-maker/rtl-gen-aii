@@ -2075,7 +2075,7 @@ def page_upload_custom():
         with col1:
             provider = st.selectbox(
                 "AI Provider",
-                ["gemini", "opencode", "groq", "nvidia"],
+                ["github", "gemini", "groq", "opencode", "nvidia"],
                 index=0
             )
         with col2:
