@@ -847,8 +847,8 @@ def validate_verilog_syntax(
             errors.append("No synchronous logic — add always @(posedge clk)")
         if "<=" not in rtl_code:
             warnings.append("No non-blocking assignments — use <= in always blocks")
-        if "#" in rtl_code and "timescale" not in rtl_code:
-            errors.append("Delay (#) found in RTL — remove delays from synthesizable code")
+        if re.search(r'#\d+', rtl_code) and "timescale" not in rtl_code:
+            errors.append("Delay (#N) found in RTL — remove delays from synthesizable code")
         if "initial" in rtl_code and "testbench" not in rtl_code.lower():
             warnings.append("initial block in RTL — not synthesizable, remove it")
 
