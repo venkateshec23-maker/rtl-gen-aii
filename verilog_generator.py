@@ -72,6 +72,9 @@ module MODULE_NAME_tb;
     // declare testbench signals (inputs to DUT become regs)
 
     wire output_name;  // outputs from DUT
+    
+    integer pass_count = 0;
+    integer fail_count = 0;
 
     MODULE_NAME uut (
         .clk(clk),
@@ -96,8 +99,10 @@ module MODULE_NAME_tb;
         @(posedge clk); #1;
         if (output_name == expected_value1) begin
             $display("PASS Test 1");
+            pass_count = pass_count + 1;
         end else begin
             $display("FAIL Test 1: got %d, expected %d", output_name, expected_value1);
+            fail_count = fail_count + 1;
         end
 
         // TEST 2
@@ -105,16 +110,18 @@ module MODULE_NAME_tb;
         @(posedge clk); #1;
         if (output_name == expected_value2) begin
             $display("PASS Test 2");
+            pass_count = pass_count + 1;
         end else begin
             $display("FAIL Test 2: got %d, expected %d", output_name, expected_value2);
+            fail_count = fail_count + 1;
         end
 
-        // Final check
-        if (output_name == expected_value_final) begin
+        // Final report
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0)
             $display("ALL_TESTS_PASSED");
-        end else begin
+        else
             $display("TESTS_FAILED");
-        end
 
         #50;
         $finish;
@@ -133,6 +140,37 @@ FORBIDDEN PATTERNS (cause synthesis failure):
 - automatic tasks with timing
 - non-constant case expressions
 - #0 delays (race condition)
+
+PORT DIRECTION RULES — CRITICAL:
+  output reg  — for outputs driven by always block (FSM, sequential)
+  output wire — for combinational outputs only (assign statements)  
+  input       — for all inputs (wire is default)
+  NEVER declare output as plain wire if driven by always block
+
+CORRECT EXAMPLES:
+  output reg [7:0] q;        // sequential output (flip-flop)
+  output reg tx;             // sequential output (FSM)
+  output wire y = a & b;     // combinational output
+  input clk;                 // input
+  input [7:0] data;          // input bus
+
+WRONG EXAMPLES (will fail synthesis):
+  output tx;                 // WRONG: missing reg/wire
+  output wire tx;            // WRONG if driven by always @(posedge clk)
+  assign tx = shift_reg[0];  // WRONG: should be output reg with always
+
+FSM OUTPUT RULE:
+  Any output that changes in always @(posedge clk) MUST be declared:
+  output reg <name>;
+  NOT: output wire <name>
+
+UART TRANSMITTER RULES:
+  - output reg tx (NOT output wire tx) — driven by FSM
+  - output reg tx_busy (NOT output wire tx_busy) — driven by FSM
+  - IDLE state: tx = 1 (idle line is high)
+  - START bit: tx = 0
+  - STOP bit: tx = 1
+  - LSB first (send bit 0 first)
 
 ALWAYS REQUIRED:
 - output reg for all registered outputs
@@ -1080,12 +1118,11 @@ def inject_real_checks_into_testbench(
 
     fixed = testbench_code
 
-    # Step 1: Add fail_count declaration after module declaration
-    if "fail_count" not in fixed:
+    # Step 1: Add fail_count and pass_count declarations after module declaration
+    if "fail_count" not in fixed or "pass_count" not in fixed:
         fixed = re.sub(
             r'(module\s+\w+_tb\s*\(\s*\)\s*;)',
-            r'\1\n\n    integer fail_count = 0;'
-            r'\n    integer pass_count = 0;',
+            r'\1\n\n    integer pass_count = 0;\n    integer fail_count = 0;',
             fixed
         )
 
@@ -1157,6 +1194,10 @@ def find_matching_template(description: str, module_name: str) -> Optional[str]:
         "mux.v":        ["multiplex", "mux", "selector", "select"],
         "decoder.v":    ["decoder", "decode", "one-hot"],
         "encoder.v":    ["encoder", "priority encoder", "encode"],
+        "spi_master.v": ["spi", "serial peripheral", "spi master", "mosi", "miso", "sclk"],
+        "i2c_master.v": ["i2c", "inter-integrated", "i2c master", "iic", "scl sda"],
+        "uart_tx.v":    ["uart", "serial transmit", "uart_tx", "rs232", "baud"],
+        "fsm.v":        ["fsm", "state machine", "finite state", "controller"],
     }
     desc_lower = description.lower()
     for template_file, words in keywords.items():
@@ -1266,7 +1307,7 @@ def generate_and_validate(
 ) -> Dict:
     """
     Generate Verilog + validate + simulate.
-    Provider priority: nvidia (default) -> groq -> opencode
+    Provider priority with rotation: requested provider first, then alternatives.
     
     Returns complete result dict with status READY_FOR_PIPELINE or GENERATION_FAILED.
     """
@@ -1275,26 +1316,26 @@ def generate_and_validate(
     print(f"Provider: {llm_provider}")
     print(f"{'='*60}")
 
+    # Provider rotation order - try primary first, then alternatives
+    all_providers = ["gemini", "groq", "github", "opencode"]
+    
+    # Put requested provider first, then others
+    providers = [llm_provider] if llm_provider in all_providers else ["groq"]
+    for p in all_providers:
+        if p != providers[0]:
+            providers.append(p)
+    
+    last_error = None
+
     # Detect available sim tool once
     sim_tool = detect_sim_tool()
     print(f"Simulation tool: {sim_tool}")
-
-    rtl = tb = ""
-    validation = {}
-    sim_result = {}
-    lying_check = {
-        "is_lying": False,
-        "issues": [],
-        "warnings": [],
-        "verdict": "NOT_CHECKED"
-    }
 
     # ---- Check for matching template first ----
     template_path = find_matching_template(description, module_name)
     if template_path:
         print(f"[TEMPLATE] Using proven template: {Path(template_path).name}")
         template_content = Path(template_path).read_text()
-        # Rename module in template
         import re as _re
         match = _re.search(r'module\s+(\w+)', template_content)
         if match:
@@ -1302,212 +1343,168 @@ def generate_and_validate(
             rtl = _re.sub(rf'\bmodule\s+{orig_name}\b', f'module {module_name}', template_content)
         else:
             rtl = template_content
-        # Still need to generate testbench via LLM
-        print("Generating testbench for template-based RTL...")
-        try:
-            if llm_provider == "github":
-                _, tb = generate_verilog_github(description, module_name)
-            elif llm_provider == "groq":
-                _, tb = generate_verilog_groq(description, module_name)
-            elif llm_provider == "gemini":
-                _, tb = generate_verilog_gemini(description, module_name)
-            else:
-                _, tb = generate_verilog_nvidia(description, module_name)
-        except Exception as e:
-            print(f"Testbench generation failed for template: {e}")
-            tb = ""
+    else:
+        rtl = ""
+    tb = ""
 
-    for attempt in range(1, max_retries + 1):
-        print(f"\nAttempt {attempt}/{max_retries}...")
+    # Try each provider in rotation
+    for provider in providers:
+        print(f"\n[Trying provider: {provider}]")
+        
+        for attempt in range(1, max_retries + 1):
+            print(f"\nAttempt {attempt}/{max_retries} with {provider}...")
 
-        # ---- Generate ----
-        if not rtl or not tb:
-            try:
-                if llm_provider == "github":
-                    rtl, tb = generate_verilog_github(description, module_name)
-                elif llm_provider == "groq":
-                    rtl, tb = generate_verilog_groq(description, module_name)
-                elif llm_provider == "gemini":
-                    rtl, tb = generate_verilog_gemini(description, module_name)
-                elif llm_provider == "nvidia":
-                    rtl, tb = generate_verilog_nvidia(description, module_name)
-                elif llm_provider == "opencode":
-                    rtl, tb = generate_verilog_opencode(description, module_name)
-                else:
-                    raise ValueError(
-                        f"Unknown provider '{llm_provider}'. "
-                        "Use 'github', 'gemini', 'groq', 'nvidia', or 'opencode'."
-                    )
-            except Exception as e:
-                err = str(e)
-                print(f"Generation failed: {err}")
-                # Auto-fallback chain: try other providers
-                fallback_order = []
-                if llm_provider != "github":
-                    fallback_order.append(("github", generate_verilog_github))
-                if llm_provider != "gemini":
-                    fallback_order.append(("gemini", generate_verilog_gemini))
-                if llm_provider != "groq":
-                    fallback_order.append(("groq", generate_verilog_groq))
-                
-                for fb_name, fb_func in fallback_order:
+            validation = {}
+            sim_result = {}
+            lying_check = {
+                "is_lying": False,
+                "issues": [],
+                "warnings": [],
+                "verdict": "NOT_CHECKED"
+            }
+
+            # ---- Generate ----
+            if not rtl or not tb:
+                try:
+                    if provider == "github":
+                        rtl, tb = generate_verilog_github(description, module_name)
+                    elif provider == "groq":
+                        rtl, tb = generate_verilog_groq(description, module_name)
+                    elif provider == "gemini":
+                        rtl, tb = generate_verilog_gemini(description, module_name)
+                    elif provider == "nvidia":
+                        rtl, tb = generate_verilog_nvidia(description, module_name)
+                    elif provider == "opencode":
+                        rtl, tb = generate_verilog_opencode(description, module_name)
+                    else:
+                        raise ValueError(f"Unknown provider '{provider}'")
+                except Exception as e:
+                    err = str(e)
+                    print(f"Generation failed: {err}")
+                    last_error = e
+                    # Check for rate limit - try next provider immediately
                     if "rate" in err.lower() or "quota" in err.lower() or "429" in err:
-                        print(f"Rate limit hit -- falling back to {fb_name}...")
-                        try:
-                            rtl, tb = fb_func(description, module_name)
-                            err = None
-                            break
-                        except Exception as e2:
-                            err = str(e2)
-                
-                if err and attempt == max_retries:
-                    return {
-                        "status":      "GENERATION_FAILED",
-                        "module_name": module_name,
-                        "rtl": "", "testbench": "",
-                        "validation": {}, "simulation": {},
-                        "attempts": attempt,
-                        "error": err
-                    }
-                if err:
-                    continue
+                        print(f"Rate limit hit for {provider}, trying next provider...")
+                        break  # Break out of retry loop, try next provider
+                    continue  # Retry with same provider
 
-        rtl, tb, renamed_from = normalize_module_name(
-            rtl, tb, module_name
-        )
-        if renamed_from:
-            print(
-                f"Normalized module name from "
-                f"'{renamed_from}' to '{module_name}'"
-            )
+            rtl, tb, renamed_from = normalize_module_name(rtl, tb, module_name)
+            if renamed_from:
+                print(f"Normalized module name from '{renamed_from}' to '{module_name}'")
 
-        # ---- Validate ----
-        validation = validate_verilog_syntax(rtl, tb, module_name)
-
-        if validation["errors"]:
-            print(f"Validation errors: {validation['errors']}")
-
-            # Step 1: Try rule-based auto-fix first (no LLM needed)
-            tb_autofixed = auto_fix_testbench(tb, module_name, rtl)
-            auto_val = validate_verilog_syntax(rtl, tb_autofixed, module_name)
-
-            if not auto_val["errors"]:
-                print("Auto-fix resolved all validation errors")
-                tb = tb_autofixed
-                validation = auto_val
-            elif attempt < max_retries:
-                # Step 2: Use Groq to repair what auto-fix couldn't solve
-                print("Attempting LLM repair with Groq...")
-                rtl, tb = repair_verilog(
-                    rtl, tb_autofixed, module_name,
-                    auto_val["errors"], llm_provider,
-                    description=description,
-                    sim_output=""
-                )
-                rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
-                validation = validate_verilog_syntax(rtl, tb, module_name)
-                if not validation["errors"]:
-                    print("LLM repair succeeded")
-                else:
-                    print(f"Still failing after repair: {validation['errors']}")
-                    continue
-            else:
-                continue
-
-        if validation["warnings"]:
-            print(f"Warnings: {validation['warnings']}")
-
-        # ---- Honesty Gate ----
-        lying_check = validate_testbench_has_real_checks(tb)
-        if lying_check["is_lying"]:
-            print(f"[WARNING] Lying testbench detected: {lying_check['issues']}")
-            print("Injecting real checks before simulation...")
-            tb = inject_real_checks_into_testbench(tb, module_name, rtl)
-
-            # Re-validate syntax and honesty after auto-fix
+            # ---- Validate ----
             validation = validate_verilog_syntax(rtl, tb, module_name)
+
             if validation["errors"]:
-                print(f"Validation errors after honesty injection: {validation['errors']}")
-                if attempt < max_retries:
+                print(f"Validation errors: {validation['errors']}")
+
+                # Try rule-based auto-fix first
+                tb_autofixed = auto_fix_testbench(tb, module_name, rtl)
+                auto_val = validate_verilog_syntax(rtl, tb_autofixed, module_name)
+
+                if not auto_val["errors"]:
+                    print("Auto-fix resolved all validation errors")
+                    tb = tb_autofixed
+                    validation = auto_val
+                elif attempt < max_retries:
+                    # Use LLM to repair
+                    print("Attempting LLM repair...")
                     rtl, tb = repair_verilog(
-                        rtl, tb, module_name,
-                        validation["errors"], llm_provider,
+                        rtl, tb_autofixed, module_name,
+                        auto_val["errors"], provider,
                         description=description,
                         sim_output=""
                     )
                     rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
+                    validation = validate_verilog_syntax(rtl, tb, module_name)
+                    if validation["errors"]:
+                        print(f"Still failing after repair: {validation['errors']}")
+                        continue
+                else:
                     continue
-                continue
 
+            # ---- Honesty Gate ----
             lying_check = validate_testbench_has_real_checks(tb)
             if lying_check["is_lying"]:
+                print(f"[WARNING] Lying testbench detected: {lying_check['issues']}")
+                print("Injecting real checks before simulation...")
+                tb = inject_real_checks_into_testbench(tb, module_name, rtl)
+
+                validation = validate_verilog_syntax(rtl, tb, module_name)
+                if validation["errors"]:
+                    if attempt < max_retries:
+                        rtl, tb = repair_verilog(
+                            rtl, tb, module_name,
+                            validation["errors"], provider,
+                            description=description,
+                            sim_output=""
+                        )
+                        rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
+                    continue
+
+            # ---- Save ----
+            paths = save_design(module_name, rtl, tb)
+            print(f"Saved RTL: {paths['rtl']}")
+            print(f"Saved TB:  {paths['testbench']}")
+
+            # ---- Simulate ----
+            print(f"Running simulation with {sim_tool}...")
+            sim_result = simulate_with_tool(
+                module_name,
+                paths["rtl"],
+                paths["testbench"],
+                tool=sim_tool
+            )
+
+            if sim_result["success"]:
+                print(f"[SUCCESS] Simulation PASSED (provider: {provider}, tool: {sim_result['tool']})")
+
+                return {
+                    "status":      "READY_FOR_PIPELINE",
+                    "module_name": module_name,
+                    "rtl":         rtl,
+                    "testbench":   tb,
+                    "paths":       paths,
+                    "validation":  validation,
+                    "simulation":  sim_result,
+                    "testbench_honest": not lying_check.get("is_lying", False),
+                    "provider":    provider,
+                    "attempts":    attempt,
+                    "error":       None
+                }
+            else:
+                print(f"[FAIL] Simulation failed:\n{sim_result['output'][-500:]}")
                 if attempt < max_retries:
-                    print("[REPAIR] Honesty check still failing; invoking LLM repair...")
+                    errs_to_fix = sim_result['output'].split("\n")[-20:]
+                    print(f"[REPAIR] Attempting logic repair...")
+                    
+                    vcd_path_opt = None
+                    if paths and "testbench" in paths:
+                        trace_vcd = Path(paths["testbench"]).parent / "trace.vcd"
+                        if trace_vcd.exists():
+                            import vcd_parser
+                            vcd_path_opt = vcd_parser.extract_failure_truth_table(str(trace_vcd), max_ticks=10)
+                            
                     rtl, tb = repair_verilog(
-                        rtl, tb, module_name,
-                        lying_check["issues"], llm_provider,
+                        rtl,
+                        tb,
+                        module_name,
+                        errs_to_fix,
+                        provider,
                         description=description,
-                        sim_output=""
+                        sim_output=sim_result.get("output", ""),
+                        vcd_context=vcd_path_opt
                     )
                     rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
-                continue
+                    continue
 
-        # ---- Save ----
-        paths = save_design(module_name, rtl, tb)
-        print(f"Saved RTL: {paths['rtl']}")
-        print(f"Saved TB:  {paths['testbench']}")
+        print(f"Provider {provider} exhausted {max_retries} attempts")
+        # Reset for next provider
+        if not template_path:
+            rtl = ""
+        tb = ""
 
-        # ---- Simulate ----
-        print(f"Running simulation with {sim_tool}...")
-        sim_result = simulate_with_tool(
-            module_name,
-            paths["rtl"],
-            paths["testbench"],
-            tool=sim_tool
-        )
-
-        if sim_result["success"]:
-            print(f"[SUCCESS] Simulation PASSED (tool: {sim_result['tool']})")
-
-            return {
-                "status":      "READY_FOR_PIPELINE",
-                "module_name": module_name,
-                "rtl":         rtl,
-                "testbench":   tb,
-                "paths":       paths,
-                "validation":  validation,
-                "simulation":  sim_result,
-                "testbench_honest": not lying_check.get("is_lying", False),
-                "attempts":    attempt,
-                "error":       None
-            }
-        else:
-            print(f"[FAIL] Simulation failed:\n{sim_result['output'][-500:]}")
-            if attempt < max_retries:
-                errs_to_fix = sim_result['output'].split("\n")[-20:]
-                print(f"[REPAIR] Attempting logic repair with {llm_provider}...")
-                
-                # Attaching the truth-table VCD context
-                vcd_path_opt = None
-                if paths and "testbench" in paths:
-                    trace_vcd = Path(paths["testbench"]).parent / "trace.vcd"
-                    if trace_vcd.exists():
-                        import vcd_parser
-                        vcd_path_opt = vcd_parser.extract_failure_truth_table(str(trace_vcd), max_ticks=10)
-                        
-                rtl, tb = repair_verilog(
-                    rtl,
-                    tb,
-                    module_name,
-                    errs_to_fix,
-                    llm_provider,
-                    description=description,
-                    sim_output=sim_result.get("output", ""),
-                    vcd_context=vcd_path_opt
-                )
-                rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
-                continue
-
+    # All providers failed
     return {
         "status":      "GENERATION_FAILED",
         "module_name": module_name,
@@ -1516,8 +1513,8 @@ def generate_and_validate(
         "validation":  validation,
         "simulation":  sim_result,
         "testbench_honest": not lying_check.get("is_lying", True),
-        "attempts":    max_retries,
-        "error":       "Failed after max retries: validation or simulation errors"
+        "attempts":    max_retries * len(providers),
+        "error":       f"All providers failed. Last error: {last_error}"
     }
 
 
