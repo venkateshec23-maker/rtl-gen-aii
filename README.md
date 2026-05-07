@@ -18,6 +18,41 @@ Time:   30 seconds
 
 ---
 
+## REST API
+
+Submit designs programmatically and download GDS files.
+
+```bash
+# Submit a design
+curl -X POST http://localhost:8502/api/generate \
+  -H "Content-Type: application/json" \
+  -d '{"description": "4-bit counter with enable"}'
+
+# Response
+{"job_id": "job_20260503_...", "status": "queued"}
+
+# Poll status
+curl http://localhost:8502/api/status/job_20260503_...
+
+# When status=complete, download GDS
+curl http://localhost:8502/api/download/job_20260503_... \
+  -o my_design.gds
+
+# Verify it is real
+ls -la my_design.gds  # Should be > 50KB
+```
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| /api/generate | POST | Submit design job |
+| /api/status/{id} | GET | Poll job status |
+| /api/download/{id} | GET | Download GDS file |
+| /api/jobs | GET | List all jobs |
+| /api/health | GET | Health check |
+| /docs | GET | Swagger UI |
+
+---
+
 ## Quick Start
 
 ```bash
