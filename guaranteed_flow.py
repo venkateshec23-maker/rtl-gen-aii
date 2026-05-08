@@ -894,6 +894,148 @@ module {name}_tb();
 endmodule
 ''',
 
+"shift_reg": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n, en;
+    reg din;
+    wire [{bits}-1:0] dout;
+    integer pass_count = 0;
+    integer fail_count = 0;
+
+    {name} #(.WIDTH({bits})) dut(.clk(clk), .reset_n(reset_n), .en(en), .din(din), .dout(dout));
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    initial begin
+        $dumpfile("trace.vcd");
+        $dumpvars(0, {name}_tb);
+        reset_n = 0; en = 0; din = 0;
+        repeat(4) @(posedge clk); #1;
+        reset_n = 1;
+        en = 1;
+
+        din = 1; @(posedge clk); #1;
+        din = 0; @(posedge clk); #1;
+        din = 1; @(posedge clk); #1;
+        din = 1; @(posedge clk); #1;
+
+        if (dout === {bits}'b1011) begin
+            $display("PASS Test 1: shift register correct");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL Test 1: got %b expected 1011", dout);
+            fail_count = fail_count + 1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"mux": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n;
+    reg [{bits}-1:0] in0, in1, in2, in3;
+    reg [1:0] sel;
+    wire [{bits}-1:0] out;
+    integer pass_count = 0;
+    integer fail_count = 0;
+
+    {name} #(.WIDTH({bits})) dut(.in0(in0), .in1(in1), .in2(in2), .in3(in3), .sel(sel), .out(out));
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    task check;
+        input [{bits}-1:0] expected;
+        input [31:0] tnum;
+        begin
+            @(posedge clk); #1;
+            if (out !== expected) begin
+                $display("FAIL Test %0d: got %0d expected %0d", tnum, out, expected);
+                fail_count = fail_count + 1;
+            end else begin
+                $display("PASS Test %0d", tnum);
+                pass_count = pass_count + 1;
+            end
+        end
+    endtask
+
+    initial begin
+        $dumpfile("trace.vcd");
+        $dumpvars(0, {name}_tb);
+        in0 = 10; in1 = 20; in2 = 30; in3 = 40;
+        sel = 0; check(10, 1);
+        sel = 1; check(20, 2);
+        sel = 2; check(30, 3);
+        sel = 3; check(40, 4);
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"alu": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n;
+    reg [{bits}-1:0] a, b;
+    reg [3:0] op;
+    wire [{bits}-1:0] result;
+    integer pass_count = 0;
+    integer fail_count = 0;
+
+    {name} #(.WIDTH({bits})) dut(.clk(clk), .reset_n(reset_n), .a(a), .b(b), .op(op), .result(result));
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    task check;
+        input [{bits}-1:0] expected;
+        input [31:0] tnum;
+        begin
+            @(posedge clk); #1;
+            if (result !== expected) begin
+                $display("FAIL Test %0d: got %0d expected %0d", tnum, result, expected);
+                fail_count = fail_count + 1;
+            end else begin
+                $display("PASS Test %0d", tnum);
+                pass_count = pass_count + 1;
+            end
+        end
+    endtask
+
+    initial begin
+        $dumpfile("trace.vcd");
+        $dumpvars(0, {name}_tb);
+        reset_n = 0;
+        repeat(4) @(posedge clk); #1;
+        reset_n = 1;
+
+        a = 15; b = 5;
+        op = 4'd0; check(20, 1);  // ADD
+        op = 4'd1; check(10, 2);  // SUB
+        op = 4'd2; check(5, 3);   // AND
+        op = 4'd3; check(15, 4);  // OR
+        op = 4'd4; check(10, 5);  // XOR
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
 "default": '''
 `timescale 1ns/1ps
 module {name}_tb();

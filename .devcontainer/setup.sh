@@ -1,68 +1,66 @@
 #!/bin/bash
-# setup.sh — Runs once when Codespace is created
+set -e
 
-echo "============================================"
-echo "  RTL-Gen AI - Codespace Setup"
-echo "============================================"
+echo "=== RTL-Gen AI Setup ==="
 
 # Install Python dependencies
-pip install -r requirements.txt
+echo "Installing Python packages..."
+pip install -r requirements.txt -q
+pip install reportlab fastapi uvicorn pytest pytest-timeout --break-system-packages -q
 
-# Start database in background
-if command -v docker-compose &> /dev/null; then
-    echo "Starting PostgreSQL container..."
-    docker-compose up -d db
-elif docker compose version &> /dev/null; then
-    echo "Starting PostgreSQL container (docker compose)..."
-    docker compose up -d db
-else
-    echo "[WARNING] docker-compose not found - database may not start"
-fi
-
-# Pull OpenLane Docker image (background)
-echo "Pulling EDA Docker image (background)..."
-docker pull efabless/openlane:latest &
-
-# Create directory structure
-mkdir -p openroad/designs/adder_8bit
-mkdir -p openroad/designs/counter_4bit
-mkdir -p openroad/runs
+# Create working directories
+mkdir -p openlane_work/designs
+mkdir -p openlane_work/runs
+mkdir -p openlane_work/results
 mkdir -p pdk
+mkdir -p reports
 
-# Verify iverilog is available
-if command -v iverilog &> /dev/null; then
-    echo "[OK] iverilog available: $(iverilog -V 2>&1 | head -1)"
-else
-    echo "[WARNING] iverilog not found - installing..."
-    apt-get update && apt-get install -y iverilog 2>/dev/null || true
+# Pull OpenLane Docker image
+echo "Pulling OpenLane Docker image..."
+docker pull efabless/openlane:latest
+
+# Start PostgreSQL
+echo "Starting PostgreSQL..."
+docker run -d \
+  --name rtlgenai-postgres \
+  --restart always \
+  -e POSTGRES_PASSWORD=postgres \
+  -e POSTGRES_DB=rtlgenai \
+  -p 5432:5432 \
+  postgres:15
+
+sleep 5
+
+# Initialize database
+docker exec rtlgenai-postgres psql \
+  -U postgres -d rtlgenai \
+  -c "CREATE TABLE IF NOT EXISTS design_runs (
+    run_id TEXT PRIMARY KEY,
+    design_name TEXT,
+    status TEXT,
+    tapeout_ready BOOLEAN,
+    elapsed_sec FLOAT,
+    gds_size_bytes BIGINT,
+    cell_count INTEGER,
+    lvs_status TEXT,
+    timing_slack_ns FLOAT,
+    gds_path TEXT,
+    results_dir TEXT,
+    steps JSONB,
+    all_corners_met BOOLEAN,
+    formal_status TEXT,
+    signoff_report TEXT,
+    created_at TIMESTAMP DEFAULT NOW()
+  );" 2>/dev/null || true
+
+# Download Liberty files if PDK not present
+if [ ! -f "pdk/sky130_fd_sc_hd__tt_025C_1v80.lib" ]; then
+  echo "Downloading Sky130 Liberty files..."
+  LIB_BASE="https://raw.githubusercontent.com/google/skywater-pdk-libs-sky130_fd_sc_hd/master/timing"
+  wget -q "$LIB_BASE/sky130_fd_sc_hd__tt_025C_1v80.lib" \
+       -O pdk/sky130_fd_sc_hd__tt_025C_1v80.lib || true
 fi
 
-# Download Liberty file (essential for synthesis)
-PDK_LIB="pdk/sky130A/libs.ref/sky130_fd_sc_hd/lib"
-mkdir -p "$PDK_LIB"
-LIB_URL="https://raw.githubusercontent.com/google/skywater-pdk/main/libraries/sky130_fd_sc_hd/latest/timing/sky130_fd_sc_hd__tt_025C_1v80.lib"
-wget -q "$LIB_URL" -O "$PDK_LIB/sky130_fd_sc_hd__tt_025C_1v80.lib"
-
-LIB_SIZE=$(wc -c < "$PDK_LIB/sky130_fd_sc_hd__tt_025C_1v80.lib")
-if [ "$LIB_SIZE" -gt 1000000 ]; then
-    echo "[OK] Liberty file: $LIB_SIZE bytes"
-else
-    echo "[WARNING] Liberty file download may have failed"
-fi
-
-# Create .env from secrets if not exists
-if [ ! -f .env ]; then
-    cat > .env << 'EOF'
-ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-your_key_here}
-GROQ_API_KEY=${GROQ_API_KEY:-your_key_here}
-GEMINI_API_KEY=${GEMINI_API_KEY:-your_key_here}
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/rtlgenai
-EOF
-    echo "[OK] .env created from template"
-fi
-
-echo ""
-echo "============================================"
-echo "  Setup complete!"
-echo "  Run: streamlit run app.py"
-echo "============================================"
+echo "=== Setup Complete ==="
+echo "Run: streamlit run app.py"
+echo "API: python api.py"

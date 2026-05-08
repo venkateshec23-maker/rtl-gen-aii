@@ -1,55 +1,63 @@
 {
-  "name": "RTL-Gen AI",
-  "image": "mcr.microsoft.com/devcontainers/base:ubuntu-22.04",
-  
+  "name": "RTL-Gen AI Development",
+  "image": "mcr.microsoft.com/devcontainers/python:3.12",
+
   "features": {
     "ghcr.io/devcontainers/features/docker-in-docker:2": {
       "version": "latest",
-      "enableNonRootDocker": "true"
-    },
-    "ghcr.io/devcontainers/features/python:1": {
-      "version": "3.11"
+      "enableNonRootDocker": true
     }
   },
 
-  "postCreateCommand": "pip install -r requirements.txt && docker pull efabless/openlane:latest",
+  "forwardPorts": [8501, 8502, 5432],
 
-  "forwardPorts": [8501],
+  "portsAttributes": {
+    "8501": {
+      "label": "Streamlit UI",
+      "onAutoForward": "openPreview"
+    },
+    "8502": {
+      "label": "REST API",
+      "onAutoForward": "notify"
+    },
+    "5432": {
+      "label": "PostgreSQL",
+      "onAutoForward": "silent"
+    }
+  },
+
+  "postCreateCommand": "bash .devcontainer/setup.sh",
+
+  "secrets": {
+    "ANTHROPIC_API_KEY": {
+      "description": "Claude API key"
+    },
+    "GOOGLE_API_KEY": {
+      "description": "Gemini API key"
+    },
+    "GROQ_API_KEY": {
+      "description": "Groq API key"
+    }
+  },
+
+  "remoteEnv": {
+    "OPENLANE_WORK": "/workspaces/rtl-gen-aii/openlane_work",
+    "PDK_ROOT": "/workspaces/rtl-gen-aii/pdk",
+    "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/rtlgenai"
+  },
 
   "customizations": {
-    "codespaces": {
-      "openFiles": ["README.md", "app.py"]
-    },
     "vscode": {
       "extensions": [
         "ms-python.python",
         "ms-python.vscode-pylance",
-        "ms-toolsai.jupyter",
         "eamodio.gitlens"
       ],
       "settings": {
         "python.defaultInterpreterPath": "/usr/local/bin/python",
         "python.linting.enabled": true,
-        "python.formatting.provider": "black",
         "editor.formatOnSave": true
       }
-    }
-  },
-
-  "remoteEnv": {
-    "OPENLANE_WORK": "${containerWorkspaceFolder}/openlane",
-    "PDK_ROOT": "${containerWorkspaceFolder}/pdk",
-    "DATABASE_URL": "postgresql://postgres:postgres@localhost:5432/rtlgenai"
-  },
-
-  "portsAttributes": {
-    "8501": {
-      "label": "Streamlit App",
-      "onAutoForward": "openPreview"
-    },
-    "5432": {
-      "label": "PostgreSQL",
-      "onAutoForward": "silent"
     }
   }
 }

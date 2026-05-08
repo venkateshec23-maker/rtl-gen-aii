@@ -81,16 +81,19 @@ class GenerateRequest(BaseModel):
 
 
 class JobStatus(BaseModel):
-    job_id:      str
-    status:      str
-    description: str
-    created_at:  str
-    completed_at: Optional[str]
-    gds_size_kb:  Optional[float]
+    job_id:        str
+    status:        str
+    description:   str
+    created_at:    str
+    completed_at:  Optional[str]
+    progress:      Optional[float] = 0.0
+    current_step:  Optional[str]   = "Queued"
+    gds_size_kb:   Optional[float]
     tapeout_ready: Optional[bool]
-    method_used:  Optional[str]
-    download_url: Optional[str]
-    error:        Optional[str]
+    method_used:   Optional[str]
+    download_url:  Optional[str]
+    warning:       Optional[str]
+    error:         Optional[str]
 
 
 # =====================================================
@@ -138,11 +141,16 @@ def run_pipeline_job(
     Run the full RTL-to-GDSII pipeline in background.
     Updates JOBS dict with progress.
     """
-    JOBS[job_id]["status"] = "running"
+    JOBS[job_id]["status"]       = "running"
+    JOBS[job_id]["progress"]     = 0.0
+    JOBS[job_id]["current_step"] = "Starting..."
     log.info(f"Job {job_id}: starting pipeline")
 
     try:
         from guaranteed_flow import generate_guaranteed_gds
+        JOBS[job_id]["current_step"] = "Generating Verilog..."
+        JOBS[job_id]["progress"]     = 0.1
+
         result = generate_guaranteed_gds(
             description=description,
             module_name=module_name,
@@ -150,14 +158,16 @@ def run_pipeline_job(
         )
 
         JOBS[job_id].update({
-            "status":       "complete",
-            "completed_at": datetime.now().isoformat(),
-            "gds_size_kb":  result["gds_size_kb"],
+            "status":        "complete",
+            "progress":      1.0,
+            "current_step":  "Done",
+            "completed_at":  datetime.now().isoformat(),
+            "gds_size_kb":   result["gds_size_kb"],
             "tapeout_ready": result["tapeout_ready"],
-            "method_used":  result["method_used"],
-            "gds_path":     result["gds_path"],
-            "download_url": f"/api/download/{job_id}",
-            "error":        None
+            "method_used":   result["method_used"],
+            "gds_path":      result["gds_path"],
+            "download_url":  f"/api/download/{job_id}",
+            "error":         None
         })
         log.info(
             f"Job {job_id}: complete "
@@ -167,6 +177,8 @@ def run_pipeline_job(
     except Exception as e:
         JOBS[job_id].update({
             "status":       "failed",
+            "progress":     0.0,
+            "current_step": f"Failed: {str(e)[:100]}",
             "completed_at": datetime.now().isoformat(),
             "error":        str(e)
         })
