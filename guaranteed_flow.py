@@ -1228,13 +1228,14 @@ def generate_guaranteed_gds(
     module_name: Optional[str] = None,
     custom_rtl: Optional[str] = None,
     custom_tb:  Optional[str] = None,
-    llm_provider: str = "gemini"
+    llm_provider: str = "gemini",
+    pdk_type: str = "sky130A"
 ) -> Dict:
     if not module_name:
         timestamp = datetime.now().strftime("%H%M%S")
         module_name = f"design_{timestamp}"
 
-    log.info(f"Starting guaranteed GDS2 generation for {module_name}")
+    log.info(f"Starting guaranteed GDS2 generation for {module_name} with PDK={pdk_type}")
     design_dir = DESIGNS / module_name
     design_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1247,7 +1248,8 @@ def generate_guaranteed_gds(
             flow = RTLtoGDSIIFlow(
                 module_name, str(rtl_path),
                 str(WORK_DIR), str(PDK_DIR),
-                clock_period=10.0
+                clock_period=10.0,
+                pdk_type=pdk_type
             )
             summary = flow.run_full_flow()
 

@@ -78,6 +78,11 @@ class GenerateRequest(BaseModel):
         "gemini",
         example="gemini"
     )
+    pdk_type: str = Field(
+        "sky130A",
+        description="PDK: sky130A or gf180mcuD",
+        example="sky130A"
+    )
 
 
 class JobStatus(BaseModel):
@@ -135,7 +140,8 @@ def run_pipeline_job(
     description: str,
     module_name: str,
     clock_ns: float,
-    llm_provider: str
+    llm_provider: str,
+    pdk_type: str = "sky130A"
 ):
     """
     Run the full RTL-to-GDSII pipeline in background.
@@ -144,7 +150,7 @@ def run_pipeline_job(
     JOBS[job_id]["status"]       = "running"
     JOBS[job_id]["progress"]     = 0.0
     JOBS[job_id]["current_step"] = "Starting..."
-    log.info(f"Job {job_id}: starting pipeline")
+    log.info(f"Job {job_id}: starting pipeline with PDK={pdk_type}")
 
     try:
         from guaranteed_flow import generate_guaranteed_gds
@@ -154,7 +160,8 @@ def run_pipeline_job(
         result = generate_guaranteed_gds(
             description=description,
             module_name=module_name,
-            llm_provider=llm_provider
+            llm_provider=llm_provider,
+            pdk_type=pdk_type
         )
 
         JOBS[job_id].update({
@@ -273,7 +280,8 @@ def generate(
         request.description,
         module_name,
         request.clock_ns,
-        request.llm_provider
+        request.llm_provider,
+        request.pdk_type
     )
 
     log.info(
