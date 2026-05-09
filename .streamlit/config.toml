@@ -1,19 +1,15 @@
-[theme]
-primaryColor = "#FF6B6B"
-backgroundColor = "#FFFFFF"
-secondaryBackgroundColor = "#F0F2F6"
-textColor = "#262730"
-font = "sans serif"
-
-[client]
-showErrorDetails = false
-
-[logger]
-level = "info"
+﻿[theme]
+base = "dark"
+backgroundColor = "#0d1117"
+secondaryBackgroundColor = "#1c2128"
+textColor = "#c9d1d9"
+font = "monospace"
 
 [server]
-port = 8501
 headless = true
-runOnSave = true
-maxUploadSize = 200
-enableXsrfProtection = true
+port = 8501
+enableCORS = false
+enableXsrfProtection = false
+
+[browser]
+gatherUsageStats = false
