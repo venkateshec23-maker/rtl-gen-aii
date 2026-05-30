@@ -8,10 +8,14 @@ __pycache__/
 dist/
 build/
 
-# IDE
+# IDE / Editor configs
 .idea/
 .vscode/
 *.swp
+.cursorrules
+.windsurfrules
+.opencode.json
+.opencode.md
 
 # Database files
 *.db
@@ -29,3 +33,44 @@ env/
 # Temporary/untracked files
 *.tmp
 *.bak
+
+# Generated output directories
+runs/
+demo_run/
+outputs/
+openlane/
+openlane_work/
+cache/
+reports/
+simulation_results/
+design_flow_output/
+gds_images/
+waveforms_images/
+
+# Pipeline artifacts
+*.vcd
+*.gds
+!validation/run_001/07_gds/adder_8bit.gds
+
+# PDK files (use C:\pdk\ directly)
+validation/run_001/07_gds/pdk_files/
+
+# Large files
+full_flow.log
+drc_klayout_full.xml
+
+# Notebooks
+*.ipynb
+
+# OS files
+Thumbs.db
+.DS_Store
+
+# GSD framework (local agent state)
+.gsd/
+
+# Secrets
+.streamlit/secrets.toml
+
+# Backup files
+*.synth_bak
