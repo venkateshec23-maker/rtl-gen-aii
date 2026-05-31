@@ -2535,58 +2535,105 @@ def page_verify_gds():
     
     st.markdown("""
     <div style="background:#1c2128;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:20px">
-        <h3 style="color:#00d4ff;margin:0 0 8px">How It Works</h3>
-        <ol style="color:#c9d1d9;margin:0;padding-left:20px">
-            <li>Upload your GDS file (any design)</li>
-            <li>Describe what the module does (e.g., "8-bit adder")</li>
-            <li>System generates appropriate test cases</li>
-            <li>Runs: DRC → LVS → Simulation → STA</li>
-            <li>Shows live results for each check</li>
-        </ol>
+        <h3 style="color:#00d4ff;margin:0 0 8px">🤖 AI Auto-Detection</h3>
+        <p style="color:#c9d1d9;margin:0">
+            Upload any GDS and AI will automatically:
+            <br>• Extract module name from file
+            <br>• Identify design type (adder, counter, UART, etc.)
+            <br>• Generate appropriate test cases
+        </p>
     </div>
     """, unsafe_allow_html=True)
     
     uploaded_file = st.file_uploader(
         "Upload GDS File",
         type=["gds"],
-        help="Upload any GDSII layout file"
+        help="Upload any GDSII layout file - AI will analyze it"
     )
     
-    design_name = st.text_input(
-        "Module/Design Name",
-        placeholder="e.g., adder_8bit, alu_4bit, counter",
-        help="Used to identify the design type and generate tests"
+    auto_detect = st.checkbox(
+        "🤖 AI Auto-Detect Design",
+        value=True,
+        help="Automatically analyze GDS to identify module name and design type"
     )
     
-    design_description = st.text_area(
-        "What does this module do?",
-        height=100,
-        placeholder="Example: This is an 8-bit adder that takes two 8-bit inputs A and B and outputs a 9-bit sum. It has synchronous reset and clock.",
-        help="Describes functionality for test generation"
-    )
-    
-    expected_ports = st.text_area(
-        "Port List (one per line: name direction bits)",
-        height=100,
-        placeholder="clk input 1\nreset_n input 1\na input 8\nb input 8\nsum output 9",
-        help="List of ports with direction and bit width"
-    )
-    
-    col1, col2 = st.columns(2)
-    with col1:
+    if uploaded_file and auto_detect:
+        import tempfile
+        from gds_analyzer import analyze_and_generate_tests
+        
+        with tempfile.NamedTemporaryFile(suffix=".gds", delete=False) as tmp:
+            tmp.write(uploaded_file.getbuffer())
+            tmp_path = tmp.name
+        
+        with st.spinner("🤖 AI analyzing GDS structure..."):
+            analysis = analyze_and_generate_tests(tmp_path)
+        
+        st.markdown("### 📊 GDS Analysis Results")
+        
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            st.metric("Module", analysis.get("module_name", "Unknown"))
+        with col2:
+            st.metric("Type", analysis.get("design_type", "Unknown").upper())
+        with col3:
+            size_kb = analysis.get("structure", {}).get("file_size_kb", 0)
+            st.metric("Size", f"{size_kb:.1f} KB")
+        
+        structure = analysis.get("structure", {})
+        if structure.get("bounding_box"):
+            bb = structure["bounding_box"]
+            st.info(f"📐 Die Area: {bb['width_um']:.1f} × {bb['height_um']:.1f} μm")
+        
+        if structure.get("total_polygons", 0) > 0:
+            st.success(f"✅ Real layout: {structure['total_polygons']} polygons, {structure['total_paths']} paths")
+        
+        design_info = analysis.get("design_info", {})
+        if design_info:
+            st.markdown(f"**Description:** {design_info.get('description', 'Unknown')}")
+            st.markdown(f"**Test Pattern:** `{design_info.get('test_pattern', 'Standard tests')}`")
+        
+        st.markdown("---")
+        st.markdown("### Generated Testbench")
+        with st.expander("View Testbench Code", expanded=True):
+            st.code(analysis.get("testbench", ""), language="verilog")
+        
+        run_verification = st.button(
+            "▶️ Run Full Verification",
+            type="primary",
+            disabled=not analysis.get("verification_ready", False)
+        )
+        
+        design_name = analysis.get("module_name", "unknown")
+        design_description = design_info.get("description", "")
+    else:
+        design_name = st.text_input(
+            "Module/Design Name",
+            placeholder="e.g., adder_8bit, alu_4bit, counter",
+            help="Used to identify the design type and generate tests"
+        )
+        
+        design_description = st.text_area(
+            "What does this module do?",
+            height=100,
+            placeholder="Example: This is an 8-bit adder that takes two 8-bit inputs A and B and outputs a 9-bit sum.",
+            help="Describes functionality for test generation"
+        )
+        
+        expected_ports = st.text_area(
+            "Port List (one per line: name direction bits)",
+            height=100,
+            placeholder="clk input 1\nreset_n input 1\na input 8\nb input 8\nsum output 9",
+            help="List of ports with direction and bit width"
+        )
+        
         run_verification = st.button(
             "▶️ Run Verification",
             type="primary",
             disabled=not (uploaded_file and design_name)
         )
-    with col2:
-        use_ai_tests = st.checkbox(
-            "Generate tests with AI",
-            value=True,
-            help="Use LLM to generate smart test cases based on description"
-        )
+        use_ai_tests = True
     
-    if run_verification and uploaded_file:
+    if 'run_verification' in dir() and run_verification and uploaded_file:
         st.markdown("---")
         st.subheader("Verification Progress")
         
