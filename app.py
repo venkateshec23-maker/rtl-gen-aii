@@ -2605,6 +2605,8 @@ def page_verify_gds():
         
         design_name = analysis.get("module_name", "unknown")
         design_description = design_info.get("description", "")
+        use_ai_tests = True
+        expected_ports = ""
     else:
         design_name = st.text_input(
             "Module/Design Name",
