@@ -2642,9 +2642,10 @@ def page_verify_gds():
         
         import tempfile
         import shutil
+        from pathlib import Path as PathLib
         
         with tempfile.TemporaryDirectory() as tmpdir:
-            gds_path = Path(tmpdir) / f"{design_name}.gds"
+            gds_path = PathLib(tmpdir) / f"{design_name}.gds"
             with open(gds_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
             
@@ -2680,8 +2681,7 @@ def page_verify_gds():
             # Run actual LVS check
             try:
                 from full_flow import RealMetricsParser
-                from pathlib import Path
-                parser = RealMetricsParser(Path(str(gds_path.parent)))
+                parser = RealMetricsParser(PathLib(str(gds_path.parent)))
                 lvs_data = parser.parse_lvs()
                 lvs_result = {
                     "status": lvs_data.get("reason_code", "UNKNOWN"),
@@ -2711,7 +2711,7 @@ def page_verify_gds():
             # Run actual STA
             try:
                 from full_flow import RealMetricsParser
-                parser = RealMetricsParser(Path(str(gds_path.parent)))
+                parser = RealMetricsParser(PathLib(str(gds_path.parent)))
                 timing_data = parser.parse_timing()
                 sta_result = {
                     "status": timing_data.get("status", "UNKNOWN"),
@@ -2750,7 +2750,7 @@ def page_verify_gds():
             # Check for actual simulation results
             try:
                 from full_flow import RealMetricsParser
-                parser = RealMetricsParser(Path(str(gds_path.parent)))
+                parser = RealMetricsParser(PathLib(str(gds_path.parent)))
                 sim_data = parser.parse_simulation()
                 sim_result = {
                     "status": sim_data.get("status", "UNKNOWN"),
