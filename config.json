@@ -15,7 +15,7 @@
     "mux"
   ],
   "api_settings": {
-    "default_provider": "grok",
+    "default_provider": "groq",
     "providers": {
       "anthropic": {
         "model": "claude-3-5-sonnet-20241022",
@@ -23,8 +23,8 @@
         "max_tokens": 4000,
         "enabled": false
       },
-      "grok": {
-        "model": "grok-2-vision-1212",
+      "groq": {
+        "model": "llama-3.3-70b-versatile",
         "temperature": 0.5,
         "max_tokens": 4000,
         "enabled": true

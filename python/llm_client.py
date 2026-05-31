@@ -31,7 +31,7 @@ class LLMClient:
         client = LLMClient(use_mock=True)
         
         # Groq API
-        client = LLMClient(provider='grok', api_key='your-key-here', 
+        client = LLMClient(provider='groq', api_key='your-key-here', 
                           model='llama-3.3-70b-versatile')
         
         # DeepSeek direct API
@@ -67,7 +67,7 @@ class LLMClient:
         elif use_mock is True:
             self.provider = 'mock'
         else:
-            self.provider = 'grok' if api_key else 'nvidia'
+            self.provider = 'groq' if api_key else 'nvidia'
         
         self.api_key = api_key
         self.use_mock = self.provider == 'mock'
@@ -75,7 +75,7 @@ class LLMClient:
         # Set model based on provider
         if model:
             self.model = model
-        elif self.provider == 'grok':
+        elif self.provider == 'groq':
             self.model = 'llama-3.3-70b-versatile'  # Default Groq model
         elif self.provider == 'deepseek':
             self.model = 'deepseek-chat'
@@ -96,16 +96,16 @@ class LLMClient:
 
     def _init_real_client(self):
         """Initialize the appropriate LLM client based on provider."""
-        if self.provider == 'grok':
-            self._init_grok()
+        if self.provider == 'groq':
+            self._init_groq()
         elif self.provider == 'deepseek':
             self._init_deepseek()
         else:
             self._init_nvidia()
     
 
-    def _init_grok(self):
-        """Initialize Grok (Groq) client."""
+    def _init_groq(self):
+        """Initialize Groq client."""
         try:
             from groq import Groq
         except ImportError:
@@ -113,8 +113,8 @@ class LLMClient:
         
         if not self.api_key:
             raise ValueError(
-                "Grok API key required. Provide via api_key parameter or "
-                "set GROK_API_KEY environment variable. "
+                "Groq API key required. Provide via api_key parameter or "
+                "set GROQ_API_KEY environment variable. "
                 "Get key at: https://console.groq.com"
             )
         
@@ -230,8 +230,8 @@ class LLMClient:
                        max_tokens, cache_kwargs):
         """Generate using the real LLM provider."""
         try:
-            if self.provider == 'grok':
-                return self._generate_grok(prompt, system_prompt,
+            if self.provider == 'groq':
+                return self._generate_groq(prompt, system_prompt,
                                           temperature, max_tokens, cache_kwargs)
             else:
                 return self._generate_openai_compatible(prompt, system_prompt,
@@ -243,12 +243,12 @@ class LLMClient:
             return {'success': False, 'error': error_msg, 'cached': False}
     
 
-    def _generate_grok(self, prompt, system_prompt, temperature,
+    def _generate_groq(self, prompt, system_prompt, temperature,
                        max_tokens, cache_kwargs):
-        """Generate response using Grok (Groq) API - FIXED VERSION with debugging"""
+        """Generate response using Groq API - FIXED VERSION with debugging"""
         
         # Enhanced system prompt with Markdown formatting
-        grok_system = system_prompt or """You are an expert Verilog RTL designer. Generate Verilog code for digital circuits.
+        groq_system = system_prompt or """You are an expert Verilog RTL designer. Generate Verilog code for digital circuits.
 
 IMPORTANT: Always output Verilog code in markdown code blocks with 'verilog' language tag.
 Format EXACTLY like this:
@@ -267,13 +267,13 @@ endmodule
 
         try:
             if DEBUG_MODE:
-                print(f"🔄 Calling Grok API with model: {self.model}")
+                print(f"🔄 Calling Groq API with model: {self.model}")
             
             # Make API call
             response = self.client.chat.completions.create(
                 model=self.model or "mixtral-8x7b-32768",
                 messages=[
-                    {"role": "system", "content": grok_system},
+                    {"role": "system", "content": groq_system},
                     {"role": "user", "content": prompt}
                 ],
                 temperature=temperature,
@@ -309,7 +309,7 @@ endmodule
             
             # Validate content
             if not content or len(content.strip()) == 0:
-                error_msg = "No content in Grok response"
+                error_msg = "No content in Groq response"
                 if DEBUG_MODE:
                     print(f"❌ {error_msg}")
                     print(f"Response object: {response}")
@@ -319,7 +319,7 @@ endmodule
                 return {
                     'success': False,
                     'content': "",
-                    'provider': 'grok',
+                    'provider': 'groq',
                     'model': self.model,
                     'error': error_msg
                 }
@@ -355,14 +355,14 @@ endmodule
                            **cache_kwargs)
             
             if DEBUG_MODE:
-                print(f"✅ Grok success. Tokens: {usage['total_tokens']}")
+                print(f"✅ Groq success. Tokens: {usage['total_tokens']}")
             
             return result
             
         except Exception as e:
             error_msg = str(e)
             if DEBUG_MODE:
-                print(f"❌ Grok error: {error_msg}")
+                print(f"❌ Groq error: {error_msg}")
                 import traceback
                 traceback.print_exc()
             
@@ -372,7 +372,7 @@ endmodule
                 'success': False,
                 'content': "",
                 'error': error_msg,
-                'provider': 'grok',
+                'provider': 'groq',
                 'model': self.model
             }
     

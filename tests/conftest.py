@@ -3,9 +3,16 @@
 
 import pytest
 import subprocess
+import platform
+import os
 from pathlib import Path
 
-WORK_DIR = Path(r"C:\tools\OpenLane")
+if platform.system() == "Windows":
+    _DEFAULT_WORK = r"C:\tools\OpenLane"
+else:
+    _DEFAULT_WORK = "/opt/openlane"
+
+WORK_DIR = Path(os.getenv("OPENLANE_WORK", _DEFAULT_WORK))
 
 
 def pytest_configure(config):

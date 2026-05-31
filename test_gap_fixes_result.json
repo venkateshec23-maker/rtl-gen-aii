@@ -1,0 +1,87 @@
+{
+  "design": "test_gap_fix",
+  "technology": "SKY130A 130nm",
+  "elapsed_sec": 6.5,
+  "steps": {
+    "Environment": "PASS",
+    "RTL Simulation": "FAIL"
+  },
+  "tapeout_ready": false,
+  "status": "INCOMPLETE",
+  "metrics": {
+    "timestamp": "2026-05-31T12:49:15.100671",
+    "synthesis": {
+      "status": "MISSING",
+      "file": "C:\\tools\\OpenLane\\runs\\test_gap_fix_20260531_124908\\test_gap_fix_sky130.v",
+      "error": "synthesis netlist not found",
+      "action": "Run the synthesis netlist stage first"
+    },
+    "simulation": {
+      "status": "REAL_SIMULATION",
+      "vcd_size_bytes": 1383,
+      "data_type": "REAL_TOOL_OUTPUT",
+      "source": "C:\\tools\\OpenLane\\runs\\test_gap_fix_20260531_124908\\trace.vcd",
+      "tests_passed": 0,
+      "tests_failed": 1,
+      "all_passed": false
+    },
+    "floorplan": {
+      "status": "MISSING",
+      "file": "C:\\tools\\OpenLane\\runs\\test_gap_fix_20260531_124908\\placed.def",
+      "error": "placed DEF not found",
+      "action": "Run the placed DEF stage first"
+    },
+    "routing": {
+      "status": "MISSING",
+      "file": "C:\\tools\\OpenLane\\runs\\test_gap_fix_20260531_124908\\routed.def",
+      "error": "routed DEF not found",
+      "action": "Run the routed DEF stage first"
+    },
+    "gds": {
+      "status": "MISSING",
+      "action": "Run routing and GDS generation stages"
+    },
+    "signoff": {
+      "erc": {
+        "status": "NOT_RUN"
+      },
+      "antenna": {
+        "status": "NOT_RUN"
+      }
+    },
+    "timing": {
+      "status": "NOT_RUN",
+      "action": "Run static timing analysis"
+    },
+    "timing_corners": {
+      "status": "NOT_RUN",
+      "corners": {}
+    },
+    "ir_drop": {
+      "status": "NOT_RUN",
+      "max_mv": 0
+    },
+    "coverage": {
+      "status": "NOT_RUN"
+    },
+    "disclaimer": "All values from real EDA tool output files",
+    "data_type": "REAL_TOOL_OUTPUT"
+  },
+  "evidence_gate": {
+    "simulation": false,
+    "routing": false,
+    "gds": false,
+    "drc": false,
+    "lvs": false,
+    "timing": false
+  },
+  "error_log": "VCD info: dumpfile trace.vcd opened for output.\nFAIL: Counter =  3, expected 20\n/work/designs/test_gap_fix/test_gap_fix_tb.v:36: $finish called at 235000 (1ps)",
+  "failed_step": "RTL Simulation",
+  "gds_path": null,
+  "run_id": "test_gap_fix_20260531_124908",
+  "results_dir": "C:\\tools\\OpenLane\\runs\\test_gap_fix_20260531_124908",
+  "design_name": "test_gap_fix",
+  "database_persisted": true,
+  "database_error": null,
+  "signoff_pdf": "C:\\Users\\venka\\Documents\\rtl-gen-aii\\reports\\test_gap_fix_20260531_124915_signoff.pdf"
+}

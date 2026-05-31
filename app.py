@@ -89,6 +89,68 @@ except Exception as e:
     VIZ_IMPORT_ERROR = f"Visualizer initialization failed: {e}"
 
 
+def format_pipeline_error(summary: dict, description: str) -> str:
+    """
+    Generate a helpful error message based on
+    which step failed and what the user asked for.
+    """
+    steps = summary.get("steps", {})
+    failed = [k for k, v in steps.items() if v != "PASS"]
+
+    if not failed:
+        return "Pipeline failed — unknown reason."
+
+    first_fail = failed[0]
+    messages = {
+        "RTL Simulation": (
+            "Simulation failed. The generated Verilog "
+            "may have logical errors.\n"
+            "Try: Use simpler description. "
+            "Add details like bit-width and port names.\n"
+            "Example: '8-bit adder with inputs a b "
+            "and output sum with carry'"
+        ),
+        "Synthesis": (
+            "Synthesis failed. Verilog could not be "
+            "mapped to Sky130A cells.\n"
+            "Try: Avoid complex constructs. "
+            "Use simple always blocks.\n"
+            "Example: Replace complex arithmetic "
+            "with basic operations."
+        ),
+        "Physical Design": (
+            "Physical design failed. Floorplan or "
+            "routing issue.\n"
+            "Try: Run again — this can be transient.\n"
+            "If repeated, the design may be too large "
+            "for the default floorplan."
+        ),
+        "LVS": (
+            "LVS failed. Layout does not match schematic.\n"
+            "Try: Run again — usually a transient issue.\n"
+            "The GDS file was generated but not verified."
+        ),
+        "Formal Equivalence": (
+            "Formal check inconclusive — not a blocker.\n"
+            "RTL simulation already verified functionality."
+        ),
+    }
+
+    msg = messages.get(
+        first_fail,
+        f"Step '{first_fail}' failed."
+    )
+
+    return (
+        f"Failed at: {first_fail}\n\n"
+        f"{msg}\n\n"
+        f"Your description was: '{description}'\n"
+        f"Tip: Try a template keyword in your description:\n"
+        f"counter, adder, alu, uart, spi, i2c, fifo, "
+        f"memory, comparator, multiplier, pwm, crc"
+    )
+
+
 def apply_cadence_theme():
     st.markdown("""
     <style>
@@ -1807,6 +1869,20 @@ if "queue" in st.session_state:
     for t in tasks:
         color = "🟢" if t["status"] == "COMPLETED" else "🟡" if t["status"] == "RUNNING" else "🔴" if t["status"] == "FAILED" else "⚪"
         st.sidebar.caption(f"{color} {t['name']} - {t['status']} ({t['progress']}%)")
+        
+        if t["status"] == "FAILED":
+            with st.sidebar.expander("View Error Details"):
+                error_detail = t.get("error", "Unknown error")
+                description = t.get("description", "unknown design")
+                if "{" in error_detail and "steps" in error_detail:
+                    import json
+                    try:
+                        summary = json.loads(error_detail.replace("'", '"'))
+                        st.error(format_pipeline_error(summary, description))
+                    except:
+                        st.error(error_detail)
+                else:
+                    st.error(error_detail)
         
         if t["status"] == "RUNNING":
             if st.sidebar.button("🔄 Refresh", key=f"ref_{t['id']}"):

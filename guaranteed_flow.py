@@ -443,6 +443,257 @@ module {name} #(
     end
 endmodule
 ''',
+
+"comparator": '''
+module {name} #(parameter N = {bits})(
+    input              clk,
+    input              reset_n,
+    input  [N-1:0]     a,
+    input  [N-1:0]     b,
+    output reg         eq,
+    output reg         gt,
+    output reg         lt
+);
+    always @(posedge clk) begin
+        if (!reset_n) begin
+            eq <= 0; gt <= 0; lt <= 0;
+        end else begin
+            eq <= (a == b);
+            gt <= (a >  b);
+            lt <= (a <  b);
+        end
+    end
+endmodule
+''',
+
+"decoder": '''
+module {name} #(parameter N = 3)(
+    input              clk,
+    input              reset_n,
+    input  [N-1:0]     sel,
+    input              en,
+    output reg [2**N-1:0] out
+);
+    always @(posedge clk) begin
+        if (!reset_n) out <= 0;
+        else if (en) out <= (1 << sel);
+        else         out <= 0;
+    end
+endmodule
+''',
+
+"encoder": '''
+module {name} #(parameter N = 8)(
+    input              clk,
+    input              reset_n,
+    input  [N-1:0]     in,
+    output reg [$clog2(N)-1:0] out,
+    output reg         valid
+);
+    integer i;
+    always @(posedge clk) begin
+        if (!reset_n) begin
+            out <= 0; valid <= 0;
+        end else begin
+            out   <= 0;
+            valid <= (in != 0);
+            for (i = N-1; i >= 0; i = i-1)
+                if (in[i]) out <= i[$clog2(N)-1:0];
+        end
+    end
+endmodule
+''',
+
+"reg_file": '''
+module {name} #(
+    parameter WORDS = 8,
+    parameter WIDTH = {bits}
+)(
+    input                        clk,
+    input                        reset_n,
+    input                        we,
+    input  [$clog2(WORDS)-1:0]   waddr,
+    input  [WIDTH-1:0]           wdata,
+    input  [$clog2(WORDS)-1:0]   raddr1,
+    input  [$clog2(WORDS)-1:0]   raddr2,
+    output reg [WIDTH-1:0]       rdata1,
+    output reg [WIDTH-1:0]       rdata2
+);
+    reg [WIDTH-1:0] mem [0:WORDS-1];
+    integer i;
+
+    always @(posedge clk) begin
+        if (!reset_n) begin
+            for (i=0; i<WORDS; i=i+1)
+                mem[i] <= 0;
+            rdata1 <= 0; rdata2 <= 0;
+        end else begin
+            if (we) mem[waddr] <= wdata;
+            rdata1 <= mem[raddr1];
+            rdata2 <= mem[raddr2];
+        end
+    end
+endmodule
+''',
+
+"pwm": '''
+module {name} #(parameter BITS = {bits})(
+    input              clk,
+    input              reset_n,
+    input  [BITS-1:0]  duty,
+    output reg         pwm_out
+);
+    reg [BITS-1:0] counter;
+
+    always @(posedge clk) begin
+        if (!reset_n) begin
+            counter <= 0; pwm_out <= 0;
+        end else begin
+            counter <= counter + 1;
+            pwm_out <= (counter < duty) ? 1'b1 : 1'b0;
+        end
+    end
+endmodule
+''',
+
+"memory": '''
+module {name} #(
+    parameter DEPTH = 256,
+    parameter WIDTH = {bits}
+)(
+    input                        clk,
+    input                        we,
+    input  [$clog2(DEPTH)-1:0]   addr,
+    input  [WIDTH-1:0]           din,
+    output reg [WIDTH-1:0]       dout
+);
+    reg [WIDTH-1:0] mem [0:DEPTH-1];
+
+    always @(posedge clk) begin
+        if (we) mem[addr] <= din;
+        dout <= mem[addr];
+    end
+endmodule
+''',
+
+"crc": '''
+module {name} (
+    input        clk,
+    input        reset_n,
+    input        data_in,
+    input        valid,
+    output reg [7:0] crc_out
+);
+    wire feedback;
+    assign feedback = data_in ^ crc_out[7];
+
+    always @(posedge clk) begin
+        if (!reset_n) begin
+            crc_out <= 8'hFF;
+        end else if (valid) begin
+            crc_out[7] <= crc_out[6];
+            crc_out[6] <= crc_out[5];
+            crc_out[5] <= crc_out[4];
+            crc_out[4] <= crc_out[3];
+            crc_out[3] <= crc_out[2];
+            crc_out[2] <= crc_out[1] ^ feedback;
+            crc_out[1] <= crc_out[0] ^ feedback;
+            crc_out[0] <= feedback;
+        end
+    end
+endmodule
+''',
+
+"multiplier": '''
+module {name} #(parameter N = {bits})(
+    input              clk,
+    input              reset_n,
+    input  [N-1:0]     a,
+    input  [N-1:0]     b,
+    output reg [2*N-1:0] product
+);
+    reg [2*N-1:0] stage1;
+
+    always @(posedge clk) begin
+        if (!reset_n) begin
+            stage1  <= 0;
+            product <= 0;
+        end else begin
+            stage1  <= a * b;
+            product <= stage1;
+        end
+    end
+endmodule
+''',
+
+"clk_div": '''
+module {name} #(parameter DIV = {bits})(
+    input      clk_in,
+    input      reset_n,
+    output reg clk_out
+);
+    reg [$clog2(DIV)-1:0] cnt;
+
+    always @(posedge clk_in) begin
+        if (!reset_n) begin
+            cnt <= 0; clk_out <= 0;
+        end else if (cnt == DIV/2 - 1) begin
+            cnt     <= 0;
+            clk_out <= ~clk_out;
+        end else begin
+            cnt <= cnt + 1;
+        end
+    end
+endmodule
+''',
+
+"basic_gate": '''
+module {name} (
+    input  a,
+    input  b,
+    output y
+);
+    assign y = a & b;
+endmodule
+''',
+
+"half_adder": '''
+module {name} (
+    input  a,
+    input  b,
+    output sum,
+    output cout
+);
+    assign sum  = a ^ b;
+    assign cout = a & b;
+endmodule
+''',
+
+"dff": '''
+module {name} (
+    input      clk,
+    input      reset_n,
+    input      d,
+    output reg q
+);
+    always @(posedge clk) begin
+        if (!reset_n) q <= 0;
+        else q <= d;
+    end
+endmodule
+''',
+
+"latch": '''
+module {name} (
+    input      en,
+    input      d,
+    output reg q
+);
+    always @(*) begin
+        if (en) q <= d;
+    end
+endmodule
+'''
 }
 
 TEMPLATES_TB = {
@@ -1036,6 +1287,557 @@ module {name}_tb();
 endmodule
 ''',
 
+"comparator": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    parameter N = {bits};
+    reg clk, reset_n;
+    reg  [N-1:0] a, b;
+    wire eq, gt, lt;
+    integer fail_count = 0;
+    integer pass_count = 0;
+
+    {name} #(N) dut(.clk(clk),.reset_n(reset_n),
+                    .a(a),.b(b),.eq(eq),.gt(gt),.lt(lt));
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        reset_n=0; a=0; b=0;
+        repeat(4) @(posedge clk); #1; reset_n=1;
+
+        a=8'd5;  b=8'd5;  @(posedge clk); #1;
+        if (eq && !gt && !lt) begin
+            $display("PASS Test 1: equal"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 1: equal"); fail_count=fail_count+1;
+        end
+
+        a=8'd10; b=8'd5;  @(posedge clk); #1;
+        if (!eq && gt && !lt) begin
+            $display("PASS Test 2: greater"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 2: greater"); fail_count=fail_count+1;
+        end
+
+        a=8'd3;  b=8'd8;  @(posedge clk); #1;
+        if (!eq && !gt && lt) begin
+            $display("PASS Test 3: less"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 3: less"); fail_count=fail_count+1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"decoder": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    parameter N = 3;
+    reg clk, reset_n, en;
+    reg  [N-1:0]     sel;
+    wire [2**N-1:0]  out;
+    integer fail_count=0, pass_count=0;
+
+    {name} #(N) dut(.clk(clk),.reset_n(reset_n),
+                    .sel(sel),.en(en),.out(out));
+    initial clk=0;
+    always #5 clk=~clk;
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        reset_n=0; en=0; sel=0;
+        repeat(4) @(posedge clk); #1; reset_n=1;
+
+        en=1; sel=3'd0; @(posedge clk); #1;
+        if (out==8'b00000001) begin
+            $display("PASS Test 1: sel=0"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 1: out=%b",out); fail_count=fail_count+1;
+        end
+
+        sel=3'd3; @(posedge clk); #1;
+        if (out==8'b00001000) begin
+            $display("PASS Test 2: sel=3"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 2: out=%b",out); fail_count=fail_count+1;
+        end
+
+        en=0; @(posedge clk); #1;
+        if (out==0) begin
+            $display("PASS Test 3: en=0"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 3: enable"); fail_count=fail_count+1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"encoder": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    parameter N = 8;
+    reg clk, reset_n;
+    reg  [N-1:0]         in;
+    wire [$clog2(N)-1:0] out;
+    wire valid;
+    integer fail_count=0, pass_count=0;
+
+    {name} #(N) dut(.clk(clk),.reset_n(reset_n),
+                    .in(in),.out(out),.valid(valid));
+    initial clk=0;
+    always #5 clk=~clk;
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        reset_n=0; in=0;
+        repeat(4) @(posedge clk); #1; reset_n=1;
+
+        in=8'b00000001; @(posedge clk); #1;
+        if (out==3'd0 && valid) begin
+            $display("PASS Test 1: encode bit0"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 1: out=%d",out); fail_count=fail_count+1;
+        end
+
+        in=8'b00001000; @(posedge clk); #1;
+        if (out==3'd3 && valid) begin
+            $display("PASS Test 2: encode bit3"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 2: out=%d",out); fail_count=fail_count+1;
+        end
+
+        in=8'b10000000; @(posedge clk); #1;
+        if (out==3'd7 && valid) begin
+            $display("PASS Test 3: encode bit7"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 3: out=%d",out); fail_count=fail_count+1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"reg_file": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    parameter WORDS=8, WIDTH={bits};
+    reg clk, reset_n, we;
+    reg  [$clog2(WORDS)-1:0] waddr, raddr1, raddr2;
+    reg  [WIDTH-1:0]  wdata;
+    wire [WIDTH-1:0]  rdata1, rdata2;
+    integer fail_count=0, pass_count=0;
+
+    {name} #(WORDS,WIDTH) dut(
+        .clk(clk),.reset_n(reset_n),.we(we),
+        .waddr(waddr),.wdata(wdata),
+        .raddr1(raddr1),.raddr2(raddr2),
+        .rdata1(rdata1),.rdata2(rdata2));
+    initial clk=0;
+    always #5 clk=~clk;
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        reset_n=0; we=0; waddr=0; wdata=0;
+        raddr1=0; raddr2=0;
+        repeat(4) @(posedge clk); #1; reset_n=1;
+
+        we=1; waddr=3'd2; wdata=8'hAB;
+        @(posedge clk); #1; we=0;
+        raddr1=3'd2; @(posedge clk); #1;
+        if (rdata1==8'hAB) begin
+            $display("PASS Test 1: write/read"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 1: rdata=%h",rdata1); fail_count=fail_count+1;
+        end
+
+        we=1; waddr=3'd5; wdata=8'h55;
+        @(posedge clk); #1; we=0;
+        raddr2=3'd5; @(posedge clk); #1;
+        if (rdata2==8'h55) begin
+            $display("PASS Test 2: port 2"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 2: rdata=%h",rdata2); fail_count=fail_count+1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"pwm": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    parameter BITS={bits};
+    reg clk, reset_n;
+    reg  [BITS-1:0] duty;
+    wire pwm_out;
+    integer fail_count=0, pass_count=0;
+    integer high_count, total_count, i;
+
+    {name} #(BITS) dut(.clk(clk),.reset_n(reset_n),
+                       .duty(duty),.pwm_out(pwm_out));
+    initial clk=0;
+    always #5 clk=~clk;
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        reset_n=0; duty=0;
+        repeat(4) @(posedge clk); #1; reset_n=1;
+
+        duty=0;
+        repeat(16) @(posedge clk);
+        if (pwm_out==0) begin
+            $display("PASS Test 1: 0 duty"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 1: duty=0"); fail_count=fail_count+1;
+        end
+
+        duty={bits}'d128;
+        high_count=0;
+        repeat(256) begin
+            @(posedge clk); #1;
+            if (pwm_out) high_count=high_count+1;
+        end
+        if (high_count >= 120 && high_count <= 136) begin
+            $display("PASS Test 2: 50%% duty"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 2: high=%0d",high_count); fail_count=fail_count+1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"memory": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    parameter DEPTH=256, WIDTH={bits};
+    reg clk, we;
+    reg  [$clog2(DEPTH)-1:0] addr;
+    reg  [WIDTH-1:0] din;
+    wire [WIDTH-1:0] dout;
+    integer fail_count=0, pass_count=0;
+
+    {name} #(DEPTH,WIDTH) dut(.clk(clk),.we(we),
+                               .addr(addr),.din(din),
+                               .dout(dout));
+    initial clk=0;
+    always #5 clk=~clk;
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        we=0; addr=0; din=0;
+        repeat(4) @(posedge clk); #1;
+
+        we=1; addr=8'd10; din=8'hAB;
+        @(posedge clk); #1; we=0;
+        addr=8'd10; @(posedge clk); #1;
+        if (dout==8'hAB) begin
+            $display("PASS Test 1: write/read"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 1: dout=%h",dout); fail_count=fail_count+1;
+        end
+
+        we=1; addr=8'd255; din=8'hFF;
+        @(posedge clk); #1; we=0;
+        addr=8'd255; @(posedge clk); #1;
+        if (dout==8'hFF) begin
+            $display("PASS Test 2: last addr"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 2: dout=%h",dout); fail_count=fail_count+1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"crc": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n, data_in, valid;
+    wire [7:0] crc_out;
+    integer fail_count=0, pass_count=0;
+
+    {name} dut(.clk(clk),.reset_n(reset_n),
+               .data_in(data_in),.valid(valid),
+               .crc_out(crc_out));
+    initial clk=0;
+    always #5 clk=~clk;
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        reset_n=0; data_in=0; valid=0;
+        repeat(4) @(posedge clk); #1; reset_n=1;
+
+        if (crc_out==8'hFF) begin
+            $display("PASS Test 1: reset val"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 1: crc=%h",crc_out); fail_count=fail_count+1;
+        end
+
+        valid=1; data_in=1;
+        @(posedge clk); #1;
+        valid=0;
+        if (crc_out != 8'hFF) begin
+            $display("PASS Test 2: crc changes"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 2: crc unchanged"); fail_count=fail_count+1;
+        end
+
+        reset_n=0; @(posedge clk); #1; reset_n=1;
+        if (crc_out==8'hFF) begin
+            $display("PASS Test 3: re-reset"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 3: crc=%h",crc_out); fail_count=fail_count+1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"multiplier": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    parameter N={bits};
+    reg clk, reset_n;
+    reg  [N-1:0]   a, b;
+    wire [2*N-1:0] product;
+    integer fail_count=0, pass_count=0;
+
+    {name} #(N) dut(.clk(clk),.reset_n(reset_n),
+                    .a(a),.b(b),.product(product));
+    initial clk=0;
+    always #5 clk=~clk;
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        reset_n=0; a=0; b=0;
+        repeat(4) @(posedge clk); #1; reset_n=1;
+
+        a=8'd3; b=8'd4;
+        repeat(3) @(posedge clk); #1;
+        if (product==16'd12) begin
+            $display("PASS Test 1: 3x4=12"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 1: product=%0d",product); fail_count=fail_count+1;
+        end
+
+        a=8'd15; b=8'd15;
+        repeat(3) @(posedge clk); #1;
+        if (product==16'd225) begin
+            $display("PASS Test 2: 15x15=225"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 2: product=%0d",product); fail_count=fail_count+1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"clk_div": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    parameter DIV={bits};
+    reg clk_in, reset_n;
+    wire clk_out;
+    integer fail_count=0, pass_count=0;
+    integer edges;
+
+    {name} #(DIV) dut(.clk_in(clk_in),
+                      .reset_n(reset_n),
+                      .clk_out(clk_out));
+    initial clk_in=0;
+    always #5 clk_in=~clk_in;
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        reset_n=0;
+        repeat(4) @(posedge clk_in); #1; reset_n=1;
+
+        edges=0;
+        repeat(DIV*4) begin
+            @(posedge clk_in);
+            if (clk_out) edges=edges+1;
+        end
+
+        if (edges >= 1) begin
+            $display("PASS Test 1: clock divides"); pass_count=pass_count+1;
+        end else begin
+            $display("FAIL Test 1: no output"); fail_count=fail_count+1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"basic_gate": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg a, b;
+    wire y;
+    integer fail_count=0, pass_count=0;
+
+    {name} dut(.a(a), .b(b), .y(y));
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        
+        a=0; b=0; #10;
+        if (y==0) begin $display("PASS Test 1: 0&0=0"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 1"); fail_count=fail_count+1; end
+
+        a=1; b=0; #10;
+        if (y==0) begin $display("PASS Test 2: 1&0=0"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 2"); fail_count=fail_count+1; end
+
+        a=1; b=1; #10;
+        if (y==1) begin $display("PASS Test 3: 1&1=1"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 3"); fail_count=fail_count+1; end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"half_adder": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg a, b;
+    wire sum, cout;
+    integer fail_count=0, pass_count=0;
+
+    {name} dut(.a(a), .b(b), .sum(sum), .cout(cout));
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        
+        a=0; b=0; #10;
+        if (sum==0 && cout==0) begin $display("PASS Test 1"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 1"); fail_count=fail_count+1; end
+
+        a=1; b=0; #10;
+        if (sum==1 && cout==0) begin $display("PASS Test 2"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 2"); fail_count=fail_count+1; end
+
+        a=1; b=1; #10;
+        if (sum==0 && cout==1) begin $display("PASS Test 3"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 3"); fail_count=fail_count+1; end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"dff": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n, d;
+    wire q;
+    integer fail_count=0, pass_count=0;
+
+    {name} dut(.clk(clk), .reset_n(reset_n), .d(d), .q(q));
+    initial clk=0;
+    always #5 clk=~clk;
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        
+        reset_n=0; d=0;
+        repeat(4) @(posedge clk); #1; reset_n=1;
+
+        d=1; @(posedge clk); #1;
+        if (q==1) begin $display("PASS Test 1: dff stores 1"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 1: q=%b",q); fail_count=fail_count+1; end
+
+        d=0; @(posedge clk); #1;
+        if (q==0) begin $display("PASS Test 2: dff stores 0"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 2: q=%b",q); fail_count=fail_count+1; end
+
+        reset_n=0; @(posedge clk); #1;
+        if (q==0) begin $display("PASS Test 3: reset"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 3"); fail_count=fail_count+1; end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"latch": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg en, d;
+    wire q;
+    integer fail_count=0, pass_count=0;
+
+    {name} dut(.en(en), .d(d), .q(q));
+
+    initial begin
+        $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
+        
+        en=0; d=1; #10;
+        if (q===1'bx || q==0) begin $display("PASS Test 1: latch hold when disabled"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 1: q=%b",q); fail_count=fail_count+1; end
+
+        en=1; d=1; #10;
+        if (q==1) begin $display("PASS Test 2: latch transparent"); pass_count=pass_count+1; end
+        else begin $display("FAIL Test 2"); fail_count=fail_count+1; end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count==0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
 "default": '''
 `timescale 1ns/1ps
 module {name}_tb();
@@ -1115,6 +1917,47 @@ def classify_design(description: str, bits: int = 8) -> Dict:
         ],
         "adder":     [
             "add", "adder", "sum", "plus", "arithmet"
+        ],
+        "comparator": [
+            "comparator", "compare", "greater", "less", "equal",
+            "magnitude"
+        ],
+        "decoder": [
+            "decoder", "decode", "one-hot", "onehot"
+        ],
+        "encoder": [
+            "encoder", "encode", "priority"
+        ],
+        "reg_file": [
+            "register file", "regfile", "reg_file", "registerfile",
+            "register array"
+        ],
+        "pwm": [
+            "pwm", "pulse width", "duty cycle"
+        ],
+        "memory": [
+            "memory", "sram", "single port", "mem array"
+        ],
+        "crc": [
+            "crc", "cyclic redundancy", "checksum"
+        ],
+        "multiplier": [
+            "multiplier", "multiply", "product", "mult"
+        ],
+        "clk_div": [
+            "clock divider", "clk_div", "clock div", "frequency divider"
+        ],
+        "basic_gate": [
+            "and gate", "basic gate", "simple gate"
+        ],
+        "half_adder": [
+            "half adder", "halfadder"
+        ],
+        "dff": [
+            "flip flop", "dff", "d flip", "d-type"
+        ],
+        "latch": [
+            "latch", "d latch"
         ],
     }
 
@@ -1397,27 +2240,32 @@ def generate_guaranteed_gds(
     except Exception as e:
         log.warning(f"Attempt 3 failed: {e}")
 
-    # ATTEMPT 4: Use proven adder_8bit modified
-    log.info("Attempt 4: Using proven adder_8bit base")
+    # ATTEMPT 4: Use simplest proven design (adder)
+    log.info("Attempt 4: Using simplest proven design (adder)")
     try:
-        proven_rtl = DESIGNS / "adder_8bit" / "adder_8bit.v"
-        proven_tb  = DESIGNS / "adder_8bit" / "adder_8bit_tb.v"
+        proven_rtl = TEMPLATES_RTL["adder"]
+        proven_tb = TEMPLATES_TB["adder"]
+        
+        classified = classify_design(description)
+        template_type = classified.get("type", "adder")
+        
+        safe_format = lambda t, **kw: t.format(**{k: v for k, v in kw.items() if '{' + k + '}' in t})
+        
+        rtl_content = TEMPLATES_RTL["adder"].format(name=module_name, bits=8)
+        tb_content = TEMPLATES_TB["adder"].format(name=module_name, bits=8)
 
-        if proven_rtl.exists():
-            rtl_content = proven_rtl.read_text()
-            tb_content  = proven_tb.read_text()
+        rtl_path.write_text(rtl_content.strip(), encoding="utf-8")
+        tb_path.write_text(tb_content.strip(), encoding="utf-8")
 
-            rtl_content = rtl_content.replace("module adder_8bit", f"module {module_name}")
-            tb_content = tb_content.replace("adder_8bit", module_name)
-
-            rtl_path.write_text(rtl_content, encoding="utf-8")
-            tb_path.write_text(tb_content, encoding="utf-8")
-
-            result = run_pipeline("proven_base")
+        if quick_simulate(module_name):
+            result = run_pipeline("adder_fallback")
             if result:
                 result["message"] = (
-                    f"GDS2 generated using proven adder_8bit base. "
-                    f"Note: Design is functionally an 8-bit adder. Size: {result['gds_size_kb']} KB."
+                    f"Could not generate '{description}'. "
+                    f"Returned 8-bit adder as safe fallback. "
+                    f"Simplify your description or use keywords: "
+                    f"counter, adder, alu, uart, spi, i2c, "
+                    f"comparator, fifo, memory, multiplier."
                 )
                 return result
     except Exception as e:

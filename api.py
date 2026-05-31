@@ -34,18 +34,12 @@ try:
     from fastapi.middleware.cors import CORSMiddleware
     from pydantic import BaseModel, Field
     import uvicorn
-except ImportError:
-    import subprocess, sys
-    subprocess.run([
-        sys.executable, "-m", "pip", "install",
-        "fastapi", "uvicorn[standard]",
-        "--break-system-packages", "-q"
-    ])
-    from fastapi import FastAPI, HTTPException, BackgroundTasks
-    from fastapi.responses import FileResponse, JSONResponse
-    from fastapi.middleware.cors import CORSMiddleware
-    from pydantic import BaseModel, Field
-    import uvicorn
+except ImportError as _e:
+    raise ImportError(
+        f"Missing required packages: {_e}\n"
+        "Install with: pip install fastapi uvicorn[standard] pydantic\n"
+        "Or run: pip install -r requirements.txt"
+    ) from _e
 
 
 # =====================================================
@@ -126,7 +120,12 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:8501",   # Streamlit UI
+        "http://127.0.0.1:8501",
+        "http://localhost:8502",   # API self-reference
+        "http://127.0.0.1:8502",
+    ],
     allow_methods=["*"],
     allow_headers=["*"],
 )
