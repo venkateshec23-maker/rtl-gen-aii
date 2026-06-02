@@ -364,6 +364,75 @@ def generate_verilog_groq(
 
 
 # ============================================================
+# PROVIDER 2c: OPENROUTER (Free models)
+# ============================================================
+
+def generate_verilog_openrouter(
+    description: str,
+    module_name: str,
+    api_key: str = None,
+    model: str = "deepseek/deepseek-chat:free"
+) -> Tuple[str, str]:
+    """
+    Generate Verilog using OpenRouter with free models.
+    Free models available:
+      deepseek/deepseek-chat:free     (DeepSeek V3)
+      deepseek/deepseek-r1:free       (reasoning)
+      qwen/qwen3-235b-a22b:free       (large)
+      meta-llama/llama-3.3-70b-instruct:free
+      google/gemma-3-27b-it:free
+    Returns (rtl_code, testbench_code)
+    """
+    import requests
+    import os
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env", override=True)
+
+    _key = api_key or os.getenv("OPENROUTER_API_KEY", "")
+    if not _key:
+        raise ValueError(
+            "OPENROUTER_API_KEY not set. "
+            "Get free key at openrouter.ai/keys and add to .env"
+        )
+
+    response = requests.post(
+        "https://openrouter.ai/api/v1/chat/completions",
+        headers={
+            "Authorization": f"Bearer {_key}",
+            "Content-Type": "application/json",
+            "HTTP-Referer": "https://github.com/venkateshec23-maker/rtl-gen-aii",
+            "X-Title": "RTL-Gen AI"
+        },
+        json={
+            "model": model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": VERILOG_SYSTEM_PROMPT
+                },
+                {
+                    "role": "user",
+                    "content": f"Design name: {module_name}\n\nDescription: {description}"
+                }
+            ],
+            "temperature": 0.3,
+            "max_tokens": 2000,
+        },
+        timeout=60
+    )
+
+    if response.status_code == 200:
+        data = response.json()
+        text = data["choices"][0]["message"]["content"]
+        return parse_verilog_response(text)
+    else:
+        raise ValueError(
+            f"OpenRouter error {response.status_code}: "
+            f"{response.text[:200]}"
+        )
+
+
+# ============================================================
 # PROVIDER 2b: GITHUB MODELS (OpenAI-compatible, Edu pack)
 # ============================================================
 
@@ -1291,6 +1360,12 @@ SIMULATION FAILURE TRACE (Last known truth-table states before failure):
     try:
         if llm_provider == "gemini":
             return repair_with_gemini(repair_prompt, module_name)
+        elif llm_provider == "openrouter" or llm_provider == "deepseek":
+            try:
+                return generate_verilog_openrouter(repair_prompt, module_name)
+            except Exception as e:
+                print(f"OpenRouter repair failed: {e}")
+                return repair_with_groq(repair_prompt, module_name)
         else:
             return repair_with_groq(repair_prompt, module_name)
     except Exception as e:
@@ -1316,14 +1391,30 @@ def generate_and_validate(
     print(f"Provider: {llm_provider}")
     print(f"{'='*60}")
 
-    # Provider rotation order - try primary first, then alternatives
-    all_providers = ["gemini", "groq", "github", "opencode"]
-    
-    # Put requested provider first, then others
-    providers = [llm_provider] if llm_provider in all_providers else ["groq"]
-    for p in all_providers:
-        if p != providers[0]:
-            providers.append(p)
+    providers_to_try = []
+    if llm_provider == "openrouter":
+        providers_to_try = [
+            ("openrouter", "deepseek/deepseek-chat:free"),
+            ("openrouter", "qwen/qwen3-235b-a22b:free"),
+            ("openrouter", "meta-llama/llama-3.3-70b-instruct:free"),
+        ]
+    elif llm_provider == "deepseek":
+        providers_to_try = [
+            ("openrouter", "deepseek/deepseek-chat:free"),
+        ]
+    else:
+        all_p = [
+            ("gemini", None),
+            ("groq", None),
+            ("openrouter", "deepseek/deepseek-chat:free"),
+            ("github", None),
+            ("opencode", None)
+        ]
+        requested = [(p, m) for p, m in all_p if p == llm_provider]
+        if requested:
+            providers_to_try = requested + [(p, m) for p, m in all_p if p != llm_provider]
+        else:
+            providers_to_try = [("openrouter", "deepseek/deepseek-chat:free")] + all_p
     
     last_error = None
 
@@ -1348,8 +1439,8 @@ def generate_and_validate(
     tb = ""
 
     # Try each provider in rotation
-    for provider in providers:
-        print(f"\n[Trying provider: {provider}]")
+    for provider, model in providers_to_try:
+        print(f"\n[Trying provider: {provider} (model: {model})]")
         
         for attempt in range(1, max_retries + 1):
             print(f"\nAttempt {attempt}/{max_retries} with {provider}...")
@@ -1366,7 +1457,9 @@ def generate_and_validate(
             # ---- Generate ----
             if not rtl or not tb:
                 try:
-                    if provider == "github":
+                    if provider == "openrouter":
+                        rtl, tb = generate_verilog_openrouter(description, module_name, model=model)
+                    elif provider == "github":
                         rtl, tb = generate_verilog_github(description, module_name)
                     elif provider == "groq":
                         rtl, tb = generate_verilog_groq(description, module_name)

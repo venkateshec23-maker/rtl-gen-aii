@@ -64,6 +64,37 @@ module {name} (
 endmodule
 ''',
 
+"subtractor": '''
+module {name} (
+    input              clk,
+    input              reset_n,
+    input  [{bits}-1:0] a,
+    input  [{bits}-1:0] b,
+    output reg [{bits}:0] diff
+);
+    always @(posedge clk) begin
+        if (!reset_n) diff <= 0;
+        else diff <= {{1'b0, a}} - {{1'b0, b}};
+    end
+endmodule
+''',
+
+"adder_subtractor": '''
+module {name} (
+    input              clk,
+    input              reset_n,
+    input              mode,
+    input  [{bits}-1:0] a,
+    input  [{bits}-1:0] b,
+    output reg [{bits}:0] result
+);
+    always @(posedge clk) begin
+        if (!reset_n) result <= 0;
+        else result <= mode ? ({{1'b0, a}} - {{1'b0, b}}) : ({{1'b0, a}} + {{1'b0, b}});
+    end
+endmodule
+''',
+
 "shift_reg": '''
 module {name} #(parameter N = {bits}) (
     input          clk,
@@ -149,210 +180,240 @@ endmodule
 ''',
 
 "fifo": '''
-module {name} #(
-    parameter DATA_W = 8,
-    parameter DEPTH  = {depth}
-)(
-    input                   clk,
-    input                   reset_n,
-    input                   wr_en,
-    input                   rd_en,
-    input  [DATA_W-1:0]     din,
-    output reg [DATA_W-1:0] dout,
-    output reg              empty,
-    output reg              full
+module {name} (
+    input              clk,
+    input              reset_n,
+    input              wr_en,
+    input              rd_en,
+    input  [{bits}-1:0] din,
+    output reg [{bits}-1:0] dout,
+    output             full,
+    output             empty,
+    output reg [4:0]   count  // max 16 entries
 );
-    localparam PTR_W = $clog2(DEPTH);
-    reg [PTR_W:0] wr_ptr, rd_ptr;
-    reg [DATA_W-1:0] mem [0:DEPTH-1];
+    // 16-deep parameterized FIFO
+    // Fixed 4-bit pointers (no $clog2)
+    reg [{bits}-1:0] mem [0:15];
+    reg [3:0] wr_ptr, rd_ptr;
+
+    assign full  = (count == 5'd16);
+    assign empty = (count == 5'd0);
 
     always @(posedge clk) begin
         if (!reset_n) begin
-            wr_ptr <= 0; rd_ptr <= 0;
-            empty <= 1; full <= 0;
-            dout <= 0;
+            wr_ptr <= 4'd0; rd_ptr <= 4'd0;
+            count  <= 5'd0; dout   <= 0;
         end else begin
             if (wr_en && !full) begin
-                mem[wr_ptr[PTR_W-1:0]] <= din;
-                wr_ptr <= wr_ptr + 1;
+                mem[wr_ptr] <= din;
+                wr_ptr      <= wr_ptr + 1;
             end
             if (rd_en && !empty) begin
-                dout <= mem[rd_ptr[PTR_W-1:0]];
+                dout   <= mem[rd_ptr];
                 rd_ptr <= rd_ptr + 1;
             end
-            empty <= (wr_ptr == rd_ptr);
-            full  <= (wr_ptr[PTR_W] != rd_ptr[PTR_W]) && 
-                     (wr_ptr[PTR_W-1:0] == rd_ptr[PTR_W-1:0]);
+            case ({(wr_en && !full),
+                   (rd_en && !empty)})
+                2'b10: count <= count + 1;
+                2'b01: count <= count - 1;
+                default: count <= count;
+            endcase
         end
     end
 endmodule
 ''',
 
 "spi_master": '''
-module {name} #(
-    parameter DATA_W = 8
-)(
-    input               clk,
-    input               reset_n,
-    input               start,
-    input  [DATA_W-1:0] tx_data,
-    output reg [DATA_W-1:0] rx_data,
-    output reg          mosi,
-    input               miso,
-    output reg          sclk,
-    output reg          cs_n,
-    output reg          busy,
-    output reg          done
+module {name} #(parameter DIVIDER = 4)(
+    input            clk,
+    input            reset_n,
+    input      [7:0] tx_data,
+    input            start,
+    output reg       mosi,
+    output reg       sck,
+    output reg       cs_n,
+    output reg       done,
+    output reg [7:0] rx_data,
+    input            miso
 );
-    reg [3:0] bit_cnt;
-    reg [DATA_W-1:0] shift_reg;
-    reg sclk_state;
-    
+    localparam IDLE   = 2'd0;
+    localparam ACTIVE = 2'd1;
+    localparam FINISH = 2'd2;
+
+    reg [1:0]  state;
+    reg [7:0]  shift_tx;
+    reg [7:0]  shift_rx;
+    reg [3:0]  bit_cnt;
+    reg [4:0]  div_cnt;  // counts to DIVIDER
+
     always @(posedge clk) begin
         if (!reset_n) begin
-            bit_cnt <= 0;
-            shift_reg <= 0;
-            rx_data <= 0;
-            mosi <= 1;
-            sclk <= 0;
-            sclk_state <= 0;
-            cs_n <= 1;
-            busy <= 0;
-            done <= 0;
+            state    <= IDLE;
+            mosi     <= 1'b0;
+            sck      <= 1'b0;
+            cs_n     <= 1'b1;
+            done     <= 1'b0;
+            rx_data  <= 8'd0;
+            shift_tx <= 8'd0;
+            shift_rx <= 8'd0;
+            bit_cnt  <= 4'd0;
+            div_cnt  <= 5'd0;
         end else begin
-            done <= 0;
-            
-            if (start && !busy) begin
-                busy <= 1;
-                cs_n <= 0;
-                shift_reg <= tx_data;
-                bit_cnt <= DATA_W;
-                mosi <= tx_data[DATA_W-1];
-                sclk_state <= 0;
-                sclk <= 0;
-            end
-            else if (busy) begin
-                sclk_state <= ~sclk_state;
-                sclk <= sclk_state;
-                
-                if (sclk_state) begin
-                    shift_reg <= {shift_reg[DATA_W-2:0], miso};
-                    bit_cnt <= bit_cnt - 1;
-                    if (bit_cnt > 0)
-                        mosi <= shift_reg[DATA_W-2];
-                    else begin
-                        rx_data <= {shift_reg[DATA_W-2:0], miso};
-                        busy <= 0;
-                        cs_n <= 1;
-                        done <= 1;
+            case (state)
+                IDLE: begin
+                    sck  <= 1'b0;
+                    cs_n <= 1'b1;
+                    done <= 1'b0;
+                    if (start) begin
+                        shift_tx <= tx_data;
+                        mosi     <= tx_data[7];
+                        bit_cnt  <= 4'd0;
+                        div_cnt  <= 5'd0;
+                        cs_n     <= 1'b0;
+                        state    <= ACTIVE;
                     end
                 end
-            end
-            else begin
-                cs_n <= 1;
-                sclk <= 0;
-                mosi <= 1;
-            end
+
+                ACTIVE: begin
+                    div_cnt <= div_cnt + 1;
+
+                    // Rising edge at DIVIDER/2
+                    if (div_cnt == DIVIDER/2 - 1) begin
+                        sck      <= 1'b1;
+                        shift_rx <= {shift_rx[6:0], miso};
+                    end
+
+                    // Falling edge at DIVIDER
+                    if (div_cnt == DIVIDER - 1) begin
+                        sck <= 1'b0;
+                        div_cnt <= 5'd0;
+
+                        if (bit_cnt == 4'd7) begin
+                            state <= FINISH;
+                        end else begin
+                            bit_cnt  <= bit_cnt + 1;
+                            shift_tx <= {shift_tx[6:0], 1'b0};
+                            mosi     <= shift_tx[6];
+                        end
+                    end
+                end
+
+                FINISH: begin
+                    sck     <= 1'b0;
+                    cs_n    <= 1'b1;
+                    done    <= 1'b1;
+                    rx_data <= shift_rx;
+                    state   <= IDLE;
+                end
+
+                default: state <= IDLE;
+            endcase
         end
     end
 endmodule
 ''',
 
 "i2c_master": '''
-module {name} (
-    input           clk,
-    input           reset_n,
-    input           start,
-    input   [6:0]   addr,
-    input           rw,
-    input   [7:0]   tx_data,
-    output reg [7:0] rx_data,
-    inout           sda,
-    output reg      scl,
-    output reg      busy,
-    output reg      done,
-    output reg      ack_error
+module {name} #(parameter DIVIDER = 4)(
+    input        clk,
+    input        reset_n,
+    input  [6:0] addr,
+    input  [7:0] data,
+    input        start,
+    output reg   sda,
+    output reg   scl,
+    output reg   done,
+    output reg   busy
 );
-    reg [3:0] state;
-    reg [3:0] bit_cnt;
-    reg [7:0] shift_reg;
-    reg sda_out;
-    reg scl_en;
-    
-    localparam IDLE = 0, START = 1, ADDR = 2, ACK1 = 3,
-               DATA = 4, ACK2 = 5, STOP = 6;
-    
-    assign sda = sda_out ? 1'bz : 1'b0;
-    
+    // Simplified I2C master — reliable state machine
+    // Counts DIVIDER clocks per SCL half-period
+    localparam S_IDLE  = 3'd0;
+    localparam S_START = 3'd1;
+    localparam S_BITS  = 3'd2;
+    localparam S_ACK   = 3'd3;
+    localparam S_STOP  = 3'd4;
+    localparam S_DONE  = 3'd5;
+
+    reg [2:0]  state;
+    reg [4:0]  bit_cnt;   // 0-15 (7 addr + 1 wr + 8 data)
+    reg [15:0] shift;     // {addr, 1'b0, data}
+    reg [3:0]  div;
+
     always @(posedge clk) begin
         if (!reset_n) begin
-            state <= IDLE; bit_cnt <= 0; shift_reg <= 0;
-            sda_out <= 1; scl <= 1; scl_en <= 0;
-            busy <= 0; done <= 0; ack_error <= 0; rx_data <= 0;
+            state   <= S_IDLE;
+            sda     <= 1'b1;
+            scl     <= 1'b1;
+            done    <= 1'b0;
+            busy    <= 1'b0;
+            bit_cnt <= 5'd0;
+            shift   <= 16'd0;
+            div     <= 4'd0;
         end else begin
-            done <= 0;
             case (state)
-                IDLE: begin
+                S_IDLE: begin
+                    sda  <= 1'b1;
+                    scl  <= 1'b1;
+                    done <= 1'b0;
+                    busy <= 1'b0;
                     if (start) begin
-                        state <= START; busy <= 1; scl_en <= 1;
+                        shift   <= {addr, 1'b0, data};
+                        bit_cnt <= 5'd0;
+                        div     <= 4'd0;
+                        busy    <= 1'b1;
+                        state   <= S_START;
                     end
                 end
-                START: begin
-                    sda_out <= 0;
-                    state <= ADDR;
-                    shift_reg <= {addr, rw};
-                    bit_cnt <= 8;
-                end
-                ADDR: begin
-                    scl <= ~scl;
-                    if (!scl) begin
-                        sda_out <= shift_reg[7];
-                        shift_reg <= {shift_reg[6:0], 1'b1};
-                    end else if (scl && bit_cnt > 0) begin
-                        bit_cnt <= bit_cnt - 1;
-                        if (bit_cnt == 1) state <= ACK1;
+
+                S_START: begin
+                    // Generate START condition
+                    sda <= 1'b0;  // SDA falls while SCL high
+                    div <= div + 1;
+                    if (div == DIVIDER-1) begin
+                        scl   <= 1'b0;
+                        div   <= 4'd0;
+                        state <= S_BITS;
                     end
                 end
-                ACK1: begin
-                    scl <= ~scl;
-                    if (!scl) begin
-                        state <= DATA;
-                        bit_cnt <= 8;
-                        if (rw) shift_reg <= 8'hFF;
-                        else shift_reg <= tx_data;
-                    end else if (scl) begin
-                        ack_error <= sda;
+
+                S_BITS: begin
+                    // Clock out 16 bits (7 addr + RW + 8 data)
+                    div <= div + 1;
+                    if (div == DIVIDER/2-1) begin
+                        scl <= 1'b1;
+                    end else if (div == DIVIDER-1) begin
+                        scl <= 1'b0;
+                        sda <= shift[15];
+                        shift <= {shift[14:0], 1'b0};
+                        div <= 4'd0;
+                        bit_cnt <= bit_cnt + 1;
+                        if (bit_cnt == 5'd15) begin
+                            state <= S_STOP;
+                        end
                     end
                 end
-                DATA: begin
-                    scl <= ~scl;
-                    if (!scl) begin
-                        sda_out <= shift_reg[7];
-                        shift_reg <= {shift_reg[6:0], 1'b1};
-                    end else if (scl) begin
-                        if (rw) shift_reg <= {shift_reg[6:0], sda};
-                        bit_cnt <= bit_cnt - 1;
-                        if (bit_cnt == 0) state <= ACK2;
+
+                S_STOP: begin
+                    // Generate STOP condition
+                    sda <= 1'b0;
+                    div <= div + 1;
+                    if (div == DIVIDER/2-1) begin
+                        scl <= 1'b1;
+                    end else if (div == DIVIDER-1) begin
+                        sda   <= 1'b1;
+                        state <= S_DONE;
+                        div   <= 4'd0;
                     end
                 end
-                ACK2: begin
-                    scl <= ~scl;
-                    if (!scl) begin
-                        sda_out <= 1;
-                        state <= STOP;
-                    end
+
+                S_DONE: begin
+                    done  <= 1'b1;
+                    busy  <= 1'b0;
+                    state <= S_IDLE;
                 end
-                STOP: begin
-                    scl <= ~scl;
-                    if (!scl) begin
-                        sda_out <= 1;
-                    end else begin
-                        state <= IDLE; busy <= 0; done <= 1; scl_en <= 0;
-                        if (rw) rx_data <= shift_reg;
-                    end
-                end
+
+                default: state <= S_IDLE;
             endcase
-            if (!scl_en) scl <= 1;
         end
     end
 endmodule
@@ -505,32 +566,29 @@ endmodule
 ''',
 
 "reg_file": '''
-module {name} #(
-    parameter WORDS = 8,
-    parameter WIDTH = {bits}
-)(
-    input                        clk,
-    input                        reset_n,
-    input                        we,
-    input  [$clog2(WORDS)-1:0]   waddr,
-    input  [WIDTH-1:0]           wdata,
-    input  [$clog2(WORDS)-1:0]   raddr1,
-    input  [$clog2(WORDS)-1:0]   raddr2,
-    output reg [WIDTH-1:0]       rdata1,
-    output reg [WIDTH-1:0]       rdata2
+module {name} (
+    input              clk,
+    input              reset_n,
+    input              we,
+    input  [2:0]       waddr,
+    input  [{bits}-1:0] wdata,
+    input  [2:0]       raddr1,
+    input  [2:0]       raddr2,
+    output reg [{bits}-1:0] rdata1,
+    output reg [{bits}-1:0] rdata2
 );
-    reg [WIDTH-1:0] mem [0:WORDS-1];
+    // 8-register file, fixed 3-bit address
+    reg [{bits}-1:0] regs [0:7];
     integer i;
 
     always @(posedge clk) begin
         if (!reset_n) begin
-            for (i=0; i<WORDS; i=i+1)
-                mem[i] <= 0;
+            for (i=0;i<8;i=i+1) regs[i] <= 0;
             rdata1 <= 0; rdata2 <= 0;
         end else begin
-            if (we) mem[waddr] <= wdata;
-            rdata1 <= mem[raddr1];
-            rdata2 <= mem[raddr2];
+            if (we) regs[waddr] <= wdata;
+            rdata1 <= regs[raddr1];
+            rdata2 <= regs[raddr2];
         end
     end
 endmodule
@@ -557,17 +615,16 @@ endmodule
 ''',
 
 "memory": '''
-module {name} #(
-    parameter DEPTH = 256,
-    parameter WIDTH = {bits}
-)(
-    input                        clk,
-    input                        we,
-    input  [$clog2(DEPTH)-1:0]   addr,
-    input  [WIDTH-1:0]           din,
-    output reg [WIDTH-1:0]       dout
+module {name} (
+    input         clk,
+    input         we,
+    input  [7:0]  addr,
+    input  [{bits}-1:0]  din,
+    output reg [{bits}-1:0] dout
 );
-    reg [WIDTH-1:0] mem [0:DEPTH-1];
+    // 256 x {bits} single-port RAM
+    // Fixed addr width = 8 bits (no $clog2 needed)
+    reg [{bits}-1:0] mem [0:255];
 
     always @(posedge clk) begin
         if (we) mem[addr] <= din;
@@ -804,6 +861,122 @@ module {name}_tb();
 endmodule
 ''',
 
+"subtractor": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n;
+    reg [{bits}-1:0] a, b;
+    wire [{bits}:0] diff;
+    integer fail_count = 0;
+    integer pass_count = 0;
+
+    {name} dut(.clk(clk), .reset_n(reset_n), .a(a), .b(b), .diff(diff));
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    task check;
+        input [{bits}:0] expected;
+        input [31:0] tnum;
+        begin
+            @(posedge clk); #1;
+            if (diff !== expected) begin
+                $display("FAIL Test %0d: %0d-%0d=%0d exp=%0d", tnum, a, b, diff, expected);
+                fail_count = fail_count + 1;
+            end else begin
+                $display("PASS Test %0d", tnum);
+                pass_count = pass_count + 1;
+            end
+        end
+    endtask
+
+    initial begin
+        $dumpfile("trace.vcd");
+        $dumpvars(0, {name}_tb);
+        reset_n = 0; a = 0; b = 0;
+        repeat(4) @(posedge clk); #1;
+        reset_n = 1;
+        a = 10;  b = 3;   check({bits}+1'd7,   1);
+        a = 100; b = 50;  check({bits}+1'd50,  2);
+        a = 255; b = 100; check({bits}+1'd155, 3);
+        a = 5;   b = 0;   check({bits}+1'd5,   4);
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
+"adder_subtractor": '''
+`timescale 1ns/1ps
+module {name}_tb();
+    reg clk, reset_n, mode;
+    reg [{bits}-1:0] a, b;
+    wire [{bits}:0] result;
+    integer fail_count = 0;
+    integer pass_count = 0;
+
+    {name} dut(.clk(clk), .reset_n(reset_n), .mode(mode), .a(a), .b(b), .result(result));
+
+    initial clk = 0;
+    always #5 clk = ~clk;
+
+    initial begin
+        $dumpfile("trace.vcd");
+        $dumpvars(0, {name}_tb);
+        reset_n = 0; mode = 0; a = 0; b = 0;
+        repeat(4) @(posedge clk); #1;
+        reset_n = 1;
+
+        mode = 0; a = 5; b = 3;
+        @(posedge clk); #1;
+        if (result == {bits}+1'd8) begin
+            $display("PASS Test 1: add 5+3=8");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL Test 1: result=%0d expected=8", result);
+            fail_count = fail_count + 1;
+        end
+
+        mode = 1; a = 10; b = 3;
+        @(posedge clk); #1;
+        if (result == {bits}+1'd7) begin
+            $display("PASS Test 2: sub 10-3=7");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL Test 2: result=%0d expected=7", result);
+            fail_count = fail_count + 1;
+        end
+
+        mode = 0; a = 100; b = 50;
+        @(posedge clk); #1;
+        if (result == {bits}+1'd150) begin
+            $display("PASS Test 3: add 100+50=150");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL Test 3: result=%0d expected=150", result);
+            fail_count = fail_count + 1;
+        end
+
+        mode = 1; a = 255; b = 100;
+        @(posedge clk); #1;
+        if (result == {bits}+1'd155) begin
+            $display("PASS Test 4: sub 255-100=155");
+            pass_count = pass_count + 1;
+        end else begin
+            $display("FAIL Test 4: result=%0d expected=155", result);
+            fail_count = fail_count + 1;
+        end
+
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
+        $finish;
+    end
+endmodule
+''',
+
 "fifo": '''
 `timescale 1ns/1ps
 module {name}_tb();
@@ -811,10 +984,17 @@ module {name}_tb();
     reg [7:0] din;
     wire [7:0] dout;
     wire empty, full;
+    wire [4:0] count;
     integer pass_count = 0;
     integer fail_count = 0;
 
-    {name} #(.DATA_W(8), .DEPTH({depth})) dut(.*);
+    {name} dut(
+        .clk(clk), .reset_n(reset_n),
+        .wr_en(wr_en), .rd_en(rd_en),
+        .din(din), .dout(dout),
+        .empty(empty), .full(full),
+        .count(count)
+    );
 
     initial clk = 0;
     always #5 clk = ~clk;
@@ -862,14 +1042,19 @@ module {name}_tb();
     reg clk, reset_n, start;
     reg [7:0] tx_data;
     wire [7:0] rx_data;
-    wire mosi, miso, sclk, cs_n, busy, done;
+    wire mosi, miso, sck, cs_n, done;
 
     integer pass_count = 0;
     integer fail_count = 0;
 
-    {name} dut(.*);
+    {name} #(.DIVIDER(4)) dut(
+        .clk(clk), .reset_n(reset_n),
+        .tx_data(tx_data), .start(start),
+        .mosi(mosi), .sck(sck), .cs_n(cs_n),
+        .done(done), .rx_data(rx_data), .miso(miso)
+    );
 
-    assign miso = 1'b0;
+    assign miso = mosi; // loopback mosi to miso
 
     initial clk = 0;
     always #5 clk = ~clk;
@@ -877,45 +1062,19 @@ module {name}_tb();
     initial begin
         $dumpfile("trace.vcd");
         $dumpvars(0, {name}_tb);
-        reset_n = 0; start = 0; tx_data = 8'hAC;
+        reset_n = 0; start = 0; tx_data = 8'hA5;
         repeat(4) @(posedge clk); #1;
         reset_n = 1;
 
-        // Test 1: Idle state
-        if (cs_n === 1'b1 && sclk === 1'b0 && busy === 1'b0) begin
-            $display("PASS Test 1: idle state correct");
-            pass_count = pass_count + 1;
-        end else begin
-            $display("FAIL Test 1: idle state wrong");
-            fail_count = fail_count + 1;
-        end
-
-        // Test 2: Start transfer
-        tx_data = 8'hA5;
         start = 1; @(posedge clk); #1; start = 0;
-
-        // Test 3: Busy asserted
-        repeat(2) @(posedge clk); #1;
-        if (busy === 1'b1 && cs_n === 1'b0) begin
-            $display("PASS Test 2: busy and cs_n asserted");
-            pass_count = pass_count + 1;
-        end else begin
-            $display("FAIL Test 2: busy=%b cs_n=%b", busy, cs_n);
-            fail_count = fail_count + 1;
-        end
-
-        // Test 4: Wait for done
         wait(done);
-        $display("PASS Test 3: transfer complete");
-        pass_count = pass_count + 1;
+        @(posedge clk);
 
-        // Test 5: Bus released
-        repeat(4) @(posedge clk); #1;
-        if (cs_n === 1'b1 && busy === 1'b0) begin
-            $display("PASS Test 4: bus released");
+        if (rx_data === 8'hA5) begin
+            $display("PASS Test 1: SPI transfer ok");
             pass_count = pass_count + 1;
         end else begin
-            $display("FAIL Test 4: bus not released");
+            $display("FAIL Test 1: got %h expected A5", rx_data);
             fail_count = fail_count + 1;
         end
 
@@ -932,18 +1091,17 @@ endmodule
 module {name}_tb();
     reg clk, reset_n, start;
     reg [6:0] addr;
-    reg rw;
-    reg [7:0] tx_data;
-    wire [7:0] rx_data;
-    wire sda, scl, busy, done, ack_error;
+    reg [7:0] data;
+    wire sda, scl, busy, done;
 
     integer pass_count = 0;
     integer fail_count = 0;
 
-    {name} dut(.*);
-
-    pullup(sda);
-    pullup(scl);
+    {name} #(.DIVIDER(4)) dut(
+        .clk(clk), .reset_n(reset_n),
+        .addr(addr), .data(data), .start(start),
+        .sda(sda), .scl(scl), .done(done), .busy(busy)
+    );
 
     initial clk = 0;
     always #5 clk = ~clk;
@@ -951,7 +1109,7 @@ module {name}_tb();
     initial begin
         $dumpfile("trace.vcd");
         $dumpvars(0, {name}_tb);
-        reset_n = 0; start = 0; addr = 7'h50; rw = 0; tx_data = 8'hBE;
+        reset_n = 0; start = 0; addr = 7'h50; data = 8'hBE;
         repeat(4) @(posedge clk); #1;
         reset_n = 1;
 
@@ -1000,7 +1158,19 @@ module {name}_tb();
             @(posedge clk); #1;
             tx_start = 0;
             @(posedge clk);
-            wait(tx == 0);
+            begin : wait_start
+                integer timeout;
+                timeout = 0;
+                while (tx !== 0 && timeout < BAUD_DIV*20) begin
+                    @(posedge clk);
+                    timeout = timeout + 1;
+                end
+                if (timeout >= BAUD_DIV*20) begin
+                    $display("FAIL: start bit timeout");
+                    fail_count = fail_count + 1;
+                    disable wait_start;
+                end
+            end
             repeat(BAUD_DIV-1) @(posedge clk);
             received = 0;
             for (i = 0; i < 8; i = i+1) begin
@@ -1436,14 +1606,14 @@ endmodule
 "reg_file": '''
 `timescale 1ns/1ps
 module {name}_tb();
-    parameter WORDS=8, WIDTH={bits};
+    parameter WIDTH={bits};
     reg clk, reset_n, we;
-    reg  [$clog2(WORDS)-1:0] waddr, raddr1, raddr2;
+    reg  [2:0] waddr, raddr1, raddr2;
     reg  [WIDTH-1:0]  wdata;
     wire [WIDTH-1:0]  rdata1, rdata2;
     integer fail_count=0, pass_count=0;
 
-    {name} #(WORDS,WIDTH) dut(
+    {name} dut(
         .clk(clk),.reset_n(reset_n),.we(we),
         .waddr(waddr),.wdata(wdata),
         .raddr1(raddr1),.raddr2(raddr2),
@@ -1534,16 +1704,16 @@ endmodule
 "memory": '''
 `timescale 1ns/1ps
 module {name}_tb();
-    parameter DEPTH=256, WIDTH={bits};
+    parameter WIDTH={bits};
     reg clk, we;
-    reg  [$clog2(DEPTH)-1:0] addr;
+    reg  [7:0] addr;
     reg  [WIDTH-1:0] din;
     wire [WIDTH-1:0] dout;
     integer fail_count=0, pass_count=0;
 
-    {name} #(DEPTH,WIDTH) dut(.clk(clk),.we(we),
-                               .addr(addr),.din(din),
-                               .dout(dout));
+    {name} dut(.clk(clk),.we(we),
+               .addr(addr),.din(din),
+               .dout(dout));
     initial clk=0;
     always #5 clk=~clk;
 
@@ -1868,10 +2038,18 @@ endmodule
 }
 
 
-def classify_design(description: str, bits: int = 8) -> Dict:
+def classify_design(description: str, bits: int = 8, module_name: str = "") -> Dict:
     desc = description.lower()
+    combined = f"{desc} {module_name.lower()}"
+    
     # CRITICAL: Order matters! Most specific patterns first
     keywords = {
+        # Combined units FIRST (before individual components)
+        "adder_subtractor": [
+            "adder subtractor", "adder_subtractor", "add_sub",
+            "adder/subtractor", "adder-subtractor", "addsub",
+            "add_subtract"
+        ],
         # Specific protocols FIRST (order matters!)
         "uart_tx":   [
             "uart tx", "uart transmit", "uart_transmitter",
@@ -1892,6 +2070,13 @@ def classify_design(description: str, bits: int = 8) -> Dict:
             "i2c master", "i2c_master",
             "two wire", "twi", "sda", "scl",
             "i2c"
+        ],
+        "reg_file": [
+            "register file", "regfile", "reg_file", "registerfile",
+            "register array"
+        ],
+        "memory": [
+            "memory", "sram", "single port", "mem array"
         ],
         "fifo":      [
             "fifo", "first in first out", "queue",
@@ -1918,6 +2103,9 @@ def classify_design(description: str, bits: int = 8) -> Dict:
         "adder":     [
             "add", "adder", "sum", "plus", "arithmet"
         ],
+        "subtractor": [
+            "subtractor", "subtract", "minus", "difference", "sub"
+        ],
         "comparator": [
             "comparator", "compare", "greater", "less", "equal",
             "magnitude"
@@ -1928,15 +2116,8 @@ def classify_design(description: str, bits: int = 8) -> Dict:
         "encoder": [
             "encoder", "encode", "priority"
         ],
-        "reg_file": [
-            "register file", "regfile", "reg_file", "registerfile",
-            "register array"
-        ],
         "pwm": [
             "pwm", "pulse width", "duty cycle"
-        ],
-        "memory": [
-            "memory", "sram", "single port", "mem array"
         ],
         "crc": [
             "crc", "cyclic redundancy", "checksum"
@@ -1963,12 +2144,46 @@ def classify_design(description: str, bits: int = 8) -> Dict:
 
     for template_type, words in keywords.items():
         for word in words:
-            if word in desc:
+            if word in combined:
                 return {
                     "type":    template_type,
                     "bits":    bits,
                     "matched": True
                 }
+    
+    # Module name Heuristics - if only module name given
+    if len(combined.split()) <= 3 and module_name:
+        name_lower = module_name.lower().replace("t_", "").replace("test_", "")
+        
+        module_hints = {
+            "adder_sub": "adder_subtractor",
+            "add_sub": "adder_subtractor",
+            "adder": "adder",
+            "counter": "counter",
+            "shift": "shift_reg",
+            "fifo": "fifo",
+            "alu": "alu",
+            "uart": "uart_tx",
+            "spi": "spi_master",
+            "i2c": "i2c_master",
+            "fsm": "fsm",
+            "mem": "memory",
+            "ram": "memory",
+            "rom": "memory",
+            "pwm": "pwm",
+            "mux": "mux",
+            "dec": "decoder",
+            "enc": "encoder",
+            "comp": "comparator",
+            "mult": "multiplier",
+            "clk": "clk_div",
+            "div": "clk_div",
+        }
+        
+        for hint, template in module_hints.items():
+            if hint in name_lower:
+                log.info(f"Module name hint matched: '{hint}' -> {template}")
+                return {"type": template, "bits": bits, "matched": True}
 
     return {"type": "adder", "bits": bits, "matched": False}
 
@@ -2020,7 +2235,7 @@ def safe_format(template: str, **kwargs) -> str:
 def build_from_template(module_name: str, description: str) -> Tuple[str, str]:
     bits = extract_bits_from_description(description)
     depth = extract_depth_from_description(description)
-    classified = classify_design(description, bits)
+    classified = classify_design(description, bits, module_name)
     template_type = classified["type"]
 
     rtl_template = TEMPLATES_RTL.get(template_type, TEMPLATES_RTL["adder"])

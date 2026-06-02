@@ -985,8 +985,12 @@ stat -liberty {liberty_file}
         """
         script_path = self.scripts_dir / "openroad_flow.tcl"
         
-        die_size = max(60, int((estimated_cells * 2) ** 0.5) + 20)
+        # Calculate die size mathematically based on average standard cell area (16 um^2) and targeted density (35%)
+        # CoreArea = estimated_cells * 16 / 0.35 = estimated_cells * 45.7
+        # CoreSize = CoreArea^0.5
+        # DieSize = CoreSize + 2 * core_margin
         core_margin = 5
+        die_size = max(60, int((estimated_cells * 45.7) ** 0.5) + 2 * core_margin)
         core_size = die_size - 2 * core_margin
         
         density = pl_density
@@ -1391,50 +1395,64 @@ quit
         port_buffer = re.sub(r'//.*', '', port_buffer)
         port_buffer = re.sub(r'/\*.*?\*/', '', port_buffer, flags=re.DOTALL)
         
-        port_decls = re.split(r',\s*', port_buffer)
+        # Remove parameter list if present (e.g. #(parameter X = 1) (input clk, ...))
+        if ')(' in port_buffer:
+            port_buffer = port_buffer.split(')(')[-1]
+        elif ')' in port_buffer and '(' in port_buffer:
+            parts = re.split(r'\)\s*\(', port_buffer)
+            if len(parts) > 1:
+                port_buffer = parts[-1]
         
-        current_dir = None
-        current_width = 1
+        port_decls = re.split(r',\s*', port_buffer)
         
         for decl in port_decls:
             decl = decl.strip().rstrip(')').rstrip(';').strip()
-            if not decl or decl in ['output', 'input', 'inout']:
+            if not decl:
                 continue
             
-            if decl.startswith('input ') or decl.startswith('output ') or decl.startswith('inout '):
-                parts = decl.split()
-                if len(parts) >= 2:
-                    current_dir = parts[0]
-                    rest = ' '.join(parts[1:])
-                    
-                    width_match = re.search(r'\[(\d+):(\d+)\]', rest)
-                    if width_match:
-                        msb = int(width_match.group(1))
-                        lsb = int(width_match.group(2))
-                        current_width = msb - lsb + 1
-                        rest = re.sub(r'\[\d+:\d+\]', '', rest).strip()
+            # Match direction
+            match_dir = re.match(r'^(input|output|inout)\b\s*(.*)$', decl)
+            if match_dir:
+                current_dir = match_dir.group(1)
+                rest = match_dir.group(2).strip()
+                
+                # Strip out types like reg, wire, logic, signed
+                rest = re.sub(r'\b(reg|wire|logic|signed)\b', '', rest).strip()
+                
+                # Check for width
+                current_width = 1
+                width_match = re.search(r'\[(.*?)\]', rest)
+                if width_match:
+                    width_expr = width_match.group(1)
+                    digit_match = re.match(r'^(\d+)\s*:\s*(\d+)$', width_expr.strip())
+                    if digit_match:
+                        msb = int(digit_match.group(1))
+                        lsb = int(digit_match.group(2))
+                        current_width = abs(msb - lsb) + 1
                     else:
-                        current_width = 1
-                    
-                    names = re.split(r'[,\s]+', rest)
-                    for name in names:
-                        name = name.strip().rstrip(',').rstrip(')')
-                        if name and re.match(r'^\w+$', name):
-                            is_clk = name.lower() in ['clk', 'clock', 'clk_i', 'i_clk', 'clk_in']
-                            is_rst = any(x in name.lower() for x in ['reset', 'rst', 'reset_n', 'rst_n'])
-                            
-                            port_info = {"name": name, "width": current_width}
-                            
-                            if current_dir == 'input':
-                                if is_clk:
-                                    ports["clocks"].append(port_info)
-                                elif is_rst:
-                                    ports["resets"].append(port_info)
-                                ports["inputs"].append(port_info)
-                            elif current_dir == 'output':
-                                ports["outputs"].append(port_info)
-                            elif current_dir == 'inout':
-                                ports["inouts"].append(port_info)
+                        current_width = 8
+                    rest = re.sub(r'\[.*?\]', '', rest).strip()
+                
+                # The remaining word(s) are port names
+                names = re.split(r'[,\s]+', rest)
+                for name in names:
+                    name = name.strip()
+                    if name and re.match(r'^\w+$', name):
+                        is_clk = name.lower() in ['clk', 'clock', 'clk_i', 'i_clk', 'clk_in', 'sclk', 'clk_in']
+                        is_rst = any(x in name.lower() for x in ['reset', 'rst', 'reset_n', 'rst_n'])
+                        
+                        port_info = {"name": name, "width": current_width}
+                        
+                        if current_dir == 'input':
+                            if is_clk:
+                                ports["clocks"].append(port_info)
+                            elif is_rst:
+                                ports["resets"].append(port_info)
+                            ports["inputs"].append(port_info)
+                        elif current_dir == 'output':
+                            ports["outputs"].append(port_info)
+                        elif current_dir == 'inout':
+                            ports["inouts"].append(port_info)
         
         ports["module_name"] = module_name
         return ports
@@ -1914,21 +1932,29 @@ class RTLtoGDSIIFlow:
         # Consider valid when SPICE has topology and at least minimal connectivity evidence.
         return has_subckt and has_ends and (instance_count >= 5 or has_blackbox_entries)
 
+    def _check_docker_available(self, timeout: int = 15) -> bool:
+        """Check if Docker is running and responsive, with caching and robust timeout."""
+        if getattr(self, "_docker_available_cache", None) is not None:
+            return self._docker_available_cache
+
+        try:
+            result = subprocess.run(
+                ["docker", "info"],
+                capture_output=True,
+                timeout=timeout
+            )
+            self._docker_available_cache = result.returncode == 0
+        except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+            self._docker_available_cache = False
+
+        return self._docker_available_cache
+
     def step0_verify_environment(self) -> bool:
         """Verify pipeline environment (gracefully handles missing Docker)"""
         log.info("=== STEP 0: ENVIRONMENT VERIFICATION ===")
 
         # Check if Docker is available
-        docker_available = False
-        try:
-            result = subprocess.run(
-                ["docker", "info"],
-                capture_output=True,
-                timeout=5
-            )
-            docker_available = result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            docker_available = False
+        docker_available = self._check_docker_available()
 
         if not docker_available:
             log.warning(
@@ -2441,16 +2467,7 @@ Advise: Run Verilator with --coverage flag for detailed analysis.
         log.info("=== STEP 2: SYNTHESIS ===")
 
         # Check if Docker available
-        docker_available = False
-        try:
-            result = subprocess.run(
-                ["docker", "info"],
-                capture_output=True,
-                timeout=5
-            )
-            docker_available = result.returncode == 0
-        except (FileNotFoundError, subprocess.TimeoutExpired):
-            docker_available = False
+        docker_available = self._check_docker_available()
 
         if not docker_available:
             log.error("Docker not available - synthesis cannot run")
@@ -2629,6 +2646,13 @@ equiv_status
         # Retry loop — handles OOM kills and transient Docker timeouts
         rc, out, err = -1, "", ""
         phys_timeout = getattr(self, 'docker_timeout', 1800)
+        # Boost timeout dynamically for large cell counts
+        if self.estimated_cells > 500:
+            boosted = max(phys_timeout, 1800)
+            if boosted > phys_timeout:
+                log.info(f"Boosting physical design timeout for {self.estimated_cells} cells: {phys_timeout}s -> {boosted}s")
+                phys_timeout = boosted
+
         for attempt in range(1, 4):
             rc, out, err = self.docker.run_script(
                 script_path,
