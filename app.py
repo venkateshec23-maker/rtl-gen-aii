@@ -1273,12 +1273,28 @@ def show_signoff():
             ).stat().st_size // 1024
         return 0
 
+    def read_coverage():
+        f = results / "coverage_report.txt"
+        if not f.exists(): return None
+        content = f.read_text(errors='ignore')
+        m_cov = re.search(r'Coverage:\s*([\d.]+)%', content)
+        return float(m_cov.group(1)) if m_cov else None
+
+    def read_ir_drop():
+        f = results / "ir_drop_vdd.txt"
+        if not f.exists(): return None
+        content = f.read_text(errors='ignore')
+        m = re.search(r'Calculated IR drop:\s*([\d.]+)\s*mV', content)
+        return float(m.group(1)) if m else None
+
     tt_slack, tt_status = read_slack("sta_final.txt")
     ss_slack, ss_status = read_slack("sta_ss.txt")
     ff_slack, ff_status = read_slack("sta_ff.txt")
     lvs_status  = read_lvs_status()
     drc_count   = read_drc()
     gds_kb      = read_gds_size()
+    cov_pct     = read_coverage()
+    ir_val      = read_ir_drop()
 
     # Status banner
     all_ok = (
@@ -1304,7 +1320,7 @@ def show_signoff():
     </div>""", unsafe_allow_html=True)
 
     # Metrics row
-    c1,c2,c3,c4,c5,c6 = st.columns(6)
+    c1,c2,c3,c4,c5,c6,c7,c8 = st.columns(8)
     with c1:
         color = "#00ff9d" if drc_count==0 else "#ff3333"
         st.markdown(
@@ -1389,6 +1405,50 @@ def show_signoff():
             f"{gds_kb}KB</div></div>",
             unsafe_allow_html=True
         )
+    with c7:
+        if cov_pct is not None:
+            color = "#00ff9d" if cov_pct >= 90.0 else "#ffd700" if cov_pct >= 70.0 else "#ff3333"
+            st.markdown(
+                f"<div style='text-align:center'>"
+                f"<div style='color:#8b949e;font-size:0.65rem;"
+                f"font-family:monospace'>Coverage</div>"
+                f"<div style='color:{color};font-size:1.3rem;"
+                f"font-family:monospace;font-weight:bold'>"
+                f"{cov_pct:.1f}%</div>"
+                f"<div style='color:{color};font-size:0.65rem'>"
+                f"toggle rate</div></div>",
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                f"<div style='text-align:center'>"
+                f"<div style='color:#8b949e;font-size:0.65rem;"
+                f"font-family:monospace'>Coverage</div>"
+                f"<div style='color:#8b949e'>—</div></div>",
+                unsafe_allow_html=True
+            )
+    with c8:
+        if ir_val is not None:
+            color = "#00ff9d" if ir_val < 180.0 else "#ff3333"
+            st.markdown(
+                f"<div style='text-align:center'>"
+                f"<div style='color:#8b949e;font-size:0.65rem;"
+                f"font-family:monospace'>IR Drop</div>"
+                f"<div style='color:{color};font-size:1.3rem;"
+                f"font-family:monospace;font-weight:bold'>"
+                f"{ir_val:.2f}mV</div>"
+                f"<div style='color:{color};font-size:0.65rem'>"
+                f"calculated</div></div>",
+                unsafe_allow_html=True
+            )
+        else:
+            st.markdown(
+                f"<div style='text-align:center'>"
+                f"<div style='color:#8b949e;font-size:0.65rem;"
+                f"font-family:monospace'>IR Drop</div>"
+                f"<div style='color:#8b949e'>—</div></div>",
+                unsafe_allow_html=True
+            )
 
     st.markdown("---")
 
