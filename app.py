@@ -1350,19 +1350,44 @@ def page_generate_design():
         generator_available = False
         st.error(f"Generator not available: {e}")
 
-    # Provider selection
+    # Provider and model selection
+    st.markdown(
+        "<div class='eda-panel-header'>AI PROVIDER</div>",
+        unsafe_allow_html=True
+    )
+
     col1, col2 = st.columns(2)
     with col1:
-        provider = st.selectbox(
-            "🧠 Select LLM Provider",
-            ["github", "gemini", "groq", "opencode", "nvidia"],
-            help="github (GPT-4o - Free with Edu pack), gemini (2.5 Flash), groq (Llama-3), opencode (local)"
+        provider_type = st.selectbox(
+            "Provider",
+            ["OpenRouter (Free)",
+             "Gemini", "Groq", "OpenCode"],
+            index=0
         )
     with col2:
-        max_retries = st.slider(
-            "Max retries if validation fails",
-            1, 5, 3
-        )
+        if "OpenRouter" in provider_type:
+            model_choice = st.selectbox(
+                "Free Model",
+                [
+                    "deepseek/deepseek-chat:free",
+                    "deepseek/deepseek-r1:free",
+                    "qwen/qwen3-235b-a22b:free",
+                    "meta-llama/llama-3.3-70b-instruct:free",
+                    "google/gemma-3-27b-it:free",
+                ],
+                index=0
+            )
+            provider = "openrouter"
+            st.caption(f"Model: {model_choice.split('/')[1]}")
+        else:
+            model_choice = None
+            provider = provider_type.lower()
+            st.caption(f"Using {provider_type}")
+
+    max_retries = st.slider(
+        "Max retries if validation fails",
+        1, 5, 3
+    )
 
     # Design input
     module_name = st.text_input(
@@ -1490,6 +1515,7 @@ def page_generate_design():
                 description=description,
                 module_name=module_name,
                 llm_provider=provider,
+                openrouter_model=model_choice,  # NEW
                 max_retries=max_retries
             )
             progress.progress(40)

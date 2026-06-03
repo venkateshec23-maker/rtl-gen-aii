@@ -1557,6 +1557,39 @@ report_wns >> {report_file}
 # MAIN FLOW ORCHESTRATOR
 # ============================================================
 
+def check_api_keys():
+    """
+    Check which API keys are configured.
+    Print available providers.
+    """
+    import os
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env", override=True)
+    
+    providers = []
+
+    if os.getenv("OPENROUTER_API_KEY"):
+        providers.append("OpenRouter (free models)")
+    if os.getenv("ANTHROPIC_API_KEY"):
+        providers.append("Claude")
+    if os.getenv("GOOGLE_API_KEY"):
+        providers.append("Gemini")
+    if os.getenv("GROQ_API_KEY"):
+        providers.append("Groq")
+
+    if not providers:
+        log.warning(
+            "No API keys configured! "
+            "Add OPENROUTER_API_KEY to .env for free access. "
+            "Get key at: openrouter.ai/keys"
+        )
+    else:
+        log.info(
+            f"Available AI providers: {', '.join(providers)}"
+        )
+
+    return providers
+
 class RTLtoGDSIIFlow:
     """
     Complete RTL to GDSII flow orchestrator.
@@ -1807,6 +1840,13 @@ class RTLtoGDSIIFlow:
         self.design_ports = None
         self.estimated_cells = 50
 
+        # Define liberty_tt, liberty_ss, liberty_ff for testing/validation
+        self.liberty_tt = self.c_liberty
+        self.liberty_ss = self.c_liberty_ss
+        self.liberty_ff = self.c_liberty_ff
+
+        self.available_providers = check_api_keys()
+
         log.info(f"RTLtoGDSII initialized for: {design_name}")
 
         self._configure_for_complexity(verilog_file)
@@ -1974,11 +2014,18 @@ class RTLtoGDSIIFlow:
             log.info("[OK] All EDA tools verified")
 
         # Verify Liberty file (optional - only if PDK is installed)
-        liberty_host = (
-            self.pdk_dir /
-            "sky130A/libs.ref/sky130_fd_sc_hd/lib/"
-            "sky130_fd_sc_hd__tt_025C_1v80.lib"
-        )
+        if self.pdk_type == "sky130A":
+            liberty_host = (
+                self.pdk_dir /
+                "sky130A/libs.ref/sky130_fd_sc_hd/lib/"
+                "sky130_fd_sc_hd__tt_025C_1v80.lib"
+            )
+        else: # gf180mcuD
+            liberty_host = (
+                self.pdk_dir /
+                "gf180mcuD/libraries/gf180mcu_fd_sc_mcu7t5v0/latest/liberty/"
+                "gf180mcu_fd_sc_mcu7t5v0__tt_025C_3v30.lib"
+            )
 
         if liberty_host.exists() and liberty_host.stat().st_size >= FILE_SIZE_THRESHOLDS.get("liberty", 100000):
             log.info("[OK] Liberty file found")

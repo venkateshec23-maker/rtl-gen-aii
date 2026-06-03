@@ -310,7 +310,8 @@ def generate_verilog_gemini(
     model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=VERILOG_SYSTEM_PROMPT)
     
     response = model.generate_content(
-        f"Design name: {module_name}\n\nDescription: {description}"
+        f"Design name: {module_name}\n\nDescription: {description}",
+        request_options={"timeout": 60}
     )
     return parse_verilog_response(response.text)
 
@@ -1247,7 +1248,7 @@ def repair_with_gemini(prompt: str, module_name: str) -> Tuple[str, str]:
     _key = os.getenv("GEMINI_API_KEY")
     genai.configure(api_key=_key)
     model = genai.GenerativeModel("gemini-2.5-flash")
-    response = model.generate_content(prompt)
+    response = model.generate_content(prompt, request_options={"timeout": 60})
     return parse_verilog_response(response.text)
 
 
@@ -1375,10 +1376,11 @@ SIMULATION FAILURE TRACE (Last known truth-table states before failure):
 
 
 def generate_and_validate(
-    description: str,
-    module_name: str,
-    llm_provider: str = "groq",
-    max_retries: int = 3
+    description:       str,
+    module_name:       str,
+    llm_provider:      str = "openrouter",
+    openrouter_model:  str = "deepseek/deepseek-chat:free",
+    max_retries:       int = 3
 ) -> Dict:
     """
     Generate Verilog + validate + simulate.
@@ -1392,12 +1394,20 @@ def generate_and_validate(
     print(f"{'='*60}")
 
     providers_to_try = []
+    req_model = openrouter_model or "deepseek/deepseek-chat:free"
+    
     if llm_provider == "openrouter":
-        providers_to_try = [
-            ("openrouter", "deepseek/deepseek-chat:free"),
-            ("openrouter", "qwen/qwen3-235b-a22b:free"),
-            ("openrouter", "meta-llama/llama-3.3-70b-instruct:free"),
+        model_list = [
+            "deepseek/deepseek-chat:free",
+            "deepseek/deepseek-r1:free",
+            "qwen/qwen3-235b-a22b:free",
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "google/gemma-3-27b-it:free",
         ]
+        providers_to_try = [("openrouter", req_model)]
+        for m in model_list:
+            if m != req_model:
+                providers_to_try.append(("openrouter", m))
     elif llm_provider == "deepseek":
         providers_to_try = [
             ("openrouter", "deepseek/deepseek-chat:free"),
@@ -1406,7 +1416,7 @@ def generate_and_validate(
         all_p = [
             ("gemini", None),
             ("groq", None),
-            ("openrouter", "deepseek/deepseek-chat:free"),
+            ("openrouter", req_model),
             ("github", None),
             ("opencode", None)
         ]
@@ -1414,7 +1424,7 @@ def generate_and_validate(
         if requested:
             providers_to_try = requested + [(p, m) for p, m in all_p if p != llm_provider]
         else:
-            providers_to_try = [("openrouter", "deepseek/deepseek-chat:free")] + all_p
+            providers_to_try = [("openrouter", req_model)] + all_p
     
     last_error = None
 
