@@ -1472,6 +1472,8 @@ quit
         clock_name = "clk"
         if ports["clocks"]:
             clock_name = ports["clocks"][0]["name"]
+        else:
+            clock_name = "virtual_clk"
         
         input_ports = [p["name"] for p in ports["inputs"] if p["name"] != clock_name and p["name"] not in [r["name"] for r in ports["resets"]]]
         output_ports = [p["name"] for p in ports["outputs"]]

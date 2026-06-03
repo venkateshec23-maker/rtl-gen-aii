@@ -1451,11 +1451,12 @@ def _render_reports_tab(results: Path, design_name: str):
         f = results / fname
         if f.exists() and f.stat().st_size > 10:
             found_any = True
-            size_kb = round(f.stat().st_size / 1024, 1)
+            size_b = f.stat().st_size
+            size_str = f"{size_b} B" if size_b < 1024 else f"{round(size_b / 1024, 1)} KB"
             col1, col2 = st.columns([3, 1])
             with col1:
                 with st.expander(
-                    f"📋 {report_name} ({size_kb} KB)"
+                    f"📋 {report_name} ({size_str})"
                 ):
                     content = f.read_text(errors="ignore")
                     st.code(content[:2000], language="text")
