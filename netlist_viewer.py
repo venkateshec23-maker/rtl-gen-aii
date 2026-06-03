@@ -3,7 +3,7 @@ netlist_viewer.py
 =================
 Parse synthesized Verilog netlist and generate
 schematic visualization using Streamlit + Graphviz.
-Shows: cells, connections, inputs, outputs.
+Shows: cells, pin-to-pin connections, inputs, outputs.
 Commercial equivalent: Cadence Schematic Viewer
 """
 
@@ -86,11 +86,58 @@ def parse_netlist(netlist_path: str) -> NetlistInfo:
     )
 
 
+def is_output_pin(pin_name: str) -> bool:
+    """Check if pin is typically an output in Sky130 sc_hd library."""
+    return pin_name.upper() in ("X", "Y", "Q", "CON", "COUT", "S", "S0", "S1")
+
+
+def is_ignored_pin(pin_name: str) -> bool:
+    """Check if pin is a power/ground pin."""
+    return pin_name.upper() in ("VPWR", "VGND", "VPB", "VNB")
+
+
+def safe_name(name: str) -> str:
+    """Sanitize names to be valid Graphviz identifiers."""
+    return re.sub(r'[^a-zA-Z0-9_]', '_', name)
+
+
+def make_cell_html_label(cell_type: str, instance: str, inputs: List[str], outputs: List[str], bg_color: str) -> str:
+    """Generate HTML-like label for a schematic cell block."""
+    short_type = cell_type.replace('sky130_fd_sc_hd__', '')
+    
+    # Input pins column
+    in_tds = "".join([f'<tr><td port="{pin}" align="left" border="0"><font color="#00d4ff" size="1">  {pin}  </font></td></tr>' for pin in inputs])
+    in_table = f'<table border="0" cellborder="0" cellspacing="1" cellpadding="1">{in_tds}</table>' if inputs else ""
+    
+    # Output pins column
+    out_tds = "".join([f'<tr><td port="{pin}" align="right" border="0"><font color="#00ff9d" size="1">  {pin}  </font></td></tr>' for pin in outputs])
+    out_table = f'<table border="0" cellborder="0" cellspacing="1" cellpadding="1">{out_tds}</table>' if outputs else ""
+    
+    label = f"""<
+    <table border="0" cellborder="1" cellspacing="0" cellpadding="4" bgcolor="#1c2128" style="border-radius: 4px;">
+      <tr>
+        <!-- Inputs -->
+        <td border="0" align="left" valign="middle">{in_table}</td>
+        
+        <!-- Cell Info Box -->
+        <td bgcolor="{bg_color}" align="center" valign="middle">
+          <font color="#000000" face="Helvetica" size="2"><b> {short_type} </b></font><br/>
+          <font color="#586e75" face="Helvetica" size="1"> {instance} </font>
+        </td>
+        
+        <!-- Outputs -->
+        <td border="0" align="right" valign="middle">{out_table}</td>
+      </tr>
+    </table>
+    >"""
+    return label
+
+
 def generate_graphviz_dot(info: NetlistInfo,
                            max_cells: int = 50) -> str:
     """
-    Generate Graphviz DOT language for netlist schematic.
-    Limits display to max_cells for readability.
+    Generate Graphviz DOT language for pin-level netlist schematic.
+    Employs HTML-like tables and orthogonal splines for CAD-style schematics.
     """
     if not info:
         return 'digraph { label="No netlist found" }'
@@ -98,115 +145,150 @@ def generate_graphviz_dot(info: NetlistInfo,
     lines = [
         'digraph netlist {',
         '  rankdir=LR;',
-        '  node [fontname="Share Tech Mono" fontsize=10];',
-        '  edge [fontsize=8];',
+        '  splines=ortho;',
+        '  nodesep=0.6;',
+        '  ranksep=0.8;',
+        '  node [fontname="Share Tech Mono" fontsize=9 shape=none];',
+        '  edge [color="#8b949e" penwidth=1.0 arrowsize=0.6];',
         '',
-        '  // Style',
+        '  // Style background',
         '  graph [bgcolor="#0d1117" fontcolor="#c9d1d9"];',
-        '  node [style=filled color="#30363d" fontcolor="#c9d1d9"];',
         '',
     ]
 
-    # Input ports (left side)
+    # 1. Input Ports Cluster
     lines.append('  subgraph cluster_inputs {')
     lines.append('    label="INPUTS"; style=filled;')
-    lines.append('    fillcolor="#0f3460"; color="#00d4ff";')
+    lines.append('    fillcolor="#0a192f"; color="#00d4ff";')
     lines.append('    fontcolor="#00d4ff";')
-    for inp in info.inputs[:8]:
-        safe = inp.replace('[','_').replace(']','_').replace(':','_')
-        lines.append(
-            f'    in_{safe} [label="{inp}" '
-            f'shape=invtriangle fillcolor="#00d4ff" '
-            f'fontcolor="#000000"];'
-        )
+    for inp in info.inputs[:12]:
+        safe = safe_name(inp)
+        lines.append(f'    in_{safe} [label="{inp}" shape=invtriangle style=filled fillcolor="#00d4ff" fontcolor="#000000" penwidth=1.5];')
     lines.append('  }')
     lines.append('')
 
-    # Output ports (right side)
+    # 2. Output Ports Cluster
     lines.append('  subgraph cluster_outputs {')
     lines.append('    label="OUTPUTS"; style=filled;')
-    lines.append('    fillcolor="#0f3460"; color="#00ff9d";')
+    lines.append('    fillcolor="#0c2014"; color="#00ff9d";')
     lines.append('    fontcolor="#00ff9d";')
-    for out in info.outputs[:8]:
-        safe = out.replace('[','_').replace(']','_').replace(':','_')
-        lines.append(
-            f'    out_{safe} [label="{out}" '
-            f'shape=triangle fillcolor="#00ff9d" '
-            f'fontcolor="#000000"];'
-        )
+    for out in info.outputs[:12]:
+        safe = safe_name(out)
+        lines.append(f'    out_{safe} [label="{out}" shape=triangle style=filled fillcolor="#00ff9d" fontcolor="#000000" penwidth=1.5];')
     lines.append('  }')
     lines.append('')
 
-    # Cell instances (limit for display)
+    # Cell styling colors
     cell_colors = {
         'dfxtp': '#4a90d9',   # flip-flop: blue
         'xor2':  '#e74c3c',   # XOR: red
         'xnor2': '#c0392b',   # XNOR: dark red
         'nand2': '#f39c12',   # NAND: orange
         'nor2':  '#d35400',   # NOR: dark orange
-        'and2':  '#27ae60',   # AND: green
-        'or2':   '#2ecc71',   # OR: light green
+        'and2':  '#2ecc71',   # AND: green
+        'or2':   '#2ecc71',   # OR: green
         'inv':   '#9b59b6',   # inverter: purple
         'mux2':  '#1abc9c',   # MUX: teal
-        'maj3':  '#e67e22',   # MAJ: amber
         'clkbuf':'#3498db',   # clock buf: blue
-        'fill':  '#7f8c8d',   # filler: gray
-        'decap': '#95a5a6',   # decap: light gray
     }
 
     displayed_cells = info.cells[:max_cells]
+    
+    # 3. Create Cells with HTML labels
     for cell in displayed_cells:
+        # Categorize pins
+        cell_inputs = []
+        cell_outputs = []
+        for pin in cell.ports.keys():
+            if is_ignored_pin(pin):
+                continue
+            if is_output_pin(pin):
+                cell_outputs.append(pin)
+            else:
+                cell_inputs.append(pin)
+                
+        # Determine BG color
         short = cell.cell_type.replace('sky130_fd_sc_hd__', '')
-        # Get base cell type for coloring
-        color = '#586e75'  # default
+        color = '#7f8c8d'  # default
         for key, c in cell_colors.items():
             if key in short:
                 color = c
                 break
-
-        label = short[:20]  # truncate long names
-        safe_inst = cell.instance.replace('[','_').replace(']','_')
-        lines.append(
-            f'  {safe_inst} [label="{label}\\n{cell.instance}" '
-            f'shape=box fillcolor="{color}" '
-            f'fontcolor="white"];'
-        )
+                
+        safe_inst = safe_name(cell.instance)
+        label_html = make_cell_html_label(cell.cell_type, cell.instance, cell_inputs, cell_outputs, color)
+        lines.append(f'  {safe_inst} [label={label_html}];')
 
     lines.append('')
 
-    # Add edges for first few connections
-    connected = set()
-    edge_count = 0
-    for cell in displayed_cells[:30]:
-        safe_inst = cell.instance.replace('[','_').replace(']','_')
-        for port, net in cell.ports.items():
-            if port in ('VPWR','VGND','VPB','VNB','CLK'):
+    # 4. Map nets to their driver ports to route wires correctly
+    net_drivers = {} # net_name -> (node_id, port_id)
+
+    # Input ports drive their respective nets
+    for inp in info.inputs:
+        safe_inp = safe_name(inp)
+        net_drivers[inp] = (f"in_{safe_inp}", None)
+        # Handle index variants
+        net_drivers[safe_inp] = (f"in_{safe_inp}", None)
+
+    # Outputs of cells drive internal nets
+    for cell in displayed_cells:
+        safe_inst = safe_name(cell.instance)
+        for pin, net in cell.ports.items():
+            if is_ignored_pin(pin) or not is_output_pin(pin):
                 continue
-            # Check if net connects to input
-            net_clean = net.replace('[','').replace(']','').replace('\\','')
-            for inp in info.inputs:
-                if inp in net and edge_count < 50:
-                    safe_inp = inp.replace('[','_').replace(']','_').replace(':','_')
-                    edge_key = f"in_{safe_inp}_{safe_inst}"
-                    if edge_key not in connected:
-                        lines.append(
-                            f'  in_{safe_inp} -> {safe_inst} '
-                            f'[color="#00d4ff" penwidth=0.5];'
-                        )
-                        connected.add(edge_key)
-                        edge_count += 1
-            # Check if net connects to output
-            for out in info.outputs:
-                if out in net and edge_count < 80:
-                    safe_out = out.replace('[','_').replace(']','_').replace(':','_')
-                    edge_key = f"{safe_inst}_out_{safe_out}"
-                    if edge_key not in connected:
-                        lines.append(
-                            f'  {safe_inst} -> out_{safe_out} '
-                            f'[color="#00ff9d" penwidth=0.5];'
-                        )
-                        connected.add(edge_key)
-                        edge_count += 1
+            net_drivers[net] = (safe_inst, pin)
+            # Standardize index mapping e.g. sum[0]
+            net_clean = re.sub(r'[^a-zA-Z0-9_]', '_', net)
+            net_drivers[net_clean] = (safe_inst, pin)
+
+    # 5. Connect input pins of cells to their drivers
+    connected = set()
+    for cell in displayed_cells:
+        safe_inst = safe_name(cell.instance)
+        for pin, net in cell.ports.items():
+            if is_ignored_pin(pin) or is_output_pin(pin):
+                continue
+            
+            # Find driver
+            driver = net_drivers.get(net)
+            if not driver:
+                # Try stripped brackets or clean net variants
+                net_clean = re.sub(r'[^a-zA-Z0-9_]', '_', net)
+                driver = net_drivers.get(net_clean)
+                if not driver:
+                    # Strip any bit index and try matching inputs
+                    base_net = re.sub(r'\[\d+\]', '', net)
+                    driver = net_drivers.get(base_net)
+            
+            if driver:
+                driver_node, driver_port = driver
+                port_suffix = f":{driver_port}" if driver_port else ""
+                edge_key = f"{driver_node}{port_suffix}_{safe_inst}_{pin}"
+                
+                if edge_key not in connected:
+                    lines.append(f'  {driver_node}{port_suffix} -> {safe_inst}:{pin} [color="#8b949e" penwidth=1.0];')
+                    connected.add(edge_key)
+
+    # 6. Connect output ports of module to their drivers
+    for out in info.outputs:
+        safe_out = safe_name(out)
+        driver = net_drivers.get(out)
+        if not driver:
+            # Try matching with slices e.g. sum[0] -> sum
+            for net_name, drv in net_drivers.items():
+                if re.sub(r'\[\d+\]', '', net_name) == out:
+                    driver = drv
+                    break
+        
+        if driver:
+            driver_node, driver_port = driver
+            port_suffix = f":{driver_port}" if driver_port else ""
+            edge_key = f"{driver_node}{port_suffix}_out_{safe_out}"
+            
+            if edge_key not in connected:
+                lines.append(f'  {driver_node}{port_suffix} -> out_{safe_out} [color="#00ff9d" penwidth=1.2];')
+                connected.add(edge_key)
 
     if len(info.cells) > max_cells:
         lines.append(
