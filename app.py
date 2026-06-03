@@ -1393,13 +1393,72 @@ def show_signoff():
     st.markdown("---")
 
     # ── TABS FOR EACH VIEW ──
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📝 Source Code",
         "📐 Netlist",
         "📊 Waveforms",
         "🔲 Layout",
         "⏱️ Timing",
         "📄 Reports"
     ])
+
+    with tab0:
+        st.markdown("""
+        <div style="font-family:'Share Tech Mono',monospace;
+             font-size:0.7rem;letter-spacing:2px;
+             color:#00d4ff;border-bottom:1px solid #30363d;
+             padding-bottom:6px;margin-bottom:12px">
+        ▸ DESIGN & SIMULATION SOURCE CODE
+        </div>""", unsafe_allow_html=True)
+        
+        design_dir = Path(r"C:\tools\OpenLane\designs") / design_name
+        rtl_file = design_dir / f"{design_name}.v"
+        tb_file = design_dir / f"{design_name}_tb.v"
+        verify_tb_file = design_dir / f"{design_name}_verify_tb.v"
+        
+        col_rtl, col_tb = st.columns(2)
+        with col_rtl:
+            st.markdown("**RTL Design Under Test (DUT)**")
+            if rtl_file.exists():
+                rtl_content = rtl_file.read_text(errors="ignore")
+                st.code(rtl_content, language="verilog")
+                st.download_button(
+                    "⬇️ Download RTL Source",
+                    rtl_content,
+                    file_name=f"{design_name}.v",
+                    mime="text/plain",
+                    key=f"dl_rtl_{design_name}"
+                )
+            else:
+                st.info("Original RTL source file not found.")
+                
+        with col_tb:
+            st.markdown("**Simulation Testbench**")
+            if tb_file.exists():
+                tb_content = tb_file.read_text(errors="ignore")
+                st.code(tb_content, language="verilog")
+                st.download_button(
+                    "⬇️ Download Testbench",
+                    tb_content,
+                    file_name=f"{design_name}_tb.v",
+                    mime="text/plain",
+                    key=f"dl_tb_{design_name}"
+                )
+            else:
+                st.info("Simulation testbench file not found.")
+                
+        if verify_tb_file.exists():
+            st.markdown("")
+            st.markdown("**Post-GDS Verification Testbench**")
+            v_tb_content = verify_tb_file.read_text(errors="ignore")
+            st.code(v_tb_content, language="verilog")
+            st.download_button(
+                "⬇️ Download Post-GDS Testbench",
+                v_tb_content,
+                file_name=f"{design_name}_verify_tb.v",
+                mime="text/plain",
+                key=f"dl_v_tb_{design_name}"
+            )
 
     with tab1:
         from netlist_viewer import render_netlist_streamlit
