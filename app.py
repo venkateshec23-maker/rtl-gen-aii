@@ -1170,45 +1170,346 @@ def show_gds_layout():
 # ============================================================
 
 def show_signoff():
-    results_dir = get_active_results_dir()
-    st.header("Step 10 — Sign-off (DRC + LVS + STA)")
+    """
+    Professional sign-off page with all views.
+    Shows: Netlist | Waveforms | Layout | Timing | Reports
+    """
+    st.markdown("""
+    <div style="font-family:'Rajdhani',sans-serif;
+         font-size:1.4rem;font-weight:700;
+         color:#f0f6fc;letter-spacing:1px;
+         margin-bottom:16px">
+        ✅ Sign-Off Dashboard
+    </div>""", unsafe_allow_html=True)
 
-    if not (results_dir / "lvs_report_final.txt").exists() and not (results_dir / "sta_final.txt").exists():
-        st.warning("No sign-off reports found for the active run. Run the pipeline first.")
-        return
+    # Find latest successful run
+    from pathlib import Path
+    from database import get_all_runs
 
-    lvs_data = parse_lvs_stats(results_dir)
-    timing   = parse_timing_stats(results_dir)
-    gds_file = next(results_dir.glob("*.gds"), results_dir / "adder_8bit.gds")
-    gds_kb   = file_kb(gds_file)
-    gds_real = gds_kb > 50
+    # Get design selection
+    try:
+        runs = get_all_runs()
+        ready_runs = [r for r in runs
+                      if r.get('tapeout_ready')]
+    except Exception:
+        ready_runs = []
 
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.subheader("DRC")
-        if gds_real:
-            st.success("✅ 0 violations")
+    if not ready_runs:
+        # Try finding from filesystem
+        work = Path(r"C:\tools\OpenLane")
+        run_dirs = sorted(
+            [d for d in (work/"runs").iterdir()
+             if d.is_dir()],
+            key=lambda x: x.stat().st_mtime,
+            reverse=True
+        )
+        if run_dirs:
+            selected_dir = str(run_dirs[0])
+            design_name  = run_dirs[0].name.rsplit('_', 2)[0]
         else:
-            st.error("❌ INVALID — DRC on stub GDS")
+            st.error("No completed runs found. "
+                     "Run a design first.")
+            return
+    else:
+        # Design selector
+        design_names = sorted(set(
+            r['design_name'] for r in ready_runs
+        ))
+        selected_design = st.selectbox(
+            "Select Design", design_names
+        )
 
-    with col2:
-        st.subheader("LVS")
-        if lvs_data.get("matched"):
-            st.success("✅ MATCHED")
-        else:
-            st.error("❌ UNMATCHED")
-        st.metric("Transistors",
-                  lvs_data.get("transistors", 0))
+        design_runs = [
+            r for r in ready_runs
+            if r['design_name'] == selected_design
+        ]
+        latest = sorted(
+            design_runs,
+            key=lambda x: x.get('created_at',''),
+            reverse=True
+        )[0]
 
-    with col3:
-        st.subheader("Timing")
-        if timing.get("met"):
-            st.success("✅ MET")
-        else:
-            st.error("❌ VIOLATED")
-        st.metric("Slack",
-                  f"{timing.get('slack', 0)} ns")
+        selected_dir = latest.get(
+            'results_dir',
+            str(Path(r"C:\tools\OpenLane\results"))
+        )
+        design_name = selected_design
+
+    results = Path(selected_dir)
+
+    # ── TOP METRICS BAR ──
+    import re
+
+    def read_slack(fname):
+        f = results / fname
+        if not f.exists(): return None, None
+        m = re.search(
+            r'([-\d.]+)\s+slack\s+\((MET|VIOLATED)\)',
+            f.read_text(errors='ignore')
+        )
+        return (float(m.group(1)), m.group(2)) if m else (None,None)
+
+    def read_lvs_status():
+        f = results / "lvs_report_final.txt"
+        if not f.exists(): return "NOT_RUN"
+        c = f.read_text(errors='ignore')
+        return "MATCHED" if "match uniquely" in c else "MISMATCH"
+
+    def read_drc():
+        for f in ["drc_report.txt","drc_klayout_full.xml"]:
+            p = results / f
+            if p.exists():
+                c = p.read_text(errors='ignore')
+                m = re.search(r'(\d+)\s+violation', c)
+                return int(m.group(1)) if m else 0
+        return 0
+
+    def read_gds_size():
+        gds_files = list(results.glob("*.gds"))
+        if gds_files:
+            return max(
+                gds_files,
+                key=lambda x: x.stat().st_size
+            ).stat().st_size // 1024
+        return 0
+
+    tt_slack, tt_status = read_slack("sta_final.txt")
+    ss_slack, ss_status = read_slack("sta_ss.txt")
+    ff_slack, ff_status = read_slack("sta_ff.txt")
+    lvs_status  = read_lvs_status()
+    drc_count   = read_drc()
+    gds_kb      = read_gds_size()
+
+    # Status banner
+    all_ok = (
+        tt_status == "MET" and
+        lvs_status == "MATCHED" and
+        drc_count == 0 and
+        gds_kb > 50
+    )
+    banner_color = "#00ff9d" if all_ok else "#ffd700"
+    banner_text  = "TAPE-OUT READY" if all_ok \
+                   else "IN PROGRESS"
+
+    st.markdown(f"""
+    <div style="
+        background:rgba({'0,255,157' if all_ok else '255,215,0'},0.1);
+        border:1px solid {banner_color};
+        border-radius:4px;padding:16px 24px;
+        text-align:center;margin-bottom:20px;
+        font-family:'Share Tech Mono',monospace;
+        font-size:1.2rem;color:{banner_color};
+        letter-spacing:3px">
+        {'✓' if all_ok else '⏳'} {banner_text} — {design_name}
+    </div>""", unsafe_allow_html=True)
+
+    # Metrics row
+    c1,c2,c3,c4,c5,c6 = st.columns(6)
+    with c1:
+        color = "#00ff9d" if drc_count==0 else "#ff3333"
+        st.markdown(
+            f"<div style='text-align:center'>"
+            f"<div style='color:#8b949e;font-size:0.65rem;"
+            f"font-family:monospace'>DRC</div>"
+            f"<div style='color:{color};font-size:1.3rem;"
+            f"font-family:monospace;font-weight:bold'>"
+            f"{drc_count}</div>"
+            f"<div style='color:{color};font-size:0.65rem'>"
+            f"violations</div></div>",
+            unsafe_allow_html=True
+        )
+    with c2:
+        color = "#00ff9d" if lvs_status=="MATCHED" \
+                else "#ff3333"
+        st.markdown(
+            f"<div style='text-align:center'>"
+            f"<div style='color:#8b949e;font-size:0.65rem;"
+            f"font-family:monospace'>LVS</div>"
+            f"<div style='color:{color};font-size:1.0rem;"
+            f"font-family:monospace;font-weight:bold'>"
+            f"{lvs_status}</div></div>",
+            unsafe_allow_html=True
+        )
+    with c3:
+        color = "#00ff9d" if tt_status=="MET" else "#ff3333"
+        st.markdown(
+            f"<div style='text-align:center'>"
+            f"<div style='color:#8b949e;font-size:0.65rem;"
+            f"font-family:monospace'>TT Slack</div>"
+            f"<div style='color:{color};font-size:1.3rem;"
+            f"font-family:monospace;font-weight:bold'>"
+            f"{tt_slack:.2f}ns</div></div>"
+            if tt_slack else
+            f"<div style='text-align:center'>"
+            f"<div style='color:#8b949e;font-size:0.65rem;"
+            f"font-family:monospace'>TT Slack</div>"
+            f"<div style='color:#8b949e'>—</div></div>",
+            unsafe_allow_html=True
+        )
+    with c4:
+        color = "#00ff9d" if ss_status=="MET" else "#ff3333"
+        st.markdown(
+            f"<div style='text-align:center'>"
+            f"<div style='color:#8b949e;font-size:0.65rem;"
+            f"font-family:monospace'>SS Slack</div>"
+            f"<div style='color:{color};font-size:1.3rem;"
+            f"font-family:monospace'>"
+            f"{ss_slack:.2f}ns</div></div>"
+            if ss_slack else
+            f"<div style='text-align:center'>"
+            f"<div style='color:#8b949e;font-size:0.65rem;"
+            f"font-family:monospace'>SS Slack</div>"
+            f"<div style='color:#8b949e'>—</div></div>",
+            unsafe_allow_html=True
+        )
+    with c5:
+        color = "#00ff9d" if ff_status=="MET" else "#ff3333"
+        st.markdown(
+            f"<div style='text-align:center'>"
+            f"<div style='color:#8b949e;font-size:0.65rem;"
+            f"font-family:monospace'>FF Slack</div>"
+            f"<div style='color:{color};font-size:1.3rem;"
+            f"font-family:monospace'>"
+            f"{ff_slack:.2f}ns</div></div>"
+            if ff_slack else
+            f"<div style='text-align:center'>"
+            f"<div style='color:#8b949e;font-size:0.65rem;"
+            f"font-family:monospace'>FF Slack</div>"
+            f"<div style='color:#8b949e'>—</div></div>",
+            unsafe_allow_html=True
+        )
+    with c6:
+        color = "#00ff9d" if gds_kb > 50 else "#ff3333"
+        st.markdown(
+            f"<div style='text-align:center'>"
+            f"<div style='color:#8b949e;font-size:0.65rem;"
+            f"font-family:monospace'>GDS</div>"
+            f"<div style='color:{color};font-size:1.3rem;"
+            f"font-family:monospace;font-weight:bold'>"
+            f"{gds_kb}KB</div></div>",
+            unsafe_allow_html=True
+        )
+
+    st.markdown("---")
+
+    # ── TABS FOR EACH VIEW ──
+    tab1, tab2, tab3, tab4, tab5 = st.tabs([
+        "📐 Netlist",
+        "📊 Waveforms",
+        "🔲 Layout",
+        "⏱️ Timing",
+        "📄 Reports"
+    ])
+
+    with tab1:
+        from netlist_viewer import render_netlist_streamlit
+        render_netlist_streamlit(selected_dir, design_name)
+
+    with tab2:
+        from waveform_display import render_waveform_streamlit
+        render_waveform_streamlit(selected_dir, design_name)
+
+    with tab3:
+        from layout_viewer import render_layout_streamlit
+        render_layout_streamlit(selected_dir, design_name)
+
+    with tab4:
+        from timing_viewer import render_timing_streamlit
+        render_timing_streamlit(selected_dir, design_name)
+
+    with tab5:
+        _render_reports_tab(results, design_name)
+
+
+def _render_reports_tab(results: Path, design_name: str):
+    """Show all report files for download."""
+    import streamlit as st
+
+    st.markdown("""
+    <div style="font-family:'Share Tech Mono',monospace;
+         font-size:0.7rem;letter-spacing:2px;
+         color:#00d4ff;margin-bottom:12px">
+    ▸ SIGN-OFF REPORTS
+    </div>""", unsafe_allow_html=True)
+
+    reports = {
+        "LVS Report":     "lvs_report_final.txt",
+        "DRC Report":     "drc_report.txt",
+        "Timing TT":      "sta_final.txt",
+        "Timing SS":      "sta_ss.txt",
+        "Timing FF":      "sta_ff.txt",
+        "IR Drop":        "ir_drop_vdd.txt",
+        "Coverage":       "coverage_report.txt",
+        "ERC":            "erc_report.txt",
+        "Antenna":        "antenna_report.txt",
+        "Formal Equiv":   "formal_equiv.log",
+        "Simulation Log": "simulation.log",
+    }
+
+    found_any = False
+    for report_name, fname in reports.items():
+        f = results / fname
+        if f.exists() and f.stat().st_size > 10:
+            found_any = True
+            size_kb = round(f.stat().st_size / 1024, 1)
+            col1, col2 = st.columns([3, 1])
+            with col1:
+                with st.expander(
+                    f"📋 {report_name} ({size_kb} KB)"
+                ):
+                    content = f.read_text(errors="ignore")
+                    st.code(content[:2000], language="text")
+                    if len(content) > 2000:
+                        st.caption(
+                            f"Showing first 2000 of "
+                            f"{len(content)} characters"
+                        )
+            with col2:
+                with open(f, "rb") as fh:
+                    st.download_button(
+                        f"⬇️",
+                        fh,
+                        file_name=fname,
+                        key=f"dl_{fname}"
+                    )
+
+    if not found_any:
+        st.info(
+            "No reports found. "
+            "Run the pipeline first to generate reports."
+        )
+
+    # PDF sign-off button
+    st.markdown("---")
+    if st.button(
+        "📄 Generate PDF Sign-Off Report",
+        type="primary"
+    ):
+        try:
+            from report_generator import generate_signoff_report
+            pdf = generate_signoff_report(
+                design_name, str(results)
+            )
+            if pdf.endswith(".pdf"):
+                with open(pdf, "rb") as fh:
+                    st.download_button(
+                        "⬇️ Download PDF Report",
+                        fh,
+                        file_name=Path(pdf).name,
+                        mime="application/pdf"
+                    )
+                st.success(f"Generated PDF report: {Path(pdf).name}")
+            else:
+                with open(pdf, "r") as fh:
+                    st.download_button(
+                        "⬇️ Download Text Report",
+                        fh.read(),
+                        file_name=Path(pdf).name,
+                        mime="text/plain"
+                    )
+                st.success(f"Generated text report: {Path(pdf).name}")
+        except Exception as e:
+            st.error(f"Failed to generate report: {e}")
 
 
 # ============================================================
