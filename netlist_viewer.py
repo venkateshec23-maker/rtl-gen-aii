@@ -300,6 +300,154 @@ def generate_graphviz_dot(info: NetlistInfo,
     return '\n'.join(lines)
 
 
+def render_netlist_plotly(info) -> None:
+    """
+    Render netlist using Plotly (no Graphviz needed).
+    Shows cell connections as interactive network.
+    """
+    import streamlit as st
+
+    if not info or not info.cells:
+        st.warning("No cells to display")
+        return
+
+    try:
+        import plotly.graph_objects as go
+        import math
+
+        # Layout cells in a grid
+        cells_to_show = info.cells[:40]
+        n = len(cells_to_show)
+        cols_count = math.ceil(math.sqrt(n))
+
+        # Node positions
+        x_nodes, y_nodes = [], []
+        labels, colors = [], []
+        hover_texts = []
+
+        cell_color_map = {
+            'dfxtp': '#4a90d9',
+            'xor2':  '#e74c3c',
+            'nand2': '#f39c12',
+            'nor2':  '#d35400',
+            'and2':  '#27ae60',
+            'or2':   '#2ecc71',
+            'inv':   '#9b59b6',
+            'mux':   '#1abc9c',
+            'maj3':  '#e67e22',
+            'buf':   '#3498db',
+            'fill':  '#7f8c8d',
+            'decap': '#95a5a6',
+        }
+
+        # Input nodes
+        for i, inp in enumerate(info.inputs[:6]):
+            x_nodes.append(-2)
+            y_nodes.append(i * 1.5)
+            labels.append(inp[:10])
+            colors.append('#00d4ff')
+            hover_texts.append(f"INPUT: {inp}")
+
+        # Cell nodes
+        for i, cell in enumerate(cells_to_show):
+            row = i // cols_count
+            col = i % cols_count
+            x_nodes.append(col * 1.8)
+            y_nodes.append(-row * 1.5)
+            short = cell.cell_type.replace(
+                'sky130_fd_sc_hd__', ''
+            )[:12]
+            labels.append(short)
+
+            c = '#586e75'
+            for key, color in cell_color_map.items():
+                if key in short:
+                    c = color
+                    break
+            colors.append(c)
+            hover_texts.append(
+                f"Cell: {cell.instance}<br>"
+                f"Type: {cell.cell_type}<br>"
+                f"Ports: {len(cell.ports)}"
+            )
+
+        # Output nodes
+        for i, out in enumerate(info.outputs[:6]):
+            x_nodes.append(cols_count * 1.8 + 2)
+            y_nodes.append(i * 1.5)
+            labels.append(out[:10])
+            colors.append('#00ff9d')
+            hover_texts.append(f"OUTPUT: {out}")
+
+        fig = go.Figure()
+
+        # Nodes
+        fig.add_trace(go.Scatter(
+            x=x_nodes, y=y_nodes,
+            mode='markers+text',
+            text=labels,
+            textposition='bottom center',
+            textfont=dict(
+                size=8, color='#c9d1d9',
+                family='Share Tech Mono'
+            ),
+            marker=dict(
+                size=[20 if 'dfxtp' in h or 'INPUT' in h
+                      or 'OUTPUT' in h else 12
+                      for h in hover_texts],
+                color=colors,
+                line=dict(width=1, color='#30363d')
+            ),
+            hovertext=hover_texts,
+            hoverinfo='text'
+        ))
+
+        fig.update_layout(
+            title=dict(
+                text=f"Netlist — {info.module_name} "
+                     f"({len(info.cells)} cells)",
+                font=dict(color='#c9d1d9', size=12)
+            ),
+            paper_bgcolor='#0d1117',
+            plot_bgcolor='#161b22',
+            showlegend=False,
+            xaxis=dict(
+                showgrid=False,
+                showticklabels=False,
+                zeroline=False
+            ),
+            yaxis=dict(
+                showgrid=False,
+                showticklabels=False,
+                zeroline=False
+            ),
+            height=500
+        )
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        if len(info.cells) > 40:
+            st.caption(
+                f"Showing 40 of {len(info.cells)} cells"
+            )
+
+    except ImportError:
+        # Pure text fallback — always works
+        st.markdown("**Cell List**")
+        import pandas as pd
+        data = [{
+            "Instance": c.instance,
+            "Cell Type": c.cell_type.replace(
+                'sky130_fd_sc_hd__', ''
+            ),
+            "Ports": len(c.ports)
+        } for c in info.cells[:50]]
+        st.dataframe(
+            pd.DataFrame(data),
+            use_container_width=True
+        )
+
+
 def render_netlist_streamlit(results_dir: str,
                               design_name: str):
     """
@@ -371,24 +519,8 @@ def render_netlist_streamlit(results_dir: str,
                 </span>
             </div>""", unsafe_allow_html=True)
 
-    # Graphviz schematic
-    st.markdown("**Schematic (first 50 cells)**")
-    try:
-        dot = generate_graphviz_dot(info, max_cells=50)
-        st.graphviz_chart(dot)
-    except Exception as e:
-        st.info(
-            f"Graphviz not available: {e}. "
-            "Install: pip install graphviz"
-        )
-        # Fallback: show as text
-        st.code(
-            '\n'.join([
-                f"{c.instance}: {c.cell_type.replace('sky130_fd_sc_hd__','')}"
-                for c in info.cells[:20]
-            ]),
-            language="text"
-        )
+    st.markdown("**Netlist Schematic**")
+    render_netlist_plotly(info)
 
     # Download netlist
     with open(netlist_path, "rb") as f:

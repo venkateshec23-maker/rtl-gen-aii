@@ -103,6 +103,134 @@ def parse_vcd(vcd_path: str,
     }
 
 
+def find_vcd_for_design(
+    results_dir: str,
+    design_name: str
+) -> str | None:
+    """
+    Find VCD file using multiple search strategies.
+    VCD can be in: run dir, design dir, results dir,
+    or any parent.
+    """
+    from pathlib import Path
+
+    search_paths = [
+        Path(results_dir),
+        Path(results_dir).parent,
+        Path(r"C:\tools\OpenLane\results"),
+        Path(r"C:\tools\OpenLane\designs") / design_name,
+        Path(r"C:\tools\OpenLane\designs") / design_name,
+    ]
+
+    # Also check runs directory for this design
+    runs = Path(r"C:\tools\OpenLane\runs")
+    if runs.exists():
+        design_runs = sorted(
+            [d for d in runs.glob(f"{design_name}*")
+             if d.is_dir()],
+            key=lambda x: x.stat().st_mtime,
+            reverse=True
+        )
+        search_paths.extend(design_runs[:3])
+
+    # Search all paths
+    for search_path in search_paths:
+        if not search_path.exists():
+            continue
+        # Direct search first
+        for vcd_name in [
+            "trace.vcd",
+            f"{design_name}.vcd",
+            "simulation.vcd",
+            "waveform.vcd"
+        ]:
+            vcd = search_path / vcd_name
+            if vcd.exists() and vcd.stat().st_size > 100:
+                return str(vcd)
+        # Recursive search (limited depth)
+        for vcd in list(search_path.glob("*.vcd"))[:3]:
+            if vcd.stat().st_size > 100:
+                return str(vcd)
+
+    return None
+
+
+def _run_simulation_get_vcd(
+    design_name: str,
+    results_dir: str
+) -> str | None:
+    """
+    Run RTL simulation to generate VCD.
+    Used when VCD is missing from run directory.
+    """
+    import subprocess
+    from pathlib import Path
+
+    design_dir = Path(r"C:\tools\OpenLane\designs") / design_name
+    rtl  = design_dir / f"{design_name}.v"
+    tb   = design_dir / f"{design_name}_tb.v"
+
+    if not rtl.exists() or not tb.exists():
+        return None
+
+    cmd = [
+        "docker", "run", "--rm",
+        "-v", r"C:\tools\OpenLane:/work",
+        "efabless/openlane:latest",
+        "bash", "-c",
+        f"cd /work/designs/{design_name} && "
+        f"iverilog -o /tmp/sim "
+        f"{design_name}.v {design_name}_tb.v && "
+        f"vvp /tmp/sim 2>&1"
+    ]
+
+    try:
+        r = subprocess.run(
+            cmd, capture_output=True,
+            text=True, timeout=60
+        )
+        # VCD written to design dir
+        vcd = design_dir / "trace.vcd"
+        if vcd.exists() and vcd.stat().st_size > 100:
+            return str(vcd)
+    except Exception:
+        pass
+    return None
+
+
+def _show_simulation_log(results_dir: str):
+    """Show simulation log as fallback."""
+    import streamlit as st
+    from pathlib import Path
+
+    log = Path(results_dir) / "simulation.log"
+    if log.exists():
+        content = log.read_text(errors="ignore")
+        lines = content.split('\n')
+        for line in lines:
+            if 'PASS' in line:
+                st.markdown(
+                    f"<span style='color:#00ff9d;"
+                    f"font-family:monospace'>"
+                    f"✓ {line}</span>",
+                    unsafe_allow_html=True
+                )
+            elif 'FAIL' in line:
+                st.markdown(
+                    f"<span style='color:#ff3333;"
+                    f"font-family:monospace'>"
+                    f"✗ {line}</span>",
+                    unsafe_allow_html=True
+                )
+            elif line.strip():
+                st.markdown(
+                    f"<span style='color:#8b949e;"
+                    f"font-family:monospace'>"
+                    f"{line}</span>",
+                    unsafe_allow_html=True
+                )
+
+
 def render_waveform_streamlit(results_dir: str,
                                design_name: str):
     """
@@ -119,25 +247,29 @@ def render_waveform_streamlit(results_dir: str,
     ▸ SIMULATION WAVEFORMS — TIMING DIAGRAM
     </div>""", unsafe_allow_html=True)
 
-    results = Path(results_dir)
+    vcd_path = find_vcd_for_design(results_dir, design_name)
 
-    # Find VCD file
-    vcd_files = list(results.glob("*.vcd")) + \
-                list(results.glob("trace.vcd"))
-    if not vcd_files:
-        # Also check designs directory
-        design_dir = Path(r"C:\tools\OpenLane\designs") / design_name
-        vcd_files  = list(design_dir.glob("*.vcd")) if \
-                     design_dir.exists() else []
+    if not vcd_path:
+        # Generate a VCD by running simulation NOW
+        st.info("No VCD found. Running simulation...")
+        vcd_path = _run_simulation_get_vcd(
+            design_name, results_dir
+        )
 
-    if not vcd_files:
-        st.info("No VCD waveform file found for this run.")
-        st.caption("VCD is generated during RTL simulation.")
+    if not vcd_path:
+        st.warning(
+            "No simulation waveform available. "
+            "This happens when:\n"
+            "1. Design was loaded from cache\n"
+            "2. Simulation was skipped\n\n"
+            "Run the design again to generate waveforms."
+        )
+        # Show simulation log instead
+        _show_simulation_log(results_dir)
         return
 
-    vcd_path = vcd_files[0]
-    st.caption(f"Source: {vcd_path.name} "
-               f"({vcd_path.stat().st_size//1024} KB)")
+    st.caption(f"Source: {Path(vcd_path).name} "
+               f"({Path(vcd_path).stat().st_size//1024} KB)")
 
     # Parse VCD
     with st.spinner("Parsing waveform..."):
