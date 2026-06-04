@@ -306,85 +306,171 @@ def render_waveform_streamlit(results_dir: str,
 
         sig_order = sig_order[:16]  # max 16 signals
 
+        bus_h = 0.35
+        wire_h = 0.35
+
         for i, sig_name in enumerate(sig_order):
             sig = signals[sig_name]
             if not sig.values:
                 continue
 
-            # Build time series
-            times  = [0]
-            values = [0]
-
-            for t, v in sig.values:
-                if t > max_time:
-                    break
-                try:
-                    val = int(v, 2) if v not in ('x','z') else 0
-                    # Normalize to 0-1 for display
-                    max_val = (2 ** sig.width) - 1 if sig.width > 0 else 1
-                    norm_val = val / max_val if max_val > 0 else 0
-                except (ValueError, ZeroDivisionError):
-                    norm_val = 0
-
-                # Add step (previous value held)
-                if times:
-                    times.append(t)
-                    values.append(values[-1])
-                times.append(t)
-                values.append(norm_val + i * 1.5)
-
-            times.append(max_time)
-            values.append(values[-1] if values else i * 1.5)
+            yc = i * 1.5  # vertical spacing center
 
             # Color by signal type
             if 'clk' in sig_name.lower():
-                color = '#00d4ff'
-            elif 'reset' in sig_name.lower():
-                color = '#ff3333'
+                color = '#00d4ff'  # Bright Cyan for clock
+            elif 'reset' in sig_name.lower() or 'rst' in sig_name.lower():
+                color = '#ff3333'  # Red for reset
             elif 'out' in sig_name.lower() or \
                  sig_name.startswith('sum') or \
-                 sig_name.startswith('result'):
-                color = '#00ff9d'
+                 sig_name.startswith('result') or \
+                 sig_name.startswith('count'):
+                color = '#00ff9d'  # Bright Green for outputs
             else:
-                color = '#ffd700'
+                color = '#ffffff'  # White for inputs/internal
 
-            fig.add_trace(go.Scatter(
-                x=times, y=values,
-                mode='lines',
-                name=sig_name,
-                line=dict(color=color, width=1.5,
-                          shape='hv'),
-                showlegend=True
-            ))
+            # Create standard time change points up to max_time
+            change_points = []
+            for t, v in sig.values:
+                if t > max_time:
+                    break
+                change_points.append((t, v))
 
+            # Ensure we start at time 0
+            if not change_points or change_points[0][0] > 0:
+                initial_val = sig.values[0][1] if sig.values else '0'
+                change_points.insert(0, (0, initial_val))
+
+            # End at max_time
+            change_points.append((max_time, change_points[-1][1]))
+
+            # Render Multi-Bit Bus Signal (Vivado/Cadence style Hexagons)
+            if sig.width > 1:
+                # Group consecutive identical values to draw clean segments
+                segments = []
+                t_prev, val_prev = change_points[0]
+                
+                for idx in range(1, len(change_points)):
+                    t_curr, val_curr = change_points[idx]
+                    if val_curr != val_prev or t_curr == max_time:
+                        segments.append((t_prev, t_curr, val_prev))
+                        t_prev = t_curr
+                        val_prev = val_curr
+
+                # Draw each bus segment
+                for t1, t2, val in segments:
+                    if t2 <= t1:
+                        continue
+
+                    # Parse and format the value to Hexadecimal
+                    try:
+                        if 'x' in val.lower() or 'z' in val.lower():
+                            txt = val.upper()
+                        else:
+                            int_val = int(val, 2)
+                            txt = f"{hex(int_val)[2:].upper()}"
+                    except Exception:
+                        txt = val
+
+                    # Crossover slope width (0.4ns or 10% of segment)
+                    delta = min(0.3, (t2 - t1) / 3.0)
+
+                    # Trace hexagonal shape
+                    hx = [t1, t1 + delta, t2 - delta, t2, t2 - delta, t1 + delta, t1]
+                    hy = [yc, yc + bus_h, yc + bus_h, yc, yc - bus_h, yc - bus_h, yc]
+
+                    fig.add_trace(go.Scatter(
+                        x=hx, y=hy,
+                        fill="toself",
+                        fillcolor="#111622",
+                        line=dict(color='#e2e8f0', width=1.2),
+                        mode='lines',
+                        hoverinfo='text',
+                        hovertext=f"{sig_name}: {txt} at {t1}-{t2} {timescale}",
+                        name=sig_name,
+                        showlegend=(t1 == 0)
+                    ))
+
+                    # Value Text inside the Hexagon
+                    if (t2 - t1) > 2 * delta:
+                        fig.add_trace(go.Scatter(
+                            x=[(t1 + t2)/2], y=[yc],
+                            text=[txt[:8]],
+                            mode='text',
+                            textfont=dict(color='#ffd700', size=8, family='Share Tech Mono', weight='bold'),
+                            showlegend=False,
+                            hoverinfo='none'
+                        ))
+
+            # Render Single-Bit Signal (Crisp step lines)
+            else:
+                times = []
+                values = []
+                
+                for t, val in change_points:
+                    try:
+                        v_num = int(val, 2) if val not in ('x', 'z') else 0
+                    except ValueError:
+                        v_num = 0
+                    
+                    # Normalize y position
+                    y_val = yc + wire_h if v_num == 1 else yc - wire_h
+                    
+                    if times:
+                        # Hold previous value up to current change time (hv step)
+                        times.append(t)
+                        values.append(values[-1])
+                        
+                    times.append(t)
+                    values.append(y_val)
+
+                fig.add_trace(go.Scatter(
+                    x=times, y=values,
+                    mode='lines',
+                    name=sig_name,
+                    line=dict(color=color, width=1.8),
+                    hoverinfo='text',
+                    hovertext=f"{sig_name} at change points",
+                    showlegend=True
+                ))
+
+        # Layout styling: Dark grid similar to Vivado Simulation view
         fig.update_layout(
             title=dict(
-                text=f"Simulation Waveforms — {design_name}",
-                font=dict(color='#c9d1d9')
+                text=f"Simulation Timing Diagram — {design_name}",
+                font=dict(color='#c9d1d9', size=13, family='Share Tech Mono')
             ),
-            paper_bgcolor='#0d1117',
-            plot_bgcolor='#161b22',
+            paper_bgcolor='#080c14',
+            plot_bgcolor='#0b0f19',
             font=dict(
                 family='Share Tech Mono',
                 color='#c9d1d9'
             ),
             xaxis=dict(
                 title=f"Time ({timescale})",
-                gridcolor='#30363d',
-                color='#8b949e'
+                gridcolor='#1e293b',
+                color='#8b949e',
+                showgrid=True,
+                zeroline=False,
+                range=[0, max_time]
             ),
             yaxis=dict(
                 title="Signals",
-                gridcolor='#30363d',
+                gridcolor='#1e293b',
                 tickvals=[i * 1.5 for i in range(len(sig_order))],
-                ticktext=sig_order[:16],
-                color='#8b949e'
+                ticktext=sig_order,
+                color='#8b949e',
+                showgrid=True,
+                zeroline=False,
+                range=[-1.0, len(sig_order) * 1.5 - 0.5]
             ),
             legend=dict(
-                bgcolor='#1c2128',
-                bordercolor='#30363d'
+                bgcolor='#080c14',
+                bordercolor='#2d3748',
+                font=dict(size=8, color='#8b949e')
             ),
-            height=max(300, len(sig_order) * 40 + 100)
+            height=max(350, len(sig_order) * 45 + 100),
+            margin=dict(l=50, r=20, t=50, b=50)
         )
 
         st.plotly_chart(fig, use_container_width=True)

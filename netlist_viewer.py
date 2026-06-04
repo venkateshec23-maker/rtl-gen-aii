@@ -303,7 +303,8 @@ def generate_graphviz_dot(info: NetlistInfo,
 def render_netlist_plotly(info) -> None:
     """
     Render netlist using Plotly (no Graphviz needed).
-    Shows cell connections as interactive network.
+    Shows cells as rectangular blocks, pins, and orthogonal routed wires
+    similar to Cadence Schematic Viewer or Vivado RTL Schematic.
     """
     import streamlit as st
 
@@ -313,122 +314,441 @@ def render_netlist_plotly(info) -> None:
 
     try:
         import plotly.graph_objects as go
-        import math
+        import re
 
-        # Layout cells in a grid
-        cells_to_show = info.cells[:40]
-        n = len(cells_to_show)
-        cols_count = math.ceil(math.sqrt(n))
+        # Display at most 45 cells to keep diagram clean and readable
+        cells_to_show = info.cells[:45]
 
-        # Node positions
-        x_nodes, y_nodes = [], []
-        labels, colors = [], []
-        hover_texts = []
+        # 1. Topological Sorting / Levelization
+        net_drivers = {}  # net_name -> (driver_type, inst_name, pin_name)
+        for inp in info.inputs:
+            net_drivers[inp] = ('input', inp, None)
+            net_clean = re.sub(r'[^a-zA-Z0-9_]', '_', inp)
+            net_drivers[net_clean] = ('input', inp, None)
 
-        cell_color_map = {
-            'dfxtp': '#4a90d9',
-            'xor2':  '#e74c3c',
-            'nand2': '#f39c12',
-            'nor2':  '#d35400',
-            'and2':  '#27ae60',
-            'or2':   '#2ecc71',
-            'inv':   '#9b59b6',
-            'mux':   '#1abc9c',
-            'maj3':  '#e67e22',
-            'buf':   '#3498db',
-            'fill':  '#7f8c8d',
-            'decap': '#95a5a6',
-        }
+        for cell in cells_to_show:
+            for pin, net in cell.ports.items():
+                if is_ignored_pin(pin):
+                    continue
+                if is_output_pin(pin):
+                    net_drivers[net] = ('cell', cell.instance, pin)
+                    net_clean = re.sub(r'[^a-zA-Z0-9_]', '_', net)
+                    net_drivers[net_clean] = ('cell', cell.instance, pin)
 
-        # Input nodes
-        for i, inp in enumerate(info.inputs[:6]):
-            x_nodes.append(-2)
-            y_nodes.append(i * 1.5)
-            labels.append(inp[:10])
-            colors.append('#00d4ff')
-            hover_texts.append(f"INPUT: {inp}")
+        # Assign levels
+        levels = {}  # inst_name -> level
+        for inp in info.inputs:
+            levels[f"in_{inp}"] = 0
 
-        # Cell nodes
-        for i, cell in enumerate(cells_to_show):
-            row = i // cols_count
-            col = i % cols_count
-            x_nodes.append(col * 1.8)
-            y_nodes.append(-row * 1.5)
-            short = cell.cell_type.replace(
-                'sky130_fd_sc_hd__', ''
-            )[:12]
-            labels.append(short)
+        cells_to_assign = list(cells_to_show)
+        max_iter = 100
+        itr = 0
+        assigned_any = True
 
-            c = '#586e75'
-            for key, color in cell_color_map.items():
-                if key in short:
-                    c = color
-                    break
-            colors.append(c)
-            hover_texts.append(
-                f"Cell: {cell.instance}<br>"
-                f"Type: {cell.cell_type}<br>"
-                f"Ports: {len(cell.ports)}"
-            )
+        while cells_to_assign and itr < max_iter and assigned_any:
+            assigned_any = False
+            next_cells = []
+            for cell in cells_to_assign:
+                input_levels = []
+                for pin, net in cell.ports.items():
+                    if is_ignored_pin(pin) or is_output_pin(pin):
+                        continue
+                    driver = net_drivers.get(net)
+                    if not driver:
+                        net_clean = re.sub(r'[^a-zA-Z0-9_]', '_', net)
+                        driver = net_drivers.get(net_clean)
+                        if not driver:
+                            base_net = re.sub(r'\[\d+\]', '', net)
+                            driver = net_drivers.get(base_net)
+                    
+                    if driver:
+                        drv_type, drv_name, _ = driver
+                        if drv_type == 'input':
+                            input_levels.append(levels.get(f"in_{drv_name}", 0))
+                        elif drv_type == 'cell':
+                            if drv_name in levels:
+                                input_levels.append(levels[drv_name])
+                
+                if input_levels:
+                    levels[cell.instance] = max(input_levels) + 1
+                    assigned_any = True
+                else:
+                    next_cells.append(cell)
 
-        # Output nodes
-        for i, out in enumerate(info.outputs[:6]):
-            x_nodes.append(cols_count * 1.8 + 2)
-            y_nodes.append(i * 1.5)
-            labels.append(out[:10])
-            colors.append('#00ff9d')
-            hover_texts.append(f"OUTPUT: {out}")
+            if not assigned_any and next_cells:
+                # Force assign to break cycles or floating inputs
+                current_max = max(levels.values()) if levels else 0
+                cell = next_cells.pop(0)
+                levels[cell.instance] = current_max + 1
+                assigned_any = True
+
+            cells_to_assign = next_cells
+            itr += 1
+
+        # Catch remaining
+        for cell in cells_to_assign:
+            levels[cell.instance] = 1
+
+        # Max cell level
+        max_cell_lvl = max(levels.values()) if levels else 0
+        out_lvl = max_cell_lvl + 2
+
+        # Group nodes by level
+        level_groups = {}
+        for inp in info.inputs:
+            level_groups.setdefault(0, []).append(f"in_{inp}")
+        for cell in cells_to_show:
+            lvl = levels.get(cell.instance, 1)
+            level_groups.setdefault(lvl, []).append(cell.instance)
+        for out in info.outputs:
+            level_groups.setdefault(out_lvl, []).append(f"out_{out}")
+
+        # Compute Coordinates on a left-to-right grid
+        coords = {}  # node -> (x, y)
+        x_spacing = 4.0
+        y_spacing = 2.0
+
+        for lvl, nodes in sorted(level_groups.items()):
+            M = len(nodes)
+            x = lvl * x_spacing
+            for idx, node in enumerate(nodes):
+                # Center vertically around y=0
+                y = (idx - (M - 1) / 2.0) * y_spacing
+                coords[node] = (x, y)
 
         fig = go.Figure()
 
-        # Nodes
+        # Cell sizing constants
+        box_w = 0.8
+        box_h = 0.6
+
+        # Draw Cells, Pins, and inside pin labels
+        pin_coords = {}  # (node, pin) -> (x, y)
+        cell_color_map = {
+            'dfxtp': ('#1a365d', '#63b3ed'),   # Regs: Dark Blue with blue border
+            'xor2':  ('#2c3e50', '#e53e3e'),   # Gates: Dark Slate with red border
+            'xnor2': ('#2c3e50', '#e53e3e'),
+            'nand2': ('#2d3748', '#ed8936'),   # Gates: Orange border
+            'nor2':  ('#2d3748', '#ed8936'),
+            'and2':  ('#2c3e50', '#4fd1c5'),   # Gates: Teal border
+            'or2':   ('#2c3e50', '#4fd1c5'),
+            'inv':   ('#4a1259', '#d6bcfa'),   # Inverters: Dark Purple with light purple border
+            'clkbuf':('#1a365d', '#63b3ed'),
+            'mux':   ('#1a5235', '#68d391'),   # Muxes: Green border
+            'fill':  ('#2d3748', '#718096'),
+            'decap': ('#2d3748', '#718096'),
+        }
+
+        # Wires (Nets) traces setup
+        wire_x = []
+        wire_y = []
+        clk_wire_x = []
+        clk_wire_y = []
+        rst_wire_x = []
+        rst_wire_y = []
+
+        # Pin Text Labels setup
+        pin_lbl_x = []
+        pin_lbl_y = []
+        pin_lbl_txt = []
+        pin_lbl_align = []
+
+        for cell in cells_to_show:
+            xc, yc = coords[cell.instance]
+            short_type = cell.cell_type.replace('sky130_fd_sc_hd__', '')
+
+            # Determine colors
+            bg_color, border_color = '#1a202c', '#cbd5e0'
+            for key, val in cell_color_map.items():
+                if key in short_type:
+                    bg_color, border_color = val
+                    break
+
+            # 2. Draw Cell Rectangle (Plotly Polygon)
+            rx = [xc - box_w, xc + box_w, xc + box_w, xc - box_w, xc - box_w]
+            ry = [yc - box_h, yc - box_h, yc + box_h, yc + box_h, yc - box_h]
+            fig.add_trace(go.Scatter(
+                x=rx, y=ry,
+                fill="toself",
+                fillcolor=bg_color,
+                line=dict(color=border_color, width=1.5),
+                mode='lines',
+                hoverinfo='text',
+                hovertext=f"Instance: {cell.instance}<br>Type: {cell.cell_type}",
+                showlegend=False
+            ))
+
+            # Draw Cell Type and Instance Text labels inside the box
+            fig.add_trace(go.Scatter(
+                x=[xc], y=[yc + 0.15],
+                text=[short_type[:12]],
+                mode='text',
+                textfont=dict(size=9, color='#ffffff', family='Share Tech Mono', weight='bold'),
+                showlegend=False,
+                hoverinfo='none'
+            ))
+            fig.add_trace(go.Scatter(
+                x=[xc], y=[yc - 0.25],
+                text=[cell.instance],
+                mode='text',
+                textfont=dict(size=7, color='#718096', family='Share Tech Mono'),
+                showlegend=False,
+                hoverinfo='none'
+            ))
+
+            # Separate inputs and outputs
+            c_inputs = []
+            c_outputs = []
+            for pin in cell.ports.keys():
+                if is_ignored_pin(pin):
+                    continue
+                if is_output_pin(pin):
+                    c_outputs.append(pin)
+                else:
+                    c_inputs.append(pin)
+
+            # 3. Space and draw Input Pins (on left edge)
+            xl = xc - box_w
+            if c_inputs:
+                p_in = len(c_inputs)
+                for idx, pin in enumerate(c_inputs):
+                    yp = yc + (idx - (p_in - 1) / 2.0) * (2 * box_h / (p_in + 1 if p_in > 1 else 2))
+                    pin_coords[(cell.instance, pin)] = (xl, yp)
+                    
+                    # Draw pin marker
+                    fig.add_trace(go.Scatter(
+                        x=[xl], y=[yp],
+                        mode='markers',
+                        marker=dict(size=5, color='#00d4ff', symbol='square'),
+                        showlegend=False,
+                        hoverinfo='text',
+                        hovertext=f"Pin: {pin} (Input)<br>Net: {cell.ports[pin]}"
+                    ))
+
+                    # Pin Name text (inside box, left-aligned)
+                    pin_lbl_x.append(xl + 0.15)
+                    pin_lbl_y.append(yp)
+                    pin_lbl_txt.append(pin)
+                    pin_lbl_align.append('middle right')
+
+            # 4. Space and draw Output Pins (on right edge)
+            xr = xc + box_w
+            if c_outputs:
+                p_out = len(c_outputs)
+                for idx, pin in enumerate(c_outputs):
+                    yp = yc + (idx - (p_out - 1) / 2.0) * (2 * box_h / (p_out + 1 if p_out > 1 else 2))
+                    pin_coords[(cell.instance, pin)] = (xr, yp)
+                    
+                    # Draw pin marker
+                    fig.add_trace(go.Scatter(
+                        x=[xr], y=[yp],
+                        mode='markers',
+                        marker=dict(size=5, color='#00ff9d', symbol='square'),
+                        showlegend=False,
+                        hoverinfo='text',
+                        hovertext=f"Pin: {pin} (Output)<br>Net: {cell.ports[pin]}"
+                    ))
+
+                    # Pin Name text (inside box, right-aligned)
+                    pin_lbl_x.append(xr - 0.15)
+                    pin_lbl_y.append(yp)
+                    pin_lbl_txt.append(pin)
+                    pin_lbl_align.append('middle left')
+
+        # 5. Draw Primary Input Ports
+        for inp in info.inputs:
+            x, y = coords[f"in_{inp}"]
+            pin_coords[('INPUT', inp)] = (x, y)
+            
+            # Draw port symbol (invtriangle)
+            fig.add_trace(go.Scatter(
+                x=[x], y=[y],
+                mode='markers+text',
+                marker=dict(size=12, color='#00d4ff', symbol='triangle-right'),
+                text=[inp],
+                textposition='middle left',
+                textfont=dict(size=8, color='#00d4ff', family='Share Tech Mono'),
+                showlegend=False,
+                hoverinfo='text',
+                hovertext=f"Input Port: {inp}"
+            ))
+
+        # 6. Draw Primary Output Ports
+        for out in info.outputs:
+            x, y = coords[f"out_{out}"]
+            pin_coords[('OUTPUT', out)] = (x, y)
+            
+            # Draw port symbol (triangle)
+            fig.add_trace(go.Scatter(
+                x=[x], y=[y],
+                mode='markers+text',
+                marker=dict(size=12, color='#00ff9d', symbol='triangle-right'),
+                text=[out],
+                textposition='middle right',
+                textfont=dict(size=8, color='#00ff9d', family='Share Tech Mono'),
+                showlegend=False,
+                hoverinfo='text',
+                hovertext=f"Output Port: {out}"
+            ))
+
+        # Draw Pin text labels inside cells
         fig.add_trace(go.Scatter(
-            x=x_nodes, y=y_nodes,
-            mode='markers+text',
-            text=labels,
-            textposition='bottom center',
-            textfont=dict(
-                size=8, color='#c9d1d9',
-                family='Share Tech Mono'
-            ),
-            marker=dict(
-                size=[20 if 'dfxtp' in h or 'INPUT' in h
-                      or 'OUTPUT' in h else 12
-                      for h in hover_texts],
-                color=colors,
-                line=dict(width=1, color='#30363d')
-            ),
-            hovertext=hover_texts,
-            hoverinfo='text'
+            x=pin_lbl_x, y=pin_lbl_y,
+            text=pin_lbl_txt,
+            mode='text',
+            textposition='middle right',
+            textfont=dict(size=6, color='#a0aec0', family='Share Tech Mono'),
+            showlegend=False,
+            hoverinfo='none'
         ))
 
+        # 7. Orthogonal Routing for Wires (Nets)
+        for cell in cells_to_show:
+            for pin, net in cell.ports.items():
+                if is_ignored_pin(pin) or is_output_pin(pin):
+                    continue
+
+                # Find driver node/pin for this net
+                driver = net_drivers.get(net)
+                if not driver:
+                    net_clean = re.sub(r'[^a-zA-Z0-9_]', '_', net)
+                    driver = net_drivers.get(net_clean)
+                    if not driver:
+                        base_net = re.sub(r'\[\d+\]', '', net)
+                        driver = net_drivers.get(base_net)
+
+                if driver:
+                    drv_type, drv_name, drv_pin = driver
+                    
+                    # Get driver coordinates
+                    if drv_type == 'input':
+                        drv_pt = pin_coords.get(('INPUT', drv_name))
+                    elif drv_type == 'cell':
+                        drv_pt = pin_coords.get((drv_name, drv_pin))
+                    else:
+                        drv_pt = None
+
+                    # Get sink coordinates (the input pin of the current cell)
+                    snk_pt = pin_coords.get((cell.instance, pin))
+
+                    if drv_pt and snk_pt:
+                        x1, y1 = drv_pt
+                        x2, y2 = snk_pt
+
+                        # Orthogonal routing coordinates
+                        x_mid = (x1 + x2) / 2.0
+                        wx = [x1, x_mid, x_mid, x2]
+                        wy = [y1, y1, y2, y2]
+
+                        # Classify wire color
+                        if 'clk' in net.lower():
+                            clk_wire_x.extend(wx + [None])
+                            clk_wire_y.extend(wy + [None])
+                        elif 'reset' in net.lower() or 'rst' in net.lower():
+                            rst_wire_x.extend(wx + [None])
+                            rst_wire_y.extend(wy + [None])
+                        else:
+                            wire_x.extend(wx + [None])
+                            wire_y.extend(wy + [None])
+
+        # 8. Draw Output Ports connection to their drivers
+        for out in info.outputs:
+            driver = net_drivers.get(out)
+            if not driver:
+                # Slices check
+                for net_name, drv in net_drivers.items():
+                    if re.sub(r'\[\d+\]', '', net_name) == out:
+                        driver = drv
+                        break
+
+            if driver:
+                drv_type, drv_name, drv_pin = driver
+                if drv_type == 'input':
+                    drv_pt = pin_coords.get(('INPUT', drv_name))
+                elif drv_type == 'cell':
+                    drv_pt = pin_coords.get((drv_name, drv_pin))
+                else:
+                    drv_pt = None
+
+                snk_pt = pin_coords.get(('OUTPUT', out))
+
+                if drv_pt and snk_pt:
+                    x1, y1 = drv_pt
+                    x2, y2 = snk_pt
+                    x_mid = (x1 + x2) / 2.0
+                    wx = [x1, x_mid, x_mid, x2]
+                    wy = [y1, y1, y2, y2]
+                    wire_x.extend(wx + [None])
+                    wire_y.extend(wy + [None])
+
+        # Add all wire traces to the figure
+        # Normal Wires (Slate Gray)
+        if wire_x:
+            fig.add_trace(go.Scatter(
+                x=wire_x, y=wire_y,
+                mode='lines',
+                line=dict(color='#718096', width=1.0),
+                hoverinfo='none',
+                name='Nets',
+                showlegend=False
+            ))
+
+        # Clock Nets (Cyan dashed line)
+        if clk_wire_x:
+            fig.add_trace(go.Scatter(
+                x=clk_wire_x, y=clk_wire_y,
+                mode='lines',
+                line=dict(color='#00d4ff', width=1.2, dash='dash'),
+                hoverinfo='none',
+                name='Clock Nets',
+                showlegend=True
+            ))
+
+        # Reset Nets (Red line)
+        if rst_wire_x:
+            fig.add_trace(go.Scatter(
+                x=rst_wire_x, y=rst_wire_y,
+                mode='lines',
+                line=dict(color='#e53e3e', width=1.2),
+                hoverinfo='none',
+                name='Reset Nets',
+                showlegend=True
+            ))
+
+        # Figure styling layout - clean, black navy CAD board background
         fig.update_layout(
             title=dict(
-                text=f"Netlist — {info.module_name} "
-                     f"({len(info.cells)} cells)",
-                font=dict(color='#c9d1d9', size=12)
+                text=f"RTL Schematic — {info.module_name} ({len(info.cells)} cells)",
+                font=dict(color='#c9d1d9', size=13, family='Share Tech Mono')
             ),
-            paper_bgcolor='#0d1117',
-            plot_bgcolor='#161b22',
-            showlegend=False,
+            paper_bgcolor='#080c14',
+            plot_bgcolor='#0b0f19',
+            showlegend=True,
+            legend=dict(
+                bgcolor='#080c14',
+                bordercolor='#2d3748',
+                font=dict(size=8, color='#8b949e')
+            ),
             xaxis=dict(
                 showgrid=False,
                 showticklabels=False,
-                zeroline=False
+                zeroline=False,
+                range=[-1, out_lvl * x_spacing + 1]
             ),
             yaxis=dict(
                 showgrid=False,
                 showticklabels=False,
                 zeroline=False
             ),
-            height=500
+            height=600,
+            margin=dict(l=20, r=20, t=50, b=20)
         )
 
         st.plotly_chart(fig, use_container_width=True)
 
-        if len(info.cells) > 40:
+        if len(info.cells) > 45:
             st.caption(
-                f"Showing 40 of {len(info.cells)} cells"
+                f"Showing 45 levelized cells of {len(info.cells)} total cell instances"
             )
 
     except ImportError:
