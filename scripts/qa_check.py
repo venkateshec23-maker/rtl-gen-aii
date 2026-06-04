@@ -194,7 +194,7 @@ class QualityChecker:
         print(f"QUALITY ASSURANCE REPORT: {module_name}")
         print("=" * 70)
         
-        print(f"\nOverall: {'PASSED ✓' if results['passed'] else 'FAILED ✗'}")
+        print(f"\nOverall: {'PASSED' if results['passed'] else 'FAILED'}")
         print(f"Quality Score: {results['score']}/100")
         
         if results['issues']:
@@ -211,7 +211,7 @@ class QualityChecker:
                 icon = severity_icon.get(issue['severity'], '•')
                 print(f"{icon} [{issue['category']}] {issue['message']}")
         else:
-            print("\n✓ No issues found!")
+            print("\nNo issues found!")
         
         print("=" * 70)
 

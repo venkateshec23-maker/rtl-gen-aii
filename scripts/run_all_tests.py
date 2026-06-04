@@ -53,10 +53,10 @@ def run_self_tests():
         result = subprocess.run([sys.executable, module], capture_output=True, env=env)
         
         if result.returncode == 0:
-            print("  ✓ PASSED")
+            print("  PASSED")
             passed += 1
         else:
-            print("  ✗ FAILED")
+            print("  FAILED")
             failed += 1
             if result.stderr:
                 print(f"  Error: {result.stderr.decode()[:200]}")
@@ -89,10 +89,10 @@ def run_integration_tests():
             result = subprocess.run([sys.executable, test_file], capture_output=True, env=env)
             
             if result.returncode == 0:
-                print("  ✓ PASSED")
+                print("  PASSED")
                 passed += 1
             else:
-                print("  ✗ FAILED")
+                print("  FAILED")
                 failed += 1
         else:
             print(f"\n{test_file}: SKIPPED (not found)")
@@ -134,16 +134,16 @@ def main():
     print("*" * 70)
     
     for test_name, passed in results.items():
-        status = "✓ PASSED" if passed else "✗ FAILED"
+        status = "PASSED" if passed else "FAILED"
         print(f"{test_name}: {status}")
     
     all_passed = all(results.values())
     
     print("\n" + "*" * 70)
     if all_passed:
-        print("🎉 ALL TESTS PASSED!")
+        print("ALL TESTS PASSED!")
     else:
-        print("❌ SOME TESTS FAILED")
+        print("SOME TESTS FAILED")
     print("*" * 70)
     
     return 0 if all_passed else 1

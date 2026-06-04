@@ -7,7 +7,7 @@ and if Docker can access it for physical design stages.
 
 Usage:
     python python/validate_pdk.py
-    python python/validate_pdk.py --pdk-root C:\path\to\pdk
+    python python/validate_pdk.py --pdk-root C:\\path\\to\\pdk
 """
 
 from pathlib import Path

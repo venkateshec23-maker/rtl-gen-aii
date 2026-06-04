@@ -201,7 +201,7 @@ module adder_8bit(input [7:0] a, b, output [7:0] sum, output carry);
 endmodule
 ```
 """)
-    print(f"\n1. Simple: success={r1['success']}, module={r1['module_name']} ✓")
+    print(f"\n1. Simple: success={r1['success']}, module={r1['module_name']} OK")
 
     # Test 2: RTL + Testbench
     r2 = extractor.extract("""
@@ -222,10 +222,10 @@ module counter_tb;
 endmodule
 ```
 """)
-    print(f"2. RTL+TB: success={r2['success']}, rtl={r2['module_name']}, tb={r2['testbench_name']} ✓")
+    print(f"2. RTL+TB: success={r2['success']}, rtl={r2['module_name']}, tb={r2['testbench_name']} OK")
 
     # Test 3: Invalid
     r3 = extractor.extract("No code here at all")
-    print(f"3. Invalid: success={r3['success']}, errors={r3['errors']} ✓")
+    print(f"3. Invalid: success={r3['success']}, errors={r3['errors']} OK")
 
-    print("\n" + "=" * 60 + "\nAll self-tests passed ✓")
+    print("\n" + "=" * 60 + "\nAll self-tests passed OK")

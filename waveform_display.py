@@ -401,7 +401,7 @@ def render_waveform_streamlit(results_dir: str,
             )
 
     # Show simulation log
-    sim_log = results / "simulation.log"
+    sim_log = Path(results_dir) / "simulation.log"
     if sim_log.exists():
         st.markdown("**Simulation Results**")
         content = sim_log.read_text(errors="ignore")
