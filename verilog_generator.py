@@ -294,11 +294,11 @@ def generate_verilog_gemini(
     api_key: str = None
 ) -> Tuple[str, str]:
     """
-    Generate Verilog using Google Gemini 1.5 Flash.
+    Generate Verilog using Google Gemini.
     Returns (rtl_code, testbench_code)
     """
     import os
-    import google.generativeai as genai
+    from google import genai
     from dotenv import load_dotenv
     load_dotenv(override=True)
 
@@ -306,12 +306,14 @@ def generate_verilog_gemini(
     if not _key:
         raise ValueError("GEMINI_API_KEY not set in .env")
 
-    genai.configure(api_key=_key)
-    model = genai.GenerativeModel("gemini-2.5-flash", system_instruction=VERILOG_SYSTEM_PROMPT)
-    
-    response = model.generate_content(
-        f"Design name: {module_name}\n\nDescription: {description}",
-        request_options={"timeout": 60}
+    client = genai.Client(api_key=_key)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=f"Design name: {module_name}\n\nDescription: {description}",
+        config=dict(
+            system_instruction=VERILOG_SYSTEM_PROMPT,
+            http_options=dict(timeout=60)
+        )
     )
     return parse_verilog_response(response.text)
 

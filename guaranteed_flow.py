@@ -24,6 +24,15 @@ from datetime import datetime
 from typing import Optional, Dict, Tuple
 from universal_testbench import generate_testbench
 
+# Load .env configuration
+try:
+    from dotenv import load_dotenv
+    load_dotenv(Path(__file__).parent / ".env")
+except ImportError:
+    pass
+
+DEFAULT_LLM_PROVIDER = os.getenv("DEFAULT_LLM_PROVIDER", "gemini")
+
 log = logging.getLogger(__name__)
 
 WORK_DIR   = Path(os.getenv("OPENLANE_WORK", r"C:\tools\OpenLane"))
@@ -848,10 +857,10 @@ module {name}_tb();
         reset_n = 0; a = 0; b = 0;
         repeat(4) @(posedge clk); #1;
         reset_n = 1;
-        a = 5;   b = 3;   check({bits}+1'd8,   1);
-        a = 100; b = 50;  check({bits}+1'd150, 2);
-        a = 255; b = 1;   check({bits}+1'd256, 3);
-        a = 0;   b = 0;   check({bits}+1'd0,   4);
+        a = 5;   b = 3;   check({1'b0, a} + {1'b0, b}, 1);
+        a = 100; b = 50;  check({1'b0, a} + {1'b0, b}, 2);
+        a = 255; b = 1;   check({1'b0, a} + {1'b0, b}, 3);
+        a = 0;   b = 0;   check({1'b0, a} + {1'b0, b}, 4);
 
         $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
         if (fail_count == 0) $display("ALL_TESTS_PASSED");
@@ -896,10 +905,10 @@ module {name}_tb();
         reset_n = 0; a = 0; b = 0;
         repeat(4) @(posedge clk); #1;
         reset_n = 1;
-        a = 10;  b = 3;   check({bits}+1'd7,   1);
-        a = 100; b = 50;  check({bits}+1'd50,  2);
-        a = 255; b = 100; check({bits}+1'd155, 3);
-        a = 5;   b = 0;   check({bits}+1'd5,   4);
+        a = 10;  b = 3;   check({1'b0, a} - {1'b0, b},   1);
+        a = 100; b = 50;  check({1'b0, a} - {1'b0, b},  2);
+        a = 255; b = 100; check({1'b0, a} - {1'b0, b}, 3);
+        a = 5;   b = 0;   check({1'b0, a} - {1'b0, b},   4);
         $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
         if (fail_count == 0) $display("ALL_TESTS_PASSED");
         else $display("TESTS_FAILED");
@@ -931,7 +940,7 @@ module {name}_tb();
 
         mode = 0; a = 5; b = 3;
         @(posedge clk); #1;
-        if (result == {bits}+1'd8) begin
+        if (result == {1'b0, a} + {1'b0, b}) begin
             $display("PASS Test 1: add 5+3=8");
             pass_count = pass_count + 1;
         end else begin
@@ -941,7 +950,7 @@ module {name}_tb();
 
         mode = 1; a = 10; b = 3;
         @(posedge clk); #1;
-        if (result == {bits}+1'd7) begin
+        if (result == {1'b0, a} - {1'b0, b}) begin
             $display("PASS Test 2: sub 10-3=7");
             pass_count = pass_count + 1;
         end else begin
@@ -951,7 +960,7 @@ module {name}_tb();
 
         mode = 0; a = 100; b = 50;
         @(posedge clk); #1;
-        if (result == {bits}+1'd150) begin
+        if (result == {1'b0, a} + {1'b0, b}) begin
             $display("PASS Test 3: add 100+50=150");
             pass_count = pass_count + 1;
         end else begin
@@ -961,7 +970,7 @@ module {name}_tb();
 
         mode = 1; a = 255; b = 100;
         @(posedge clk); #1;
-        if (result == {bits}+1'd155) begin
+        if (result == {1'b0, a} - {1'b0, b}) begin
             $display("PASS Test 4: sub 255-100=155");
             pass_count = pass_count + 1;
         end else begin
@@ -2286,7 +2295,7 @@ def generate_guaranteed_gds(
     module_name: Optional[str] = None,
     custom_rtl: Optional[str] = None,
     custom_tb:  Optional[str] = None,
-    llm_provider: str = "gemini",
+    llm_provider: str = DEFAULT_LLM_PROVIDER,
     pdk_type: str = "sky130A"
 ) -> Dict:
     if not module_name:
@@ -2401,7 +2410,7 @@ def generate_guaranteed_gds(
             result = generate_and_validate(
                 description=description,
                 module_name=module_name,
-                llm_provider="gemini",
+                llm_provider=llm_provider,
                 max_retries=2
             )
             
@@ -2531,7 +2540,7 @@ def run_guaranteed_in_streamlit(
     module_name: str,
     custom_rtl: Optional[str] = None,
     custom_tb:  Optional[str] = None,
-    llm_provider: str = "gemini",
+    llm_provider: str = DEFAULT_LLM_PROVIDER,
     progress_placeholder=None,
     status_placeholder=None
 ) -> Dict:

@@ -63,7 +63,7 @@ rtl-gen = "python.__main__:main"
 
 [tool.pytest.ini_options]
 minversion = "7.0"
-addopts = "-m unit --tb=short -v"
+addopts = "--tb=short -v"
 testpaths = [
     "tests",
 ]
