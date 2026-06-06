@@ -248,6 +248,16 @@ def generate_matching_testbench(rtl: str, module_name: str) -> str:
     import logging
     log = logging.getLogger(__name__)
     
+    # Try to generate enhanced 100-test testbench first
+    try:
+        from universal_testbench import generate_testbench
+        tb = generate_testbench(rtl, description=module_name)
+        if tb and len(tb.strip()) > 0:
+            log.info("Successfully generated enhanced 100-test testbench")
+            return tb
+    except Exception as e:
+        log.warning(f"Failed to generate enhanced testbench: {e}. Falling back to default generator.")
+    
     # First try to fix common errors
     fixed_rtl, ports = fix_and_parse(rtl)
     

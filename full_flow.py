@@ -860,6 +860,178 @@ class RealMetricsParser:
             return {"status": "ANTENNA_REVIEW", "data_type": "REAL_TOOL_OUTPUT", "raw": content[:200]}
         return {"status": "UNKNOWN", "raw": content[:100]}
 
+    @staticmethod
+    def calculate_fmax(
+        clock_period_ns: float,
+        setup_slack_ns:  float
+    ) -> dict:
+        """
+        Calculate maximum operating frequency.
+        Fmax = 1 / (clock_period - setup_slack)
+
+        This is what datasheets report.
+        If slack = 5ns on a 10ns clock:
+        Fmax = 1/(10-5) = 200 MHz (can go faster)
+        """
+        if setup_slack_ns is None:
+            return {"fmax_mhz": None, "margin_ns": None}
+
+        margin_ns = clock_period_ns - setup_slack_ns
+        if margin_ns <= 0:
+            return {
+                "fmax_mhz":   None,
+                "margin_ns":  margin_ns,
+                "error":      "Negative margin"
+            }
+
+        fmax_ghz = 1.0 / (margin_ns * 1e-9) / 1e9
+        fmax_mhz = fmax_ghz * 1000
+
+        return {
+            "fmax_mhz":  round(fmax_mhz, 1),
+            "fmax_ghz":  round(fmax_ghz, 3),
+            "margin_ns": round(margin_ns, 3),
+            "clock_ns":  clock_period_ns,
+            "slack_ns":  setup_slack_ns,
+            "headroom_pct": round(
+                (setup_slack_ns / clock_period_ns) * 100, 1
+            )
+        }
+
+    def get_qor_summary(self, run_dir: str) -> dict:
+        """
+        Generate Quality of Results summary.
+        Aggregates all metrics into one table.
+        This is the single source of truth for a run.
+        """
+        import re
+        from pathlib import Path
+
+        results = Path(run_dir)
+
+        def read(fname):
+            f = results / fname
+            return f.read_text(errors="ignore") if f.exists() else ""
+
+        def find_float(pattern, text, default=None):
+            m = re.search(pattern, text)
+            return float(m.group(1)) if m else default
+
+        synth   = read(f"{self.design_name}_synth_log.txt") or read("synthesis.log")
+        sta_tt  = read("sta_final.txt")
+        sta_ss  = read("sta_ss.txt")
+        sta_ff  = read("sta_ff.txt")
+        power   = read("power_report.txt")
+        hold    = read("hold_analysis.txt")
+        lvs     = read("lvs_report_final.txt")
+        drc_log = read("drc_report.txt")
+        gds_files = list(results.glob("*.gds"))
+        gds_kb  = max(
+            (g.stat().st_size for g in gds_files), default=0
+        ) // 1024
+
+        # Cell count from synthesis log
+        cell_m = re.search(r'Number of cells:\s+(\d+)', synth)
+        cells  = int(cell_m.group(1)) if cell_m else None
+        
+        # Fallback cell count from netlist if not found in log
+        if cells is None:
+            netlist_file = results / f"{self.design_name}_sky130.v"
+            if netlist_file.exists():
+                netlist_content = netlist_file.read_text(errors="ignore")
+                cells = len(re.findall(r'sky130_fd_sc_hd__', netlist_content))
+
+        # Timing
+        def get_slack(text):
+            m = re.search(
+                r'([-\d.]+)\s+slack\s+\((?:MET|VIOLATED)\)',
+                text
+            )
+            return float(m.group(1)) if m else None
+
+        tt_slack = get_slack(sta_tt)
+        ss_slack = get_slack(sta_ss)
+        ff_slack = get_slack(sta_ff)
+
+        # Hold slack
+        hold_m = re.search(
+            r'([-\d.]+)\s+slack\s+\((?:MET|VIOLATED)\)', hold
+        )
+        hold_slack = float(hold_m.group(1)) if hold_m else None
+
+        # Power
+        total_pw = find_float(
+            r'Total\s+[\d.e+-]+\s+[\d.e+-]+\s+'
+            r'[\d.e+-]+\s+([\d.e+-]+)',
+            power
+        )
+        total_mw = round(total_pw * 1000, 4) if total_pw else None
+
+        # Area
+        area_m = re.search(
+            r'Design area\s+([\d.]+)\s+u\^2\s+([\d.]+)%',
+            power
+        )
+        area_um2  = float(area_m.group(1)) if area_m else None
+        util_pct  = float(area_m.group(2)) if area_m else None
+
+        # LVS
+        lvs_ok = "match uniquely" in lvs.lower() or "circuits match" in lvs.lower() or "are equivalent" in lvs.lower() or "lvs_passed" in lvs.lower()
+
+        # DRC
+        drc_m = re.search(r'(\d+)\s+violation', drc_log)
+        drc_viol = int(drc_m.group(1)) if drc_m else 0
+
+        # Fmax
+        fmax = None
+        if tt_slack is not None:
+            margin = 10.0 - tt_slack
+            if margin > 0:
+                fmax = round(1e3 / margin, 1)
+
+        qor = {
+            # Design
+            "design_name":     self.design_name,
+            "cell_count":      cells,
+            "core_area_um2":   area_um2,
+            "utilization_pct": util_pct,
+            "gds_size_kb":     gds_kb,
+
+            # Timing
+            "setup_slack_tt":  tt_slack,
+            "setup_slack_ss":  ss_slack,
+            "setup_slack_ff":  ff_slack,
+            "hold_slack":      hold_slack,
+            "fmax_mhz":        fmax,
+            "all_corners_met": all(
+                s and s >= 0 for s in
+                [tt_slack, ss_slack, ff_slack]
+                if s is not None
+            ),
+
+            # Power
+            "total_power_mw":  total_mw,
+
+            # Verification
+            "drc_violations":  drc_viol,
+            "lvs_matched":     lvs_ok,
+            "hold_clean":      (
+                hold_slack >= 0 if hold_slack is not None
+                else None
+            ),
+
+            # Sign-off
+            "tapeout_ready": (
+                drc_viol == 0 and
+                lvs_ok and
+                tt_slack is not None and
+                tt_slack >= 0 and
+                gds_kb > 50
+            )
+        }
+
+        return qor
+
     def get_all_metrics(self) -> Dict:
         """
         Single call - returns all real metrics.
@@ -1111,6 +1283,16 @@ detailed_route \\
     -bottom_routing_layer met1 \\
     -top_routing_layer    met5 \\
     -verbose 1
+
+# Congestion report (safe execution using catch)
+if {{[catch {{ report_congestion > {results_dir}/congestion_report.txt }} err]}} {{
+    set chan [open "{results_dir}/congestion_report.txt" "w"]
+    puts $chan "CONGESTION_NOT_AVAILABLE"
+    close $chan
+}}
+
+# Design area and utilization (safe execution using catch)
+catch {{ report_design_area >> {results_dir}/congestion_report.txt }}
 
 # ============================================================
 # FIX MINIMUM AREA VIOLATIONS
@@ -1888,6 +2070,279 @@ class RTLtoGDSIIFlow:
             self.docker_timeout = 600
             self.fp_core_util = 0.40
             self.pl_density = 0.55
+
+    def _validate_sdc(self) -> bool:
+        """
+        Validate that SDC constraints match the design.
+        Common errors:
+        - Clock pin doesn't exist in netlist
+        - Clock period is wrong
+        - Input/output delays missing
+        """
+        import re
+
+        sdc_path = self.results_dir / f"{self.design_name}.sdc"
+        netlist = self.results_dir / f"{self.design_name}_sky130.v"
+        scripts_sdc = self.work_dir / "scripts" / "constraints.sdc"
+
+        if not sdc_path.exists():
+            if scripts_sdc.exists():
+                shutil.copy2(str(scripts_sdc), str(sdc_path))
+            else:
+                self._generate_sdc()
+                return True
+
+        if not netlist.exists():
+            return True  # Can't validate yet
+
+        sdc = sdc_path.read_text(errors="ignore")
+        netlist_content = netlist.read_text(errors="ignore")
+
+        issues = []
+
+        # Check clock pin exists
+        clk_m = re.search(r'get_ports\s+\{?(\w+)\}?', sdc)
+        if clk_m:
+            clk_pin = clk_m.group(1)
+            if clk_pin != "virtual_clk" and clk_pin not in netlist_content:
+                issues.append(
+                    f"Clock pin '{clk_pin}' not found in netlist"
+                )
+
+        if issues:
+            log.warning(f"SDC issues found: {issues}")
+            self._regenerate_sdc(issues)
+            return False
+
+        # Sync to scripts dir
+        scripts_sdc.parent.mkdir(parents=True, exist_ok=True)
+        scripts_sdc.write_text(sdc)
+
+        log.info("SDC validation: OK")
+        return True
+
+    def _generate_sdc(self) -> None:
+        """Generate SDC constraints dynamically for this design."""
+        ports = self.parse_verilog_ports(self.verilog_file)
+        self.write_sdc(self.design_name, self.clock_period, ports)
+
+        # Sync the generated file to the results directory
+        scripts_sdc = self.work_dir / "scripts" / "constraints.sdc"
+        sdc_path = self.results_dir / f"{self.design_name}.sdc"
+
+        if scripts_sdc.exists():
+            shutil.copy2(str(scripts_sdc), str(sdc_path))
+            log.info(f"SDC generated and synchronized to results: {sdc_path.name}")
+        else:
+            log.error("Failed to generate constraints.sdc using write_sdc")
+
+    def _regenerate_sdc(self, issues) -> None:
+        """Regenerate SDC constraints to resolve issues."""
+        log.info(f"Regenerating SDC due to issues: {issues}")
+        self._generate_sdc()
+
+    def _run_hold_analysis(self) -> dict:
+        """
+        Run hold time (min path) analysis using OpenSTA.
+        Hold violations are silicon killers —
+        must be 0 violations for real tapeout.
+        """
+        log.info("Running hold time analysis...")
+
+        hold_script = f"""
+read_lef {self.c_tlef}
+read_lef {self.c_lef}
+read_liberty {self.liberty_ss}
+read_verilog {self.c_results}/{self.design_name}_sky130.v
+link_design {self.design_name}
+read_sdc {self.c_results}/{self.design_name}.sdc
+
+# Hold analysis (min path)
+set_timing_derate -early 0.95
+report_checks -path_delay min -fields {{slew cap input nets fanout}} \\
+    -format full_clock_expanded \\
+    > {self.c_results}/hold_analysis.txt
+report_check_types -max_slew -max_cap -max_fanout \\
+    >> {self.c_results}/hold_analysis.txt
+
+set hold_viol [report_check_types -violators -min_delay -no_line_splits]
+if {{[llength $hold_viol] == 0}} {{
+    puts "HOLD_CLEAN: 0 violations"
+}} else {{
+    puts "HOLD_VIOLATIONS: [llength $hold_viol]"
+}}
+"""
+        script_path = self.work_dir / "scripts" / "hold_analysis.tcl"
+        script_path.parent.mkdir(parents=True, exist_ok=True)
+        script_path.write_text(hold_script)
+
+        c_script = "/work/scripts/hold_analysis.tcl"
+        rc, out, err = self.docker.run_command(
+            f"openroad -exit {c_script} > "
+            f"{self.c_results}/hold_run.log 2>&1",
+            timeout=120
+        )
+
+        hold_report = self.results_dir / "hold_analysis.txt"
+        result = {
+            "hold_clean": False,
+            "hold_violations": -1,
+            "worst_hold_slack": None
+        }
+
+        if hold_report.exists():
+            content = hold_report.read_text(errors="ignore")
+
+            import re
+            # Find worst hold slack
+            m = re.search(
+                r'([-\d.]+)\s+slack\s+\(VIOLATED\)', content
+            )
+            if m:
+                result["worst_hold_slack"] = float(m.group(1))
+                result["hold_violations"]  = content.count("VIOLATED")
+                result["hold_clean"]       = False
+            else:
+                m2 = re.search(
+                    r'([\d.]+)\s+slack\s+\(MET\)', content
+                )
+                if m2:
+                    result["worst_hold_slack"] = float(m2.group(1))
+                    result["hold_violations"]  = 0
+                    result["hold_clean"]       = True
+
+            log.info(
+                f"Hold analysis: "
+                f"{'CLEAN' if result['hold_clean'] else 'VIOLATIONS'} "
+                f"(slack={result['worst_hold_slack']}ns)"
+            )
+
+        return result
+
+    def _run_power_analysis(self) -> dict:
+        """
+        Run power analysis using OpenROAD report_power.
+        Returns dynamic and static power in mW.
+        This is real power estimation, not a guess.
+        """
+        log.info("Running power analysis...")
+
+        power_script = f"""
+read_lef {self.c_tlef}
+read_lef {self.c_lef}
+read_liberty {self.liberty_tt}
+read_verilog {self.c_results}/{self.design_name}_sky130.v
+link_design {self.design_name}
+read_sdc {self.c_results}/{self.design_name}.sdc
+read_def {self.c_results}/routed.def
+
+# Power analysis
+report_power -corner tt > {self.c_results}/power_report.txt
+report_design_area >> {self.c_results}/power_report.txt
+
+puts "POWER_ANALYSIS_DONE"
+"""
+        script_path = self.work_dir / "scripts" / "power_analysis.tcl"
+        script_path.parent.mkdir(parents=True, exist_ok=True)
+        script_path.write_text(power_script)
+
+        rc, out, err = self.docker.run_command(
+            f"openroad -exit /work/scripts/power_analysis.tcl "
+            f"> {self.c_results}/power_run.log 2>&1",
+            timeout=120
+        )
+
+        result = {
+            "dynamic_power_mw": None,
+            "static_power_mw":  None,
+            "total_power_mw":   None,
+            "core_area_um2":    None,
+            "utilization_pct":  None,
+        }
+
+        report = self.results_dir / "power_report.txt"
+        if report.exists():
+            import re
+            content = report.read_text(errors="ignore")
+
+            # Parse report_power output
+            # Format: Group  Internal  Switching  Leakage  Total
+            total_m = re.search(
+                r'Total\s+([\d.e+-]+)\s+([\d.e+-]+)\s+'
+                r'([\d.e+-]+)\s+([\d.e+-]+)',
+                content
+            )
+            if total_m:
+                # Values in Watts → convert to mW
+                internal  = float(total_m.group(1))
+                switching = float(total_m.group(2))
+                leakage   = float(total_m.group(3))
+                total_w   = float(total_m.group(4))
+
+                result["dynamic_power_mw"] = round(
+                    (internal + switching) * 1000, 4
+                )
+                result["static_power_mw"]  = round(
+                    leakage * 1000, 6
+                )
+                result["total_power_mw"]   = round(
+                    total_w * 1000, 4
+                )
+
+            # Parse design area
+            area_m = re.search(
+                r'Design area\s+([\d.]+)\s+u\^2\s+'
+                r'([\d.]+)%\s+utilization',
+                content
+            )
+            if area_m:
+                result["core_area_um2"]   = float(area_m.group(1))
+                result["utilization_pct"] = float(area_m.group(2))
+
+            log.info(
+                f"Power: {result['total_power_mw']} mW | "
+                f"Area: {result['core_area_um2']} um2 | "
+                f"Util: {result['utilization_pct']}%"
+            )
+
+        return result
+
+    def _parse_congestion(self) -> dict:
+        """Parse global route congestion report."""
+        import re
+
+        report = self.results_dir / "congestion_report.txt"
+        if not report.exists():
+            # Fallback to junction just in case
+            report = self.work_dir / "results" / "congestion_report.txt"
+
+        if not report.exists():
+            return {"congestion_available": False}
+
+        content = report.read_text(errors="ignore")
+
+        if "CONGESTION_NOT_AVAILABLE" in content:
+            return {"congestion_available": False}
+
+        # Parse overflow percentage
+        overflow_m = re.search(
+            r'Overflow\s*:\s*([\d.]+)%', content
+        )
+        max_density_m = re.search(
+            r'Max\s+density\s*:\s*([\d.]+)%', content
+        )
+
+        return {
+            "congestion_available": True,
+            "overflow_pct": float(overflow_m.group(1))
+                if overflow_m else None,
+            "max_density_pct": float(max_density_m.group(1))
+                if max_density_m else None,
+            "congestion_ok": (
+                float(overflow_m.group(1)) < 5.0
+                if overflow_m else True
+            )
+        }
 
     # ----------------------------------------------------------------
     # DOCKER HEALTH GATE — shared by every step that needs Docker
@@ -4059,6 +4514,7 @@ exit
             ("RTL Simulation",       self.step1_rtl_simulation),
             ("Native Syntax Check",  self.step1a_fast_local_synthesis_check),
             ("Synthesis",            self.step2_synthesis),
+            ("SDC Validation",       self._validate_sdc),
             ("Formal Equivalence",   self.step2b_formal_equivalence),
             ("Physical Design",      self.step3_physical_design),
             ("Gate-Level Simulation", self.step1b_gate_level_simulation),
@@ -4120,6 +4576,27 @@ exit
         elapsed = time.time() - start_time
         all_steps_passed = all(v == "PASS" for v in results.values())
 
+        # Run hold analysis, power analysis, and congestion report parsing
+        hold = {"hold_clean": False, "hold_violations": -1, "worst_hold_slack": None}
+        power = {"dynamic_power_mw": None, "static_power_mw": None, "total_power_mw": None, "core_area_um2": None, "utilization_pct": None}
+        congestion = {"congestion_available": False}
+
+        if results.get("Synthesis") == "PASS" and results.get("Physical Design") == "PASS":
+            try:
+                hold = self._run_hold_analysis()
+            except Exception as e:
+                log.error(f"Error running hold analysis: {e}")
+
+            try:
+                power = self._run_power_analysis()
+            except Exception as e:
+                log.error(f"Error running power analysis: {e}")
+
+            try:
+                congestion = self._parse_congestion()
+            except Exception as e:
+                log.error(f"Error parsing congestion: {e}")
+
         final_metrics = self.metrics.get_all_metrics()
         signoff_metrics = final_metrics.get("signoff", {})
         lvs_status = signoff_metrics.get("lvs", {}).get("status")
@@ -4143,6 +4620,16 @@ exit
                 f"cannot mark tape-out ready. Failing checks: {missing}"
             )
 
+        # Calculate Fmax
+        setup_slack = None
+        timing_data = final_metrics.get("timing", {})
+        if timing_data:
+            setup_slack = timing_data.get("worst_slack_ns")
+            if setup_slack is None:
+                setup_slack = timing_data.get("wns_ns")
+
+        fmax = RealMetricsParser.calculate_fmax(self.clock_period, setup_slack)
+
         summary = {
             "design":       self.design_name,
             "technology":   "SKY130A 130nm",
@@ -4156,7 +4643,20 @@ exit
             "failed_step":  step_name if not all_steps_passed else None,
             "gds_path": str(
                 self.results_dir / f"{self.design_name}.gds"
-            ) if tapeout_ready else None
+            ) if tapeout_ready else None,
+            "hold_clean":        hold.get("hold_clean", False),
+            "hold_violations":   hold.get("hold_violations", -1),
+            "worst_hold_slack":  hold.get("worst_hold_slack"),
+            "fmax_mhz":          fmax.get("fmax_mhz"),
+            "fmax_ghz":          fmax.get("fmax_ghz"),
+            "timing_margin_ns":  fmax.get("margin_ns"),
+            "timing_headroom_pct": fmax.get("headroom_pct"),
+            "dynamic_power_mw":  power.get("dynamic_power_mw"),
+            "static_power_mw":   power.get("static_power_mw"),
+            "total_power_mw":    power.get("total_power_mw"),
+            "core_area_um2":     power.get("core_area_um2"),
+            "utilization_pct":   power.get("utilization_pct"),
+            "congestion":        congestion,
         }
 
         if self.lvs_warning:

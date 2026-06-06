@@ -372,11 +372,12 @@ def generate_verilog_openrouter(
     description: str,
     module_name: str,
     api_key: str = None,
-    model: str = "deepseek/deepseek-chat:free"
+    model: str = "moonshotai/kimi-k2.6:free"
 ) -> Tuple[str, str]:
     """
     Generate Verilog using OpenRouter with free models.
     Free models available:
+      moonshotai/kimi-k2.6:free       (Kimi K2.6)
       deepseek/deepseek-chat:free     (DeepSeek V3)
       deepseek/deepseek-r1:free       (reasoning)
       qwen/qwen3-235b-a22b:free       (large)
@@ -1394,10 +1395,11 @@ def generate_and_validate(
     print(f"{'='*60}")
 
     providers_to_try = []
-    req_model = openrouter_model or "deepseek/deepseek-chat:free"
+    req_model = openrouter_model or "moonshotai/kimi-k2.6:free"
     
     if llm_provider == "openrouter":
         model_list = [
+            "moonshotai/kimi-k2.6:free",
             "deepseek/deepseek-chat:free",
             "deepseek/deepseek-r1:free",
             "qwen/qwen3-235b-a22b:free",

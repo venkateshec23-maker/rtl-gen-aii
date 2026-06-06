@@ -1184,6 +1184,124 @@ def show_gds_layout():
 # PAGE: SIGN-OFF (DRC + LVS + TIMING)
 # ============================================================
 
+def render_qor_table(results_dir: str, design_name: str):
+    """
+    Render QoR summary table in Streamlit.
+    Shows all metrics in one professional table.
+    """
+    import streamlit as st
+    import pandas as pd
+    from full_flow import RealMetricsParser
+
+    try:
+        parser = RealMetricsParser(results_dir, design_name)
+        qor = parser.get_qor_summary(results_dir)
+    except Exception as e:
+        st.error(f"Could not compute QoR: {e}")
+        return
+
+    rows = [
+        # Category, Metric, Value, Target, Pass/Fail
+        ("Design",   "Cell Count",
+         str(qor.get("cell_count","—")),
+         "> 0", qor.get("cell_count") is not None),
+
+        ("Design",   "Core Area",
+         f"{qor.get('core_area_um2','—')} µm²" if qor.get('core_area_um2') is not None else "—",
+         "< die area", True),
+
+        ("Design",   "Utilization",
+         f"{qor.get('utilization_pct','—')}%" if qor.get('utilization_pct') is not None else "—",
+         "20-70%",
+         20 <= (qor.get('utilization_pct') or 0) <= 70),
+
+        ("Timing",   "Setup TT Slack",
+         f"{qor.get('setup_slack_tt','—')} ns" if qor.get('setup_slack_tt') is not None else "—",
+         "≥ 0",
+         (qor.get("setup_slack_tt") or -1) >= 0),
+
+        ("Timing",   "Setup SS Slack",
+         f"{qor.get('setup_slack_ss','—')} ns" if qor.get('setup_slack_ss') is not None else "—",
+         "≥ 0",
+         (qor.get("setup_slack_ss") or -1) >= 0),
+
+        ("Timing",   "Hold Slack",
+         f"{qor.get('hold_slack','—')} ns" if qor.get('hold_slack') is not None else "—",
+         "≥ 0",
+         qor.get("hold_slack") is None or
+         (qor.get("hold_slack") or -1) >= 0),
+
+        ("Timing",   "Fmax",
+         f"{qor.get('fmax_mhz','—')} MHz" if qor.get('fmax_mhz') is not None else "—",
+         "> 100 MHz",
+         (qor.get("fmax_mhz") or 0) > 100),
+
+        ("Power",    "Total Power",
+         f"{qor.get('total_power_mw','—')} mW" if qor.get('total_power_mw') is not None else "—",
+         "< 100 mW",
+         (qor.get("total_power_mw") or 999) < 100),
+
+        ("Signoff",  "DRC Violations",
+         str(qor.get("drc_violations", "—")),
+         "= 0",
+         qor.get("drc_violations") == 0),
+
+        ("Signoff",  "LVS",
+         "MATCHED" if qor.get("lvs_matched") else "FAIL",
+         "MATCHED",
+         qor.get("lvs_matched", False)),
+
+        ("Signoff",  "GDS Size",
+         f"{qor.get('gds_size_kb','—')} KB" if qor.get('gds_size_kb') is not None else "—",
+         "> 50 KB",
+         (qor.get("gds_size_kb") or 0) > 50),
+    ]
+
+    df = pd.DataFrame(rows,
+        columns=["Category", "Metric",
+                 "Value", "Target", "Pass"])
+
+    # Color the Pass column
+    def color_pass(val):
+        if val is True:
+            return "background-color:#0f3d1a;color:#00ff9d"
+        elif val is False:
+            return "background-color:#3d0f0f;color:#ff3333"
+        return ""
+
+    st.markdown("**QoR Summary Table**")
+    try:
+        st.dataframe(
+            df.style.applymap(
+                color_pass, subset=["Pass"]
+            ).format({"Pass": lambda x: "✅" if x else "❌"}),
+            use_container_width=True,
+            hide_index=True
+        )
+    except Exception:
+        # Fallback to style.map if newer pandas version
+        st.dataframe(
+            df.style.map(
+                color_pass, subset=["Pass"]
+            ).format({"Pass": lambda x: "✅" if x else "❌"}),
+            use_container_width=True,
+            hide_index=True
+        )
+
+    # Overall verdict
+    passed = sum(1 for _,_,_,_,p in rows if p)
+    total  = len(rows)
+    color  = "#00ff9d" if passed == total else "#ffd700"
+    st.markdown(
+        f"<div style='text-align:right;"
+        f"font-family:Share Tech Mono,monospace;"
+        f"font-size:0.85rem;color:{color}'>"
+        f"QoR Score: {passed}/{total} checks passed"
+        f"</div>",
+        unsafe_allow_html=True
+    )
+
+
 def show_signoff():
     """
     Professional sign-off page with all views.
@@ -1494,6 +1612,10 @@ def show_signoff():
                 f"<div style='color:#8b949e'>—</div></div>",
                 unsafe_allow_html=True
             )
+
+    st.markdown("---")
+
+    render_qor_table(selected_dir, design_name)
 
     st.markdown("---")
 
