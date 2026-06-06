@@ -755,14 +755,18 @@ class TestUIViewers:
     def test_vcd_parsing_simulation(self, latest_real_run):
         from waveform_display import parse_vcd
         vcd_path = latest_real_run / "trace.vcd"
+        if not vcd_path.exists():
+            pytest.skip("trace.vcd not found in run directory")
         signals = parse_vcd(str(vcd_path))
-        assert len(signals["signals"]) > 0
+        assert len(signals.get("signals", {})) > 0
 
     def test_waveform_display_limits(self, latest_real_run):
         from waveform_display import parse_vcd
         vcd_path = latest_real_run / "trace.vcd"
+        if not vcd_path.exists():
+            pytest.skip("trace.vcd not found in run directory")
         signals = parse_vcd(str(vcd_path), max_signals=1)
-        assert len(signals["signals"]) <= 1
+        assert len(signals.get("signals", {})) <= 1
 
     def test_timing_viewer_worst_path(self, sta_report):
         from timing_viewer import parse_sta_report

@@ -1005,7 +1005,7 @@ def show_synthesis():
             st.bar_chart(df.set_index("Cell Type"))
 
             # Table
-            st.dataframe(df, use_container_width=True)
+            st.dataframe(df, width='stretch')
 
             # Cell categories
             col1, col2 = st.columns(2)
@@ -1270,23 +1270,13 @@ def render_qor_table(results_dir: str, design_name: str):
         return ""
 
     st.markdown("**QoR Summary Table**")
-    try:
-        st.dataframe(
-            df.style.applymap(
-                color_pass, subset=["Pass"]
-            ).format({"Pass": lambda x: "✅" if x else "❌"}),
-            use_container_width=True,
-            hide_index=True
-        )
-    except Exception:
-        # Fallback to style.map if newer pandas version
-        st.dataframe(
-            df.style.map(
-                color_pass, subset=["Pass"]
-            ).format({"Pass": lambda x: "✅" if x else "❌"}),
-            use_container_width=True,
-            hide_index=True
-        )
+    st.dataframe(
+        df.style.map(
+            color_pass, subset=["Pass"]
+        ).format({"Pass": lambda x: "✅" if x else "❌"}),
+        width='stretch',
+        hide_index=True
+    )
 
     # Overall verdict
     passed = sum(1 for _,_,_,_,p in rows if p)
@@ -2314,7 +2304,7 @@ def show_viewer():
                 with st.spinner("Parsing GDS binary file..."):
                     fig = make_gds_figure(str(gds_path), max_polys_per_layer=max_polys)
                 if fig:
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                     st.caption(
                         "Tip: Scroll to zoom in, drag to pan, click layer names in legend "
                         "to toggle visibility. Each colour = one metal/diffusion layer."
@@ -2357,7 +2347,7 @@ def show_viewer():
                 with st.spinner("Building schematic graph..."):
                     fig = make_schematic_figure(str(netlist_path), max_cells=max_cells)
                 if fig:
-                    st.plotly_chart(fig, use_container_width=True)
+                    st.plotly_chart(fig, width='stretch')
                     st.caption(
                         "Tip: Hover over a node to see the full cell type. "
                         "Zoom with scroll, pan with drag."
@@ -2411,7 +2401,7 @@ def show_viewer():
                         file_name=fname,
                         mime=mime,
                         help=desc,
-                        use_container_width=True,
+                        width='stretch',
                         key=f"dl_{fname}_{i}"
                     )
 
