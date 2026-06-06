@@ -2323,41 +2323,14 @@ def show_viewer():
                     st.error("Could not parse GDS file — it may be empty or corrupted.")
 
     # ===========================================================
-    # TAB 2: WAVEFORM VIEWER
+    # TAB 2: WAVEFORM VIEWER — Vivado/Cadence-style
     # ===========================================================
     with tab_wave:
-        st.subheader("Digital Waveform Viewer")
-        st.caption("Parsed from simulation VCD — like GTKWave in your browser.")
-
-        if not vcd_path.exists():
-            st.warning(f"VCD file not found: {vcd_path}\n\nRun RTL simulation first.")
-        else:
-            vcd_kb = round(vcd_path.stat().st_size / 1024, 1)
-            st.metric("VCD Size", f"{vcd_kb} KB", "Real waveform")
-
-            max_sigs = st.slider("Max signals to display", 5, 50, 20,
-                                 help="Limit for readability")
-
-            if not VIZ_AVAILABLE:
-                st.error("Visualizer module not loaded")
-            else:
-                with st.spinner("Parsing VCD waveform..."):
-                    fig = make_waveform_figure(str(vcd_path), max_signals=max_sigs)
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
-                    st.caption(
-                        "Tip: Drag to zoom into a time window, double-click to reset. "
-                        "Each row is one signal — green=high, flat=low."
-                    )
-                else:
-                    st.warning(
-                        "VCD file exists but has no signal data. "
-                        "This can happen if simulation completed instantly. "
-                        "Try running a longer simulation."
-                    )
-                    # Show raw VCD
-                    with st.expander("Raw VCD content"):
-                        st.code(vcd_path.read_text(errors="ignore")[:2000], language="text")
+        try:
+            from waveform_display import render_waveform_streamlit
+            render_waveform_streamlit(str(results), selected_design)
+        except Exception as e:
+            st.error(f"Failed to load waveform visualizer: {e}")
 
     # ===========================================================
     # TAB 3: GATE-LEVEL SCHEMATIC
