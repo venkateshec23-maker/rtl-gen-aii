@@ -109,6 +109,46 @@
       "cost": 0.0,
       "success": false,
       "error": "404 page not found"
+    },
+    {
+      "timestamp": "2026-06-04T23:00:32.685362",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-06-04T23:00:36.874001",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-06-04T23:03:27.630894",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
+    },
+    {
+      "timestamp": "2026-06-04T23:03:27.739239",
+      "model": "mock-llm",
+      "prompt_tokens": 100,
+      "completion_tokens": 200,
+      "total_tokens": 300,
+      "cost": 0.0,
+      "success": true,
+      "error": null
     }
   ],
   "daily_totals": {
@@ -123,6 +163,12 @@
       "total_cost": 0.0,
       "successful": 0,
       "failed": 2
+    },
+    "2026-06-04": {
+      "total_tokens": 1200,
+      "total_cost": 0.0,
+      "successful": 4,
+      "failed": 0
     }
   }
 }

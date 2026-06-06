@@ -1,0 +1,109 @@
+<USER_REQUEST>
+=======================================================
+FINAL PRODUCTION HARDENING
+100 TEST SUITE + 7 MISSING PIPELINE FEATURES
+NO COMPROMISE. REAL DATA ONLY.
+=======================================================
+
+PROJECT: C:\Users\venka\Documents\rtl-gen-aii\
+CONFIRMED: 10/10 success, 38 tests, real GDS proven
+TARGET:    100 tests all pass, 7 new features added
+
+READ ALL BEFORE STARTING.
+DO NOT SKIP ANY SECTION.
+PASTE OUTPUT AFTER EACH PHASE.
+
+=======================================================
+PHASE 1 — ADD 7 MISSING PIPELINE FEATURES
+(All achievable with open-source tools)
+=======================================================
+
+──────────────────────────────────────────────────────
+FEATURE 1: HOLD TIME ANALYSIS
+(Min path check — currently missing from pipeline)
+──────────────────────────────────────────────────────
+
+In full_flow.py, find step7_sta().
+After the setup (max) analysis, add hold analysis:
+
+```python
+def _run_hold_analysis(self) -> dict:
+    """
+    Run hold time (min path) analysis using OpenSTA.
+    Hold violations are silicon killers —
+    must be 0 violations for real tapeout.
+    """
+    log.info("Running hold time analysis...")
+
+    hold_script = f"""
+read_lef {self.c_pdk}/sky130A/libs.ref/sky130_fd_sc_hd/techlef/sky130_fd_sc_hd__nom.tlef
+read_lef {self.c_pdk}/sky130A/libs.ref/sky130_fd_sc_hd/lef/sky130_fd_sc_hd.lef
+read_liberty {self.liberty_ss}
+read_verilog {self.c_results}/{self.design_name}_sky130.v
+link_design {self.design_name}
+read_sdc {self.c_results}/{self.design_name}.sdc
+
+# Hold analysis (min path)
+set_timing_derate -early 0.95
+report_checks -path_delay min -fields {{slew cap input nets fanout}} \
+    -format full_clock_expanded \
+    > {self.c_results}/hold_analysis.txt
+report_check_types -max_slew -max_cap -max_fanout \
+    >> {self.c_result
+<truncated 45215 bytes>
+     from netlist_viewer import parse_netlist
+        info = parse_netlist(str(netlist))
+        assert info.module_name != "unknown"
+        assert len(info.cells) > 0
+        assert info.cell_counts
+
+    def test_netlist_has_sky130_cell_types(
+        self, netlist, design_name
+    ):
+        if not netlist or not netlist.exists():
+            pytest.skip("No netlist")
+        from netlist_viewer import parse_netlist
+        info = parse_netlist(str(netlist))
+        sky130 = [
+            c for c in info.cells
+            if "sky130" in c.cell_type
+        ]
+        assert len(sky130) > 0
+
+    def test_timing_parser(self, sta_report):
+        if not sta_report.exists():
+            pytest.skip("No STA report")
+        from timing_viewer import parse_sta_report
+        paths = parse_sta_report(str(sta_report))
+        # May be empty if report format changed
+        assert isinstance(paths, list)
+
+    def test_vcd_finder(self, latest_real_run, design_name):
+        from waveform_display import find_vcd_for_design
+        vcd = find_vcd_for_design(
+            str(latest_real_run), design_name
+        )
+        # Just verify function runs without error
+        assert vcd is None or Path(vcd).exists()
+
+    def test_layout_viewer_gds_analysis(self, real_gds):
+        from layout_viewer import get_gds_layer_info
+        info = get_gds_layer_info(str(real_gds))
+        assert isinstance(info, dict)
+
+    def test_netlist_graphviz_dot(self, netlist, design_name):
+        if not netlist or not netlist.exists():
+            pytest.skip("No netlist")
+        from netlist_viewer import (
+            parse_netlist, generate_graphviz_dot
+        )
+        info = parse_netlist(str(netlist))
+        dot  = generate_graphviz_dot(info)
+        assert "digraph" in dot
+        assert len(dot.split('\n')) > 5
+
+    def test_qor_summary_computes(
+        self, latest_real_run, 
+<truncated 13560 bytes>
+
+NOTE: The output was truncated because it was too long. Use a more targeted query or a smaller range to get the information you need.
