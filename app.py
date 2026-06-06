@@ -941,12 +941,51 @@ def show_simulation():
             st.warning("No simulation log found. Run the flow first.")
 
     with tab3:
-        st.subheader("Waveform Viewer")
+        st.subheader("Waveform Viewer — Enhanced SimVision-style (v2.5)")
         try:
-            from waveform_display import render_waveform_streamlit
-            render_waveform_streamlit(str(results_dir), design_name)
-        except Exception as e:
-            st.error(f"Failed to load waveform visualizer: {e}")
+            from waveform_enhanced import render_waveform_enhanced_streamlit
+            from pathlib import Path as _Path
+
+            # Search for VCD in run directory and common fallback paths
+            _vcd_candidates = []
+            if run_dir:
+                _rd = _Path(str(run_dir))
+                _vcd_candidates += [
+                    _rd / "trace.vcd",
+                    _rd / "simulation" / "trace.vcd",
+                    _rd / "sim" / "trace.vcd",
+                ]
+            # Workspace fallback
+            _vcd_candidates += [
+                _Path("cache/verification/sim_workspace/trace.vcd"),
+                _Path("outputs/trace.vcd"),
+            ]
+            _vcd_path = next((p for p in _vcd_candidates if p.exists()), None)
+
+            # Search for simulation log
+            _log_candidates = []
+            if run_dir:
+                _log_candidates += [
+                    _rd / "simulation.log",
+                    _rd / "rtl_sim.log",
+                    _rd / "sim.log",
+                ]
+            _log_path = next((p for p in _log_candidates if p.exists()), None)
+
+            render_waveform_enhanced_streamlit(
+                vcd_path     = _vcd_path,
+                sim_log_path = _log_path,
+                key_prefix   = "signoff_wv",
+            )
+
+        except Exception as _wv_err:
+            st.warning(f"Enhanced waveform viewer error: {_wv_err}")
+            # Fall back to original renderer if it exists
+            try:
+                from waveform_display import render_waveform_streamlit
+                render_waveform_streamlit(str(results_dir), design_name)
+            except Exception:
+                st.info("No waveform data available for this run.")
 
 
 # ============================================================
@@ -1609,14 +1648,60 @@ def show_signoff():
 
     st.markdown("---")
 
+    # ── Full QoR Table ──────────────────────────────────────────────
+    try:
+        from qor_engine import QoRReport, render_qor_table_streamlit
+        if "qor" in latest:
+            import dataclasses
+            qor_dict = latest["qor"]
+            qor_obj  = QoRReport(**{
+                k: v for k, v in qor_dict.items()
+                if k in QoRReport.__dataclass_fields__
+            })
+            render_qor_table_streamlit(qor_obj)
+        else:
+            # Build minimal QoR from existing summary for older runs
+            from qor_engine import QoRReport, render_qor_table_streamlit, calculate_fmax
+            qor_obj = QoRReport(
+                design_name    = latest.get("design_name", ""),
+                wns_tt_ns      = latest.get("timing_slack_ns"),
+                wns_ss_ns      = latest.get("timing_slack_ss_ns"),
+                wns_ff_ns      = latest.get("timing_slack_ff_ns"),
+                drc_violations = int(latest.get("drc_violations") or 0),
+                lvs_status     = str(latest.get("lvs_status") or "UNKNOWN"),
+                cell_count     = latest.get("cell_count"),
+                chip_area_um2  = latest.get("chip_area_um2"),
+                gds_size_kb    = round((latest.get("gds_size_bytes") or 0)/1024, 1),
+                fmax_mhz       = calculate_fmax(10.0, latest.get("timing_slack_ns")),
+                hold_slack_ns  = latest.get("hold_slack_ns"),
+                dynamic_mw     = latest.get("dynamic_mw"),
+                total_mw       = latest.get("total_mw"),
+                utilization_pct= latest.get("utilization_pct"),
+                tapeout_ready  = bool(latest.get("tapeout_ready")),
+            )
+            render_qor_table_streamlit(qor_obj)
+
+        # QoR export buttons
+        try:
+            from qor_engine import render_qor_export_ui
+            render_qor_export_ui(qor_obj)
+        except Exception as _qe_err:
+            pass
+    except Exception as _ui_err:
+        st.caption(f"QoR table unavailable: {_ui_err}")
+
     # ── TABS FOR EACH VIEW ──
-    tab0, tab1, tab2, tab3, tab4, tab5 = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
         "📝 Source Code",
         "📐 Netlist",
         "📊 Waveforms",
         "🔲 Layout",
         "⏱️ Timing",
-        "📄 Reports"
+        "📄 Reports",
+        "🚦 Congestion",
+        "💠 MCMM",
+        "🛡️ DRC/LVS",
+        "⚡ SPEF",
     ])
 
     with tab0:
@@ -1715,12 +1800,83 @@ def show_signoff():
         render_netlist_streamlit(selected_dir, design_name)
 
     with tab2:
-        from waveform_display import render_waveform_streamlit
-        render_waveform_streamlit(selected_dir, design_name)
+        try:
+            from waveform_enhanced import render_waveform_enhanced_streamlit
+            from pathlib import Path as _Path
+
+            _rd = _Path(str(results))
+            _vcd_candidates = [
+                _rd / "trace.vcd",
+                _rd / "simulation" / "trace.vcd",
+                _rd / "sim" / "trace.vcd",
+                _Path("cache/verification/sim_workspace/trace.vcd"),
+                _Path("outputs/trace.vcd"),
+            ]
+            _vcd_path = next((p for p in _vcd_candidates if p.exists()), None)
+
+            _log_candidates = [
+                _rd / "simulation.log",
+                _rd / "rtl_sim.log",
+                _rd / "sim.log",
+            ]
+            _log_path = next((p for p in _log_candidates if p.exists()), None)
+
+            render_waveform_enhanced_streamlit(
+                vcd_path=_vcd_path, sim_log_path=_log_path, key_prefix="sgnff_wv",
+            )
+        except Exception as _wv_err:
+            st.warning(f"Enhanced waveform error: {_wv_err}")
+            try:
+                from waveform_display import render_waveform_streamlit
+                render_waveform_streamlit(selected_dir, design_name)
+            except Exception:
+                st.info("No waveform data available.")
 
     with tab3:
-        from layout_viewer import render_layout_streamlit
-        render_layout_streamlit(selected_dir, design_name)
+        # ── Enhanced KLayout layout viewer (v2.5) ──────────────────────
+        try:
+            from layout_enhanced import render_layout_enhanced_streamlit
+            from pathlib import Path as _Path
+
+            # Search for GDS in run directory and results
+            _gds_candidates = []
+            if results:
+                _rd = _Path(str(results))
+                _gds_candidates += [
+                    _rd / f"{design_name}.gds",
+                    _rd / "gds" / f"{design_name}.gds",
+                ]
+            # Results directory fallback
+            import os as _os
+            _results = _Path(r"C:\tools\OpenLane\results")
+            if _results.exists():
+                _gds_candidates += sorted(
+                    _results.glob(f"{design_name}*.gds"),
+                    key=lambda p: p.stat().st_mtime,
+                    reverse=True,
+                )[:3]
+            # Any .gds already known from run data
+            _known_gds = (
+                latest.get("gds_path")
+                or latest.get("gds_file")
+            )
+            if _known_gds:
+                _gds_candidates.insert(0, _Path(str(_known_gds)))
+
+            _gds_path = next((p for p in _gds_candidates if p.exists()), None)
+
+            render_layout_enhanced_streamlit(
+                gds_path   = _gds_path,
+                key_prefix = "signoff_ly",
+            )
+
+        except Exception as _ly_err:
+            st.warning(f"Enhanced layout viewer error: {_ly_err}")
+            try:
+                from layout_viewer import render_layout_streamlit
+                render_layout_streamlit(selected_dir, design_name)
+            except Exception:
+                st.info("No layout data available. Run the full pipeline first.")
 
     with tab4:
         from timing_viewer import render_timing_streamlit
@@ -1728,6 +1884,110 @@ def show_signoff():
 
     with tab5:
         _render_reports_tab(results, design_name)
+
+    with tab6:
+        try:
+            from congestion_enhanced import render_congestion_enhanced_streamlit
+            render_congestion_enhanced_streamlit(results)
+        except Exception as _cg_err:
+            st.warning(f"Congestion viewer error: {_cg_err}")
+            st.info("Congestion data not available. Run the full RTL→GDS flow first.")
+
+    with tab7:
+        try:
+            from mcmm import run_mcmm_analysis, build_slack_comparison, build_fmax_comparison, build_violation_comparison
+            mcmm_data = run_mcmm_analysis(results, design_name, 10.0)
+            if mcmm_data.corners:
+                st.markdown(f"**Sign-off Corner:** `{mcmm_data.signoff_corner}` | **Best:** `{mcmm_data.best_corner()}` | **Worst:** `{mcmm_data.worst_corner()}`")
+                col_a, col_b = st.columns(2)
+                with col_a:
+                    st.plotly_chart(build_slack_comparison(mcmm_data), use_container_width=True)
+                    st.plotly_chart(build_fmax_comparison(mcmm_data), use_container_width=True)
+                with col_b:
+                    st.plotly_chart(build_violation_comparison(mcmm_data), use_container_width=True)
+                    from mcmm import export_mcmm_json, export_mcmm_html
+                    with st.container():
+                        st.markdown("##### Export")
+                        cj, ch = st.columns(2)
+                        with cj:
+                            _jp = results / "mcmm.json"
+                            export_mcmm_json(mcmm_data, _jp)
+                            with open(_jp, "rb") as fh:
+                                st.download_button("⬇️ JSON", fh, "mcmm.json", key="dl_mcmm_json")
+                        with ch:
+                            _hp = results / "mcmm.html"
+                            export_mcmm_html(mcmm_data, _hp)
+                            with open(_hp, "rb") as fh:
+                                st.download_button("⬇️ HTML", fh, "mcmm.html", key="dl_mcmm_html")
+            else:
+                st.info("No MCMM reports found (TT/SS/FF). Run the full RTL→GDS flow first.")
+        except Exception as _mcmm_err:
+            st.warning(f"MCMM error: {_mcmm_err}")
+
+    with tab8:
+        try:
+            from drc_engine import run_drc_analysis, build_violation_heatmap, build_violation_table
+            from lvs_engine import run_lvs_analysis, build_lvs_summary_figure
+            col_drc, col_lvs = st.columns(2)
+            with col_drc:
+                st.markdown("##### DRC Engine")
+                gds_for_drc = results / f"{design_name}.gds"
+                drc_rpt = results / "drc_report.txt"
+                drc_res = run_drc_analysis(gds_for_drc if gds_for_drc.exists() else None, drc_rpt if drc_rpt.exists() else None)
+                st.metric("Violations", drc_res.total_violations, help="Total DRC violations")
+                if drc_res.violations:
+                    st.plotly_chart(build_violation_heatmap(drc_res), use_container_width=True)
+                    tbl = build_violation_table(drc_res)
+                    st.dataframe(tbl[:50], height=200)
+                else:
+                    st.success("No DRC violations")
+            with col_lvs:
+                st.markdown("##### LVS Engine")
+                sch_nl = results / f"{design_name}_sky130.v"
+                ext_spice = results / "extracted.spice"
+                lvs_rpt = results / "lvs_report_final.txt"
+                lvs_res = run_lvs_analysis(
+                    sch_nl if sch_nl.exists() else results / f"{design_name}.v",
+                    ext_spice if ext_spice.exists() else None,
+                    lvs_rpt if lvs_rpt.exists() else None,
+                )
+                st.metric("Status", lvs_res.status, help="LVS match status")
+                st.metric("Match %", f"{lvs_res.match_percentage:.1f}%")
+                if lvs_res.device_mismatches or lvs_res.net_mismatches:
+                    st.plotly_chart(build_lvs_summary_figure(lvs_res), use_container_width=True)
+                else:
+                    st.success("LVS matched")
+        except Exception as _dl_err:
+            st.warning(f"DRC/LVS engine error: {_dl_err}")
+
+    with tab9:
+        try:
+            from spef_engine import extract_from_routing, build_rc_histogram, build_capacitance_histogram, build_delay_impact_chart
+            spef_res = extract_from_routing(
+                design_name,
+                routed_def_path=results / "routed.def",
+                routing_log_path=results / "routing.log",
+            )
+            if spef_res.nets or spef_res.total_wire_length_um > 0:
+                st.metric("Total Wire Length", f"{spef_res.total_wire_length_um:.0f} µm")
+                st.metric("Total R", f"{spef_res.total_resistance_ohm:.2f} Ω")
+                st.metric("Total C", f"{spef_res.total_capacitance_pf:.4f} pF")
+                col_rh, col_ch, col_di = st.columns(3)
+                with col_rh:
+                    st.plotly_chart(build_rc_histogram(spef_res), use_container_width=True)
+                with col_ch:
+                    st.plotly_chart(build_capacitance_histogram(spef_res), use_container_width=True)
+                with col_di:
+                    st.plotly_chart(build_delay_impact_chart(spef_res), use_container_width=True)
+                from spef_engine import export_spef_json, export_spef_text
+                _sp = results / "spef.json"
+                export_spef_json(spef_res, _sp)
+                with open(_sp, "rb") as fh:
+                    st.download_button("⬇️ SPEF JSON", fh, "spef.json", key="dl_spef_json")
+            else:
+                st.info("SPEF data not available. Run the full RTL→GDS flow first.")
+        except Exception as _sp_err:
+            st.warning(f"SPEF error: {_sp_err}")
 
 
 def _render_reports_tab(results: Path, design_name: str):
@@ -2282,81 +2542,85 @@ def show_viewer():
     )
 
     # ===========================================================
-    # TAB 1: GDS LAYOUT
+    # TAB 1: GDS LAYOUT — Enhanced Virtuoso-style viewer
     # ===========================================================
     with tab_gds:
-        st.subheader("GDS Layout — Real Silicon")
-        if not gds_path.exists():
-            st.warning(f"GDS file not found: {gds_path}\n\nRun the pipeline first.")
-        else:
-            gds_kb_val = round(gds_path.stat().st_size / 1024, 1)
-            col1, col2, col3 = st.columns(3)
-            col1.metric("GDS File", f"{gds_kb_val} KB", "Real layout")
-            col2.metric("Status", "TAPE-OUT READY" if gds_kb_val > 50 else "STUB")
-            col3.metric("Design", selected_design)
-
-            max_polys = st.slider("Max polygons per layer", 100, 2000, 500, step=100,
-                                  help="Lower = faster render. Higher = more detail.")
-
-            if not VIZ_AVAILABLE:
-                st.error("Visualizer module not loaded — check visualizer.py")
+        try:
+            from layout_enhanced import render_layout_enhanced_streamlit
+            gds_path_obj = gds_path if gds_path.exists() else None
+            render_layout_enhanced_streamlit(gds_path_obj, key_prefix="viewer_ly")
+        except Exception as _ly_err:
+            st.warning(f"Enhanced layout viewer error: {_ly_err}")
+            if gds_path.exists():
+                gds_kb_val = round(gds_path.stat().st_size / 1024, 1)
+                col1, col2, col3 = st.columns(3)
+                col1.metric("GDS File", f"{gds_kb_val} KB", "Real layout")
+                col2.metric("Status", "TAPE-OUT READY" if gds_kb_val > 50 else "STUB")
+                col3.metric("Design", selected_design)
+                st.download_button(
+                    "⬇ Download GDS",
+                    gds_path.read_bytes(),
+                    file_name=gds_path.name,
+                    mime="application/octet-stream",
+                )
             else:
-                with st.spinner("Parsing GDS binary file..."):
-                    fig = make_gds_figure(str(gds_path), max_polys_per_layer=max_polys)
-                if fig:
-                    st.plotly_chart(fig, width='stretch')
-                    st.caption(
-                        "Tip: Scroll to zoom in, drag to pan, click layer names in legend "
-                        "to toggle visibility. Each colour = one metal/diffusion layer."
-                    )
-                else:
-                    st.error("Could not parse GDS file — it may be empty or corrupted.")
+                st.warning(f"GDS file not found: {gds_path}\n\nRun the pipeline first.")
 
     # ===========================================================
-    # TAB 2: WAVEFORM VIEWER — Vivado/Cadence-style
+    # TAB 2: WAVEFORM VIEWER — Enhanced SimVision-style
     # ===========================================================
     with tab_wave:
         try:
-            from waveform_display import render_waveform_streamlit
-            render_waveform_streamlit(str(results), selected_design)
-        except Exception as e:
-            st.error(f"Failed to load waveform visualizer: {e}")
+            from waveform_enhanced import render_waveform_enhanced_streamlit
+            _vcd_candidates = [
+                results / "trace.vcd",
+                results / "simulation" / "trace.vcd",
+                results / "sim" / "trace.vcd",
+            ]
+            _vcd_path = next((p for p in _vcd_candidates if p.exists()), None)
+            _log_candidates = [
+                results / "simulation.log",
+                results / "rtl_sim.log",
+                results / "sim.log",
+            ]
+            _log_path = next((p for p in _log_candidates if p.exists()), None)
+            render_waveform_enhanced_streamlit(
+                vcd_path=_vcd_path, sim_log_path=_log_path, key_prefix="viewer_wv",
+            )
+        except Exception as _wv_err:
+            st.warning(f"Enhanced waveform error: {_wv_err}")
+            try:
+                from waveform_display import render_waveform_streamlit
+                render_waveform_streamlit(str(results), selected_design)
+            except Exception:
+                st.info("No waveform data available.")
 
     # ===========================================================
-    # TAB 3: GATE-LEVEL SCHEMATIC
+    # TAB 3: GATE-LEVEL SCHEMATIC — Enhanced with gate type colours
     # ===========================================================
     with tab_schem:
-        st.subheader("Gate-Level Schematic")
-        st.caption(
-            "Interactive netlist view — each node is a Sky130 standard cell, "
-            "edges are wire connections. Input ports = green triangles, outputs = orange."
-        )
-
-        if not netlist_path.exists():
-            st.warning(f"Synthesized netlist not found: {netlist_path}")
-        else:
-            net_kb = round(netlist_path.stat().st_size / 1024, 1)
-            st.metric("Netlist", f"{net_kb} KB", "Sky130A mapped")
-
-            max_cells = st.slider("Max cells to show", 20, 200, 80,
-                                  help="Large designs may be slow to render")
-
-            if not VIZ_AVAILABLE:
-                st.error("Visualizer module not loaded")
+        try:
+            from schematic_enhanced import render_schematic_enhanced_streamlit
+            render_schematic_enhanced_streamlit(netlist_path, key_prefix="viewer_sch")
+        except Exception as _sch_err:
+            st.warning(f"Enhanced schematic error: {_sch_err}")
+            if not netlist_path.exists():
+                st.warning(f"Synthesized netlist not found: {netlist_path}")
             else:
-                with st.spinner("Building schematic graph..."):
-                    fig = make_schematic_figure(str(netlist_path), max_cells=max_cells)
-                if fig:
-                    st.plotly_chart(fig, width='stretch')
-                    st.caption(
-                        "Tip: Hover over a node to see the full cell type. "
-                        "Zoom with scroll, pan with drag."
-                    )
-                else:
-                    st.warning("No cells found in netlist.")
-                    with st.expander("Raw netlist"):
-                        st.code(netlist_path.read_text(errors="ignore")[:3000],
-                                language="verilog")
+                net_kb = round(netlist_path.stat().st_size / 1024, 1)
+                st.metric("Netlist", f"{net_kb} KB", "Sky130A mapped")
+                max_cells = st.slider("Max cells to show", 20, 200, 80,
+                                      help="Large designs may be slow to render")
+                if VIZ_AVAILABLE:
+                    with st.spinner("Building schematic graph..."):
+                        fig = make_schematic_figure(str(netlist_path), max_cells=max_cells)
+                    if fig:
+                        st.plotly_chart(fig, width='stretch')
+                    else:
+                        st.warning("No cells found in netlist.")
+                        with st.expander("Raw netlist"):
+                            st.code(netlist_path.read_text(errors="ignore")[:3000],
+                                    language="verilog")
 
     # ===========================================================
     # TAB 4: DOWNLOADS
@@ -2424,7 +2688,8 @@ menu_option = st.sidebar.radio(
          "🔍 Verify GDS",
          "📚 Design History",
          "✅ Sign-Off",
-         "📊 Pipeline Monitor"
+         "📊 Pipeline Monitor",
+         "[CAT] IP Catalog"
      ],
     label_visibility="collapsed"
 )
@@ -3505,3 +3770,6 @@ elif menu_option == "✅ Sign-Off":
     show_signoff()
 elif menu_option == "📊 Pipeline Monitor":
     show_status()
+elif menu_option == "[CAT] IP Catalog":
+    from component_catalog import render_catalog_streamlit
+    render_catalog_streamlit()

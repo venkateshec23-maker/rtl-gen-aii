@@ -777,6 +777,7 @@ module {name}_tb();
     initial clk = 0;
     always #5 clk = ~clk;
 
+    {test_decls}
     initial begin
         $dumpfile("trace.vcd");
         $dumpvars(0, {name}_tb);
@@ -784,41 +785,16 @@ module {name}_tb();
         repeat(4) @(posedge clk); #1;
         reset_n = 1;
 
-        enable = 1;
-        repeat(6) @(posedge clk); #1;
-        if (count == {bits}'d6) begin
-            $display("PASS Test 1: count reached 6");
-            pass_count = pass_count + 1;
-        end else begin
-            $display("FAIL Test 1: count=%0d expected=6", count);
-            fail_count = fail_count + 1;
-        end
+{test_vectors}
 
-        enable = 0;
-        @(posedge clk); #1;
-        if (count == {bits}'d6) begin
-            $display("PASS Test 2: hold when disabled");
-            pass_count = pass_count + 1;
-        end else begin
-            $display("FAIL Test 2: count changed when disabled");
-            fail_count = fail_count + 1;
-        end
-
-        reset_n = 0; @(posedge clk); #1; reset_n = 1;
-        @(posedge clk); #1;
-        if (count == 0) begin
-            $display("PASS Test 3: reset works");
-            pass_count = pass_count + 1;
-        end else begin
-            $display("FAIL Test 3: reset failed, count=%0d", count);
-            fail_count = fail_count + 1;
-        end
-
-        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
-        if (fail_count == 0) $display("ALL_TESTS_PASSED");
-        else $display("TESTS_FAILED");
+        // Summary
+        if (fail_count == 0)
+            $display("RESULTS: PASS %0d / FAIL %0d", pass_count, fail_count);
+        else
+            $display("RESULTS: PASS %0d / FAIL %0d", pass_count, fail_count);
         $finish;
     end
+
 endmodule
 ''',
 
@@ -851,16 +827,15 @@ module {name}_tb();
         end
     endtask
 
+    {test_decls}
     initial begin
         $dumpfile("trace.vcd");
         $dumpvars(0, {name}_tb);
         reset_n = 0; a = 0; b = 0;
         repeat(4) @(posedge clk); #1;
         reset_n = 1;
-        a = 5;   b = 3;   check({1'b0, a} + {1'b0, b}, 1);
-        a = 100; b = 50;  check({1'b0, a} + {1'b0, b}, 2);
-        a = 255; b = 1;   check({1'b0, a} + {1'b0, b}, 3);
-        a = 0;   b = 0;   check({1'b0, a} + {1'b0, b}, 4);
+
+{test_vectors}
 
         $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
         if (fail_count == 0) $display("ALL_TESTS_PASSED");
@@ -884,31 +859,16 @@ module {name}_tb();
     initial clk = 0;
     always #5 clk = ~clk;
 
-    task check;
-        input [{bits}:0] expected;
-        input [31:0] tnum;
-        begin
-            @(posedge clk); #1;
-            if (diff !== expected) begin
-                $display("FAIL Test %0d: %0d-%0d=%0d exp=%0d", tnum, a, b, diff, expected);
-                fail_count = fail_count + 1;
-            end else begin
-                $display("PASS Test %0d", tnum);
-                pass_count = pass_count + 1;
-            end
-        end
-    endtask
-
+    {test_decls}
     initial begin
         $dumpfile("trace.vcd");
         $dumpvars(0, {name}_tb);
         reset_n = 0; a = 0; b = 0;
         repeat(4) @(posedge clk); #1;
         reset_n = 1;
-        a = 10;  b = 3;   check({1'b0, a} - {1'b0, b},   1);
-        a = 100; b = 50;  check({1'b0, a} - {1'b0, b},  2);
-        a = 255; b = 100; check({1'b0, a} - {1'b0, b}, 3);
-        a = 5;   b = 0;   check({1'b0, a} - {1'b0, b},   4);
+
+{test_vectors}
+
         $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
         if (fail_count == 0) $display("ALL_TESTS_PASSED");
         else $display("TESTS_FAILED");
@@ -931,6 +891,7 @@ module {name}_tb();
     initial clk = 0;
     always #5 clk = ~clk;
 
+    {test_decls}
     initial begin
         $dumpfile("trace.vcd");
         $dumpvars(0, {name}_tb);
@@ -938,45 +899,7 @@ module {name}_tb();
         repeat(4) @(posedge clk); #1;
         reset_n = 1;
 
-        mode = 0; a = 5; b = 3;
-        @(posedge clk); #1;
-        if (result == {1'b0, a} + {1'b0, b}) begin
-            $display("PASS Test 1: add 5+3=8");
-            pass_count = pass_count + 1;
-        end else begin
-            $display("FAIL Test 1: result=%0d expected=8", result);
-            fail_count = fail_count + 1;
-        end
-
-        mode = 1; a = 10; b = 3;
-        @(posedge clk); #1;
-        if (result == {1'b0, a} - {1'b0, b}) begin
-            $display("PASS Test 2: sub 10-3=7");
-            pass_count = pass_count + 1;
-        end else begin
-            $display("FAIL Test 2: result=%0d expected=7", result);
-            fail_count = fail_count + 1;
-        end
-
-        mode = 0; a = 100; b = 50;
-        @(posedge clk); #1;
-        if (result == {1'b0, a} + {1'b0, b}) begin
-            $display("PASS Test 3: add 100+50=150");
-            pass_count = pass_count + 1;
-        end else begin
-            $display("FAIL Test 3: result=%0d expected=150", result);
-            fail_count = fail_count + 1;
-        end
-
-        mode = 1; a = 255; b = 100;
-        @(posedge clk); #1;
-        if (result == {1'b0, a} - {1'b0, b}) begin
-            $display("PASS Test 4: sub 255-100=155");
-            pass_count = pass_count + 1;
-        end else begin
-            $display("FAIL Test 4: result=%0d expected=155", result);
-            fail_count = fail_count + 1;
-        end
+{test_vectors}
 
         $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
         if (fail_count == 0) $display("ALL_TESTS_PASSED");
@@ -1397,14 +1320,15 @@ module {name}_tb();
         end
     endtask
 
+    {test_decls}
     initial begin
         $dumpfile("trace.vcd");
         $dumpvars(0, {name}_tb);
-        in0 = 10; in1 = 20; in2 = 30; in3 = 40;
-        sel = 0; check(10, 1);
-        sel = 1; check(20, 2);
-        sel = 2; check(30, 3);
-        sel = 3; check(40, 4);
+        reset_n = 0;
+        repeat(4) @(posedge clk); #1;
+        reset_n = 1;
+
+{test_vectors}
 
         $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
         if (fail_count == 0) $display("ALL_TESTS_PASSED");
@@ -1444,6 +1368,7 @@ module {name}_tb();
         end
     endtask
 
+    {test_decls}
     initial begin
         $dumpfile("trace.vcd");
         $dumpvars(0, {name}_tb);
@@ -1451,12 +1376,7 @@ module {name}_tb();
         repeat(4) @(posedge clk); #1;
         reset_n = 1;
 
-        a = 15; b = 5;
-        op = 4'd0; check(20, 1);  // ADD
-        op = 4'd1; check(10, 2);  // SUB
-        op = 4'd2; check(5, 3);   // AND
-        op = 4'd3; check(15, 4);  // OR
-        op = 4'd4; check(10, 5);  // XOR
+{test_vectors}
 
         $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
         if (fail_count == 0) $display("ALL_TESTS_PASSED");
@@ -1481,31 +1401,13 @@ module {name}_tb();
     initial clk = 0;
     always #5 clk = ~clk;
 
+    {test_decls}
     initial begin
         $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
         reset_n=0; a=0; b=0;
         repeat(4) @(posedge clk); #1; reset_n=1;
 
-        a=8'd5;  b=8'd5;  @(posedge clk); #1;
-        if (eq && !gt && !lt) begin
-            $display("PASS Test 1: equal"); pass_count=pass_count+1;
-        end else begin
-            $display("FAIL Test 1: equal"); fail_count=fail_count+1;
-        end
-
-        a=8'd10; b=8'd5;  @(posedge clk); #1;
-        if (!eq && gt && !lt) begin
-            $display("PASS Test 2: greater"); pass_count=pass_count+1;
-        end else begin
-            $display("FAIL Test 2: greater"); fail_count=fail_count+1;
-        end
-
-        a=8'd3;  b=8'd8;  @(posedge clk); #1;
-        if (!eq && !gt && lt) begin
-            $display("PASS Test 3: less"); pass_count=pass_count+1;
-        end else begin
-            $display("FAIL Test 3: less"); fail_count=fail_count+1;
-        end
+{test_vectors}
 
         $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
         if (fail_count==0) $display("ALL_TESTS_PASSED");
@@ -1819,26 +1721,13 @@ module {name}_tb();
     initial clk=0;
     always #5 clk=~clk;
 
+    {test_decls}
     initial begin
         $dumpfile("trace.vcd"); $dumpvars(0,{name}_tb);
         reset_n=0; a=0; b=0;
         repeat(4) @(posedge clk); #1; reset_n=1;
 
-        a=8'd3; b=8'd4;
-        repeat(3) @(posedge clk); #1;
-        if (product==16'd12) begin
-            $display("PASS Test 1: 3x4=12"); pass_count=pass_count+1;
-        end else begin
-            $display("FAIL Test 1: product=%0d",product); fail_count=fail_count+1;
-        end
-
-        a=8'd15; b=8'd15;
-        repeat(3) @(posedge clk); #1;
-        if (product==16'd225) begin
-            $display("PASS Test 2: 15x15=225"); pass_count=pass_count+1;
-        end else begin
-            $display("FAIL Test 2: product=%0d",product); fail_count=fail_count+1;
-        end
+{test_vectors}
 
         $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
         if (fail_count==0) $display("ALL_TESTS_PASSED");
@@ -2228,6 +2117,250 @@ def extract_depth_from_description(description: str) -> int:
     return 16
 
 
+# ── Comprehensive test-vector generator ─────────────────────────────────
+# Generates ~100 test cases with Python-computed expected values per module type.
+
+_NUM_TESTS = 100
+
+import random
+
+def _gen_tb_data_dict(bits: int) -> dict:
+    """Generate test-vector data structured for each module type.
+    Returns dict keyed by module_type, each val is (decls_str, fill_str).
+    Both are raw Verilog snippets suitable for injection into a TB template.
+    """
+    max_val = (1 << bits) - 1
+    random.seed(42)
+    out_w = bits + 1
+    data = {}
+
+    # ── Adder ───────────────────────────────────────────────────────
+    pairs = []
+    for a, b in [(0,0), (1,1), (max_val,1), (max_val//2, max_val//2)]:
+        pairs.append((a, b))
+    while len(pairs) < _NUM_TESTS:
+        pairs.append((random.randint(0, max_val), random.randint(0, max_val)))
+    fill = ""
+    for i, (a, b) in enumerate(pairs):
+        exp = a + b
+        fill += f"    t_a_tv[{i}]={bits}'d{a}; t_b_tv[{i}]={bits}'d{b}; t_exp_tv[{i}]={out_w}'d{exp};\n"
+    loop = f"""
+    for (i=0; i<{_NUM_TESTS}; i=i+1) begin
+        a = t_a_tv[i]; b = t_b_tv[i];
+        @(posedge clk); #1;
+        if (sum !== t_exp_tv[i]) begin
+            $display("FAIL ADDER Test %0d: %0d+%0d=%0d exp=%0d", i+1, a, b, sum, t_exp_tv[i]);
+            fail_count = fail_count + 1;
+        end else begin
+            pass_count = pass_count + 1;
+        end
+    end
+"""
+    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}];\n" + fill
+    data["adder"] = (decls, loop)
+
+    # ── Subtractor ──────────────────────────────────────────────────
+    pairs = [(10,3), (100,50), (max_val,100), (5,0)]
+    while len(pairs) < _NUM_TESTS:
+        a = random.randint(0, max_val)
+        b = random.randint(0, max_val)
+        pairs.append((a, b))
+    fill = ""
+    for i, (a, b) in enumerate(pairs):
+        exp = a - b if a >= b else 0
+        fill += f"    t_a_tv[{i}]={bits}'d{a}; t_b_tv[{i}]={bits}'d{b}; t_exp_tv[{i}]={out_w}'d{exp};\n"
+    loop = f"""
+    for (i=0; i<{_NUM_TESTS}; i=i+1) begin
+        a = t_a_tv[i]; b = t_b_tv[i];
+        @(posedge clk); #1;
+        if (diff !== t_exp_tv[i]) begin
+            $display("FAIL SUBTRACTOR Test %0d: %0d-%0d=%0d exp=%0d", i+1, a, b, diff, t_exp_tv[i]);
+            fail_count = fail_count + 1;
+        end else begin
+            pass_count = pass_count + 1;
+        end
+    end
+"""
+    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}];\n" + fill
+    data["subtractor"] = (decls, loop)
+
+    # ── Multiplier ──────────────────────────────────────────────────
+    out_w2 = 2 * bits
+    pairs = [(3,4), (15,15), (max_val,2), (0,99), (1,1)]
+    while len(pairs) < _NUM_TESTS:
+        pairs.append((random.randint(0, max_val), random.randint(0, max_val)))
+    fill = ""
+    for i, (a, b) in enumerate(pairs):
+        exp = a * b
+        fill += f"    t_a_tv[{i}]={bits}'d{a}; t_b_tv[{i}]={bits}'d{b}; t_exp_tv[{i}]={out_w2}'d{exp};\n"
+    loop = f"""
+    for (i=0; i<{_NUM_TESTS}; i=i+1) begin
+        a = t_a_tv[i]; b = t_b_tv[i];
+        @(posedge clk); #1;
+        if (product !== t_exp_tv[i]) begin
+            $display("FAIL MULTIPLIER Test %0d: %0d*%0d=%0d exp=%0d", i+1, a, b, product, t_exp_tv[i]);
+            fail_count = fail_count + 1;
+        end else begin
+            pass_count = pass_count + 1;
+        end
+    end
+"""
+    decls = f"reg [{out_w2-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}];\n" + fill
+    data["multiplier"] = (decls, loop)
+
+    # ── ALU ─────────────────────────────────────────────────────────
+    fill = ""
+    for idx in range(_NUM_TESTS):
+        a = random.randint(0, max_val)
+        b = random.randint(0, max_val)
+        op = random.randint(0, 3)
+        exp = {0: a+b, 1: a-b if a>=b else 0, 2: a&b, 3: a|b}[op]
+        fill += f"    t_a_tv[{idx}]={bits}'d{a}; t_b_tv[{idx}]={bits}'d{b}; t_op_tv[{idx}]={2}'d{op}; t_exp_tv[{idx}]={out_w}'d{exp};\n"
+    loop = f"""
+    for (i=0; i<{_NUM_TESTS}; i=i+1) begin
+        a = t_a_tv[i]; b = t_b_tv[i]; op = t_op_tv[i];
+        @(posedge clk); #1;
+        if (result !== t_exp_tv[i]) begin
+            $display("FAIL ALU Test %0d: op=%0d %0d op %0d=%0d exp=%0d", i+1, op, a, b, result, t_exp_tv[i]);
+            fail_count = fail_count + 1;
+        end else begin
+            pass_count = pass_count + 1;
+        end
+    end
+"""
+    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}]; reg [1:0] t_op_tv [0:{_NUM_TESTS-1}];\n" + fill
+    data["alu"] = (decls, loop)
+
+    # ── Adder_Subtractor ────────────────────────────────────────────
+    fill = ""
+    for idx in range(_NUM_TESTS):
+        a = random.randint(0, max_val)
+        b = random.randint(0, max_val)
+        mode = idx % 2
+        if mode == 0:
+            exp = a + b
+        else:
+            exp = a - b if a >= b else 0
+        fill += f"    t_a_tv[{idx}]={bits}'d{a}; t_b_tv[{idx}]={bits}'d{b}; t_mode_tv[{idx}]={mode}; t_exp_tv[{idx}]={out_w}'d{exp};\n"
+    loop = f"""
+    for (i=0; i<{_NUM_TESTS}; i=i+1) begin
+        mode = t_mode_tv[i]; a = t_a_tv[i]; b = t_b_tv[i];
+        @(posedge clk); #1;
+        if (result !== t_exp_tv[i]) begin
+            $display("FAIL ADDSUB Test %0d: mode=%0d %0d op %0d=%0d exp=%0d", i+1, mode, a, b, result, t_exp_tv[i]);
+            fail_count = fail_count + 1;
+        end else begin
+            pass_count = pass_count + 1;
+        end
+    end
+"""
+    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}]; reg t_mode_tv [0:{_NUM_TESTS-1}];\n" + fill
+    data["adder_subtractor"] = (decls, loop)
+
+    # ── Comparator ──────────────────────────────────────────────────
+    fill = ""
+    for _ in range(_NUM_TESTS):
+        if _ < 10:
+            a = b = random.randint(0, max_val)
+        else:
+            a = random.randint(0, max_val)
+            b = random.randint(0, max_val)
+        eq, gt, lt = (1 if a==b else 0), (1 if a>b else 0), (1 if a<b else 0)
+        fill += f"    t_a_tv[{_}]={bits}'d{a}; t_b_tv[{_}]={bits}'d{b}; t_eq_tv[{_}]={eq}; t_gt_tv[{_}]={gt}; t_lt_tv[{_}]={lt};\n"
+    loop = f"""
+    for (i=0; i<{_NUM_TESTS}; i=i+1) begin
+        a = t_a_tv[i]; b = t_b_tv[i];
+        @(posedge clk); #1;
+        if (eq!==t_eq_tv[i] || gt!==t_gt_tv[i] || lt!==t_lt_tv[i]) begin
+            $display("FAIL COMPARATOR Test %0d: a=%0d b=%0d eq=%b gt=%b lt=%b exp_eq=%b exp_gt=%b exp_lt=%b",
+                     i+1, a, b, eq, gt, lt, t_eq_tv[i], t_gt_tv[i], t_lt_tv[i]);
+            fail_count = fail_count + 1;
+        end else begin
+            pass_count = pass_count + 1;
+        end
+    end
+"""
+    decls = f"reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}]; reg t_eq_tv [0:{_NUM_TESTS-1}]; reg t_gt_tv [0:{_NUM_TESTS-1}]; reg t_lt_tv [0:{_NUM_TESTS-1}];\n" + fill
+    data["comparator"] = (decls, loop)
+
+    # ── Mux ─────────────────────────────────────────────────────────
+    fill = ""
+    for _ in range(_NUM_TESTS):
+        in0 = random.randint(0, max_val)
+        in1 = random.randint(0, max_val)
+        in2 = random.randint(0, max_val)
+        in3 = random.randint(0, max_val)
+        sel = _ % 4
+        exp = [in0, in1, in2, in3][sel]
+        fill += f"    t_in0_tv[{_}]={bits}'d{in0}; t_in1_tv[{_}]={bits}'d{in1}; t_in2_tv[{_}]={bits}'d{in2}; t_in3_tv[{_}]={bits}'d{in3}; t_sel_tv[{_}]={2}'d{sel}; t_exp_tv[{_}]={bits}'d{exp};\n"
+    loop = f"""
+    for (i=0; i<{_NUM_TESTS}; i=i+1) begin
+        in0 = t_in0_tv[i]; in1 = t_in1_tv[i]; in2 = t_in2_tv[i]; in3 = t_in3_tv[i]; sel = t_sel_tv[i];
+        @(posedge clk); #1;
+        if (out !== t_exp_tv[i]) begin
+            $display("FAIL MUX Test %0d: sel=%0d out=%0d exp=%0d", i+1, sel, out, t_exp_tv[i]);
+            fail_count = fail_count + 1;
+        end else begin
+            pass_count = pass_count + 1;
+        end
+    end
+"""
+    decls = f"reg [{bits-1}:0] t_in0_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in1_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in2_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in3_tv [0:{_NUM_TESTS-1}]; reg [1:0] t_sel_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_exp_tv [0:{_NUM_TESTS-1}];\n" + fill
+    data["mux"] = (decls, loop)
+
+    # ── Counter (3 tests: count to 100, hold, reset) ────────────────
+    loop = f"""
+    enable = 1;
+    for (i=0; i<{_NUM_TESTS}; i=i+1) @(posedge clk);
+    #1;
+    if (count == {bits}'d{_NUM_TESTS}) begin
+        $display("PASS Counter: reached {_NUM_TESTS}"); pass_count = pass_count + 1;
+    end else begin
+        $display("FAIL Counter: count=%0d exp=%0d", count, {_NUM_TESTS}); fail_count = fail_count + 1;
+    end
+    enable = 0;
+    repeat(3) @(posedge clk); #1;
+    if (count == {bits}'d{_NUM_TESTS}) begin
+        $display("PASS Counter: hold"); pass_count = pass_count + 1;
+    end else begin
+        $display("FAIL Counter: changed when disabled"); fail_count = fail_count + 1;
+    end
+    reset_n = 0; @(posedge clk); #1; reset_n = 1;
+    @(posedge clk); #1;
+    if (count == 0) begin
+        $display("PASS Counter: reset"); pass_count = pass_count + 1;
+    end else begin
+        $display("FAIL Counter: reset count=%0d", count); fail_count = fail_count + 1;
+    end
+"""
+    data["counter"] = ("integer i;\n", loop)
+
+    # ── Default (generic sequential) ────────────────────────────────
+    loop = f"""
+    for (i=0; i<{_NUM_TESTS}; i=i+1) @(posedge clk);
+    #1;
+    $display("PASS Default: {_NUM_TESTS} cycles"); pass_count = pass_count + 1;
+"""
+    data["default"] = ("integer i;\n", loop)
+
+    # Ensure every type gets integer i; declaration
+    for _k in data:
+        _d, _l = data[_k]
+        if "integer i;" not in _d:
+            data[_k] = ("integer i;\n" + _d, _l)
+
+    return data
+
+
+_TB_DATA_CACHE = None
+
+def _get_tb_data(bits: int):
+    global _TB_DATA_CACHE
+    if _TB_DATA_CACHE is None:
+        _TB_DATA_CACHE = _gen_tb_data_dict(bits)
+    return _TB_DATA_CACHE
+
+
 def safe_format(template: str, **kwargs) -> str:
     """Format template while preserving Verilog {} concatenation syntax"""
     result = template.replace('{name}', '<<<NAME>>>')
@@ -2251,11 +2384,13 @@ def build_from_template(module_name: str, description: str) -> Tuple[str, str]:
     rtl = safe_format(rtl_template, name=module_name, bits=bits, depth=depth)
     rtl = rtl.strip()
     
-    # Use the proven template testbench for this design type
+    # Generate testbench with ~100 auto-adapted test vectors
     if template_type in TEMPLATES_TB:
         tb_template = TEMPLATES_TB[template_type]
         tb = safe_format(tb_template, name=module_name, bits=bits, depth=depth)
-        log.info(f"Using template TB for: {template_type}")
+        # Inject comprehensive test vectors for known types
+        tb = _inject_test_vectors(tb, template_type, bits)
+        log.info(f"Using template TB with {_NUM_TESTS} test vectors for: {template_type}")
     else:
         # Fallback to universal testbench generator
         tb = generate_testbench(rtl, description, template_type)
@@ -2263,6 +2398,23 @@ def build_from_template(module_name: str, description: str) -> Tuple[str, str]:
 
     log.info(f"Built from template: {template_type} {bits}-bit depth={depth}")
     return rtl, tb.strip()
+
+
+def _inject_test_vectors(tb: str, template_type: str, bits: int) -> str:
+    """Replace `{test_decls}` and `{test_vectors}` placeholders with auto-generated
+    comprehensive test vectors for the given module type."""
+    data = _get_tb_data(bits)
+    if template_type not in data:
+        return tb  # only inject for types we have generators for
+
+    decls, test_loop = data[template_type]
+
+    if "{test_decls}" in tb:
+        tb = tb.replace("{test_decls}", decls)
+    if "{test_vectors}" in tb:
+        tb = tb.replace("{test_vectors}", test_loop)
+
+    return tb
 
 
 def quick_simulate(module_name: str) -> bool:

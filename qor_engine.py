@@ -603,6 +603,73 @@ def build_qor_report(
     return qor
 
 
+# ── QoR from DesignDB (no Docker needed) ──────────────────────────────────────
+
+
+def build_qor_from_db(db) -> QoRReport:
+    """Build a QoRReport from DesignDB data.
+    No Docker calls — uses already-collected metrics.
+    Returns a QoRReport, potentially with None fields for missing data.
+    """
+    qor = QoRReport(design_name=db.design_name)
+
+    # Timing
+    if db.timing:
+        tt = db.timing.corners.get("TT")
+        if tt:
+            qor.wns_tt_ns = tt.slack_ns
+        ss = db.timing.corners.get("SS")
+        if ss:
+            qor.wns_ss_ns = ss.slack_ns
+        ff = db.timing.corners.get("FF")
+        if ff:
+            qor.wns_ff_ns = ff.slack_ns
+        qor.hold_slack_ns = db.timing.hold_slack_ns
+        qor.period_ns = db.timing.period_ns
+        qor.fmax_mhz = db.timing.fmax_mhz
+
+    # Power
+    if db.power:
+        qor.dynamic_mw = db.power.dynamic_mw
+        qor.leakage_uw = db.power.leakage_uw
+        qor.total_mw = db.power.total_mw
+
+    # Congestion
+    if db.congestion:
+        qor.h_overflow_pct = db.congestion.h_overflow_pct
+        qor.v_overflow_pct = db.congestion.v_overflow_pct
+        qor.max_density_pct = db.congestion.max_density_pct
+        qor.utilization_pct = db.congestion.utilization_pct
+
+    # Cell / area
+    if db.placement:
+        qor.cell_count = db.placement.total_cells
+    if db.layout:
+        if db.layout.area_um2 is not None:
+            qor.chip_area_um2 = db.layout.area_um2
+        if db.layout.gds_path:
+            try:
+                gds_path = Path(db.layout.gds_path)
+                if gds_path.exists():
+                    qor.gds_size_kb = round(gds_path.stat().st_size / 1024, 1)
+            except Exception:
+                pass
+
+    # DRC / LVS
+    if db.drc:
+        qor.drc_violations = db.drc.violations
+    if db.lvs:
+        qor.lvs_status = db.lvs.status
+
+    # Tape-out decision
+    criteria = qor.tapeout_criteria()
+    qor.tapeout_ready = all(criteria.values())
+
+    log.info("QoR from DB: Fmax=%s Power=%s Hold=%s Tapeout=%s",
+             qor.fmax_mhz, qor.total_mw, qor.hold_slack_ns, qor.tapeout_ready)
+    return qor
+
+
 # ── Streamlit renderer ────────────────────────────────────────────────────────
 
 def render_qor_table_streamlit(qor: QoRReport) -> None:
@@ -686,6 +753,123 @@ def render_qor_table_streamlit(qor: QoRReport) -> None:
         with st.expander(f"Errors ({len(qor.errors)})"):
             for e in qor.errors:
                 st.error(e)
+
+
+# ── QoR Export functions ─────────────────────────────────────────────────────
+
+_HT = """<!DOCTYPE html>
+<html lang="en">
+<head><meta charset="utf-8"><title>QoR Report — {design}</title>
+<style>
+body {{ font-family:'Segoe UI',sans-serif; background:#0d1117; color:#c9d1d9; margin:20px; }}
+h1 {{ color:#58a6ff; border-bottom:1px solid #30363d; padding-bottom:8px; }}
+h2 {{ color:#8b949e; font-size:1.0rem; margin-top:24px; }}
+table {{ border-collapse:collapse; width:100%; margin:8px 0 16px 0; }}
+th {{ background:#1c2128; color:#58a6ff; padding:8px 12px; text-align:left; border:1px solid #30363d; font-size:0.85rem; }}
+td {{ padding:6px 12px; border:1px solid #30363d; font-size:0.85rem; }}
+tr:nth-child(even) {{ background:#161b22; }}
+.pass {{ color:#00ff9d; }} .fail {{ color:#ff3333; }}
+.mono {{ font-family:'Share Tech Mono',monospace; }}
+.footer {{ margin-top:32px; color:#8b949e; font-size:0.75rem; text-align:center; }}
+</style></head><body>
+<h1>QoR Report — {design}</h1>
+<p class="mono">Generated: {timestamp}</p>
+<table>
+<tr><th>Metric</th><th>Value</th><th>Status</th></tr>
+{rows}
+</table>
+<h2>Tape-Out Checklist</h2>
+<table>
+<tr><th>Criterion</th><th>Result</th></tr>
+{checklist_rows}
+</table>
+<div class="footer">RTL-Gen AI — QoR Engine</div>
+</body></html>"""
+
+
+def export_qor_json(qor: QoRReport, filepath: Path) -> None:
+    """Export QoR report as JSON."""
+    import json
+    data = qor.to_dict()
+    data["export_timestamp"] = __import__("datetime").datetime.now().isoformat()
+    filepath.write_text(json.dumps(data, indent=2, default=str), encoding="utf-8")
+
+
+def export_qor_csv(qor: QoRReport, filepath: Path) -> None:
+    """Export QoR report as CSV."""
+    d = qor.to_dict()
+    exclude = {"errors", "warnings", "run_dir"}
+    lines = ["metric,value"]
+    for k, v in d.items():
+        if k in exclude:
+            continue
+        if isinstance(v, list):
+            v = "; ".join(str(x) for x in v)
+        lines.append(f"{k},{v}")
+    filepath.write_text("\n".join(lines), encoding="utf-8")
+
+
+def export_qor_html(qor: QoRReport, filepath: Path) -> None:
+    """Export QoR report as a standalone HTML report."""
+    d = qor.to_dict()
+    rows = ""
+    for k, v in d.items():
+        if k in ("errors", "warnings", "run_dir"):
+            continue
+        v_str = str(v) if v is not None else "—"
+        status = ""
+        if isinstance(v, (int, float)) and v is not None:
+            if k in ("drc_violations", "unrouted_nets"):
+                status = "❌ fail" if v > 0 else "✅ pass"
+            elif k in ("wns_tt_ns", "wns_ss_ns", "wns_ff_ns", "hold_slack_ns"):
+                status = "✅ pass" if v >= 0 else "❌ fail"
+            elif k in ("total_mw", "dynamic_mw", "leakage_uw"):
+                status = f"{v:.3f}"
+        if k == "lvs_status":
+            status = "✅ pass" if "MATCHED" in (v or "") else "❌ fail"
+        if k == "tapeout_ready":
+            status = "✅ pass" if v else "❌ fail"
+        cls = "pass" if "✅" in status or "pass" in status else ""
+        row_style = f' class="{cls}"' if cls else ""
+        rows += f"<tr{row_style}><td class='mono'>{k}</td><td>{v_str}</td><td>{status}</td></tr>\n"
+
+    checklist_rows = ""
+    for crit, passed in qor.tapeout_criteria().items():
+        icon = "✅" if passed else "❌"
+        cls = "pass" if passed else "fail"
+        checklist_rows += f"<tr class='{cls}'><td>{icon} {crit}</td><td>{'PASS' if passed else 'FAIL'}</td></tr>\n"
+
+    html = _HT.format(
+        design=qor.design_name,
+        timestamp=__import__("datetime").datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+        rows=rows,
+        checklist_rows=checklist_rows,
+    )
+    filepath.write_text(html, encoding="utf-8")
+
+
+def render_qor_export_ui(qor: QoRReport) -> None:
+    """Streamlit UI for exporting QoR reports."""
+    import streamlit as st
+    import tempfile
+
+    st.markdown("#### Export QoR Report")
+    col_a, col_b, col_c = st.columns(3)
+    with col_a:
+        if st.button("⬇️ Download QoR JSON"):
+            tmp = Path(tempfile.mktemp(suffix=".json"))
+            export_qor_json(qor, tmp)
+            st.download_button("Confirm JSON", tmp.read_bytes(), file_name=f"{qor.design_name}_qor.json", mime="application/json")
+    with col_b:
+        if st.button("⬇️ Download QoR CSV"):
+            tmp = Path(tempfile.mktemp(suffix=".csv"))
+            export_qor_csv(qor, tmp)
+            st.download_button("Confirm CSV", tmp.read_bytes(), file_name=f"{qor.design_name}_qor.csv", mime="text/csv")
+    with col_c:
+        if st.button("⬇️ Download QoR HTML"):
+            tmp = Path(tempfile.mktemp(suffix=".html"))
+            export_qor_html(qor, tmp)
+            st.download_button("Confirm HTML", tmp.read_bytes(), file_name=f"{qor.design_name}_qor.html", mime="text/html")
 
 
 # ── Standalone test ───────────────────────────────────────────────────────────

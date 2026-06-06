@@ -373,6 +373,39 @@ def delete_job(job_id: str):
 
 
 # =====================================================
+# CATALOG API ENDPOINTS
+# =====================================================
+
+@app.get("/api/catalog")
+def get_catalog():
+    """List all proven IP components in the catalog."""
+    try:
+        from component_catalog import CatalogStore
+        store = CatalogStore()
+        comps = store.load_all()
+        return {
+            "count": len(comps),
+            "components": [c.to_dict() for c in comps],
+        }
+    except Exception as e:
+        return {"error": str(e), "count": 0, "components": []}
+
+@app.get("/api/catalog/{name}/wrapper")
+def get_wrapper(name: str):
+    """Download Verilog wrapper for a specific IP component."""
+    from component_catalog import CatalogStore, generate_verilog_wrapper
+    from fastapi.responses import PlainTextResponse
+    store = CatalogStore()
+    comps = {c.name: c for c in store.load_all()}
+    if name not in comps:
+        return PlainTextResponse(f"// Component '{name}' not found", status_code=404)
+    return PlainTextResponse(
+        generate_verilog_wrapper(comps[name]),
+        media_type="text/plain",
+        headers={"Content-Disposition": f"attachment; filename={name}_wrapper.v"},
+    )
+
+# =====================================================
 # RUN SERVER
 # =====================================================
 if __name__ == "__main__":

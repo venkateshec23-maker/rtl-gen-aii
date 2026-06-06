@@ -217,7 +217,7 @@ class DesignFlowVisualizer:
                 bbox=dict(boxstyle='round', facecolor='lightgreen', alpha=0.7))
         
         output_file = self.output_dir / "01_verilator_simulation.png"
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.savefig(output_file, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
         print(f"  Generated: {output_file.name}")
@@ -289,7 +289,7 @@ Status:       PASS"""
             ax4.text(x, 0.5, name, ha='center', va='center', fontsize=8, fontweight='bold')
         
         output_file = self.output_dir / "02_rtl_synthesis.png"
-        plt.tight_layout()
+        plt.subplots_adjust(hspace=0.4, wspace=0.3)
         plt.savefig(output_file, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
         print(f"  Generated: {output_file.name}")
@@ -317,7 +317,7 @@ Status:       PASS"""
             ax.set_title(f'{a} + {b}', fontweight='bold')
         
         output_file = self.output_dir / "03_gate_simulation.png"
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.savefig(output_file, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
         print(f"  Generated: {output_file.name}")
@@ -366,7 +366,7 @@ Status:       {metrics.get('status', 'PENDING')}"""
                 bbox=dict(boxstyle='round', facecolor='#f5f5f5', alpha=0.9))
         
         output_file = self.output_dir / "04_placement.png"
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.savefig(output_file, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
         print(f"  Generated: {output_file.name}")
@@ -407,7 +407,7 @@ Status:          PASS"""
                 bbox=dict(boxstyle='round', facecolor='#f5f5f5', alpha=0.9))
         
         output_file = self.output_dir / "05_cts.png"
-        plt.tight_layout()
+        plt.tight_layout(rect=[0, 0, 1, 0.96])
         plt.savefig(output_file, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
         print(f"  Generated: {output_file.name}")
@@ -481,7 +481,7 @@ Status:       {all_m.get('signoff', {}).get('lvs', {}).get('status', 'PENDING')}
                 bbox=dict(boxstyle='round', facecolor='#fffacd', alpha=0.9))
         
         output_file = self.output_dir / "06_layout.png"
-        plt.tight_layout()
+        plt.subplots_adjust(hspace=0.4, wspace=0.3)
         plt.savefig(output_file, dpi=150, bbox_inches='tight', facecolor='white')
         plt.close()
         print(f"  Generated: {output_file.name}")

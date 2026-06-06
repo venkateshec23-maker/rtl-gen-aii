@@ -16,6 +16,11 @@ from datetime import datetime
 from typing import Dict, Optional, Tuple
 
 # ============================================================
+# DESIGN DATABASE IMPORT (available globally in this module)
+# ============================================================
+from design_db import DesignDB, save_design_db
+
+# ============================================================
 # LOGGING SETUP
 # ============================================================
 
@@ -1923,6 +1928,10 @@ class RTLtoGDSIIFlow:
             self.vdd = 1.8
 
         elif pdk_type == "gf180mcuD":
+            # TODO: GF180MCU PDK not found in container -- skipping
+            # These paths assume the PDK is mounted at runtime.
+            # The GF180MCU PDK is not bundled in the efabless/openlane container.
+            # To use GF180MCU, mount the PDK volume: -v /path/to/pdk:/pdk
             self.c_liberty = (
                 f"{self.c_pdk}/gf180mcuD/libraries/"
                 f"gf180mcu_fd_sc_mcu7t5v0/latest/liberty/"
@@ -2478,6 +2487,7 @@ puts "POWER_ANALYSIS_DONE"
                 "sky130_fd_sc_hd__tt_025C_1v80.lib"
             )
         else: # gf180mcuD
+            # TODO: GF180MCU PDK not found in container -- skipping
             liberty_host = (
                 self.pdk_dir /
                 "gf180mcuD/libraries/gf180mcu_fd_sc_mcu7t5v0/latest/liberty/"
@@ -4526,6 +4536,15 @@ exit
             ("Post-Layout Simulation", self.step8_post_layout_simulation),
         ]
 
+        # ── Initialize DesignDB ───────────────────────────────────────
+        db = DesignDB(
+            design_name=self.design_name,
+            rtl_sources=[self.verilog_file],
+            netlist_path=str(self.results_dir / f"{self.design_name}_sky130.v"),
+            clock_period_ns=self.clock_period or 10.0,
+            created_at=datetime.now().isoformat(),
+        )
+
         results = {}
         total_steps = len(steps)
         latest_log_tail = ""
@@ -4733,6 +4752,164 @@ exit
 
         log.info(f"Flow complete in {elapsed:.1f}s")
         log.info(f"Status: {summary['status']}")
+
+        # ── Populate DesignDB from flow results ────────────────────
+        db.modified_at = datetime.now().isoformat()
+        db.gds_file = str(self.results_dir / f"{self.design_name}.gds")
+        db.def_file = str(self.results_dir / "routed.def")
+
+        # Netlist path
+        nl_path = self.results_dir / f"{self.design_name}_sky130.v"
+        if nl_path.exists():
+            db.netlist_path = str(nl_path)
+
+        # Cells from synthesis stats
+        cell_count = summary.get("metrics", {}).get("synthesis", {}).get("cell_count", 0)
+        if cell_count:
+            from design_db import PlacementData
+            db.placement = PlacementData(total_cells=cell_count)
+
+        # Timing
+        if setup_slack is not None:
+            from design_db import TimingData, TimingCorner
+            tt_corner = TimingCorner(corner="TT", slack_ns=setup_slack,
+                met=setup_slack >= 0)
+            db.timing = TimingData(
+                period_ns=self.clock_period or 10.0,
+                corners={"TT": tt_corner},
+                fmax_mhz=fmax.get("fmax_mhz"),
+                hold_slack_ns=hold.get("worst_hold_slack"),
+            )
+
+        # MCMM timing (multi-corner)
+        try:
+            from mcmm import run_mcmm_analysis
+            mcmm_result = run_mcmm_analysis(self.results_dir, self.design_name, self.clock_period or 10.0)
+            if mcmm_result.corners:
+                db.mcmm = mcmm_result
+        except Exception:
+            pass
+
+        # Power
+        tpmw = power.get("total_power_mw")
+        if tpmw is not None:
+            from design_db import PowerData
+            db.power = PowerData(
+                dynamic_mw=power.get("dynamic_power_mw"),
+                leakage_uw=power.get("static_power_mw"),
+                total_mw=tpmw,
+            )
+
+        # Congestion
+        if congestion.get("congestion_available"):
+            from design_db import CongestionData
+            cd = CongestionData(
+                h_overflow_pct=congestion.get("h_overflow_pct"),
+                v_overflow_pct=congestion.get("v_overflow_pct"),
+                max_density_pct=congestion.get("max_density_pct"),
+                utilization_pct=congestion.get("utilization_pct"),
+                unrouted_nets=congestion.get("unrouted_nets", 0),
+            )
+            cd.compute_score()
+            db.congestion = cd
+
+        # DRC / LVS
+        from design_db import DRCCheck, LVSCheck
+        drc_v = summary.get("metrics", {}).get("signoff", {}).get("drc", {}).get("violations", -1)
+        if drc_v >= 0:
+            db.drc = DRCCheck(violations=drc_v)
+        lvs_s = summary.get("metrics", {}).get("signoff", {}).get("lvs", {}).get("status", "")
+        if lvs_s:
+            db.lvs = LVSCheck(status=lvs_s)
+
+        # DRC engine result (KLayout/OpenROAD)
+        try:
+            from drc_engine import run_drc_analysis
+            gds_for_drc = self.results_dir / f"{self.design_name}.gds"
+            drc_rpt = self.results_dir / "drc_report.rpt"
+            drc_eng_result = run_drc_analysis(gds_for_drc if gds_for_drc.exists() else None, drc_rpt if drc_rpt.exists() else None)
+            if drc_eng_result.engine != "none":
+                db.drc_engine_result = drc_eng_result
+        except Exception:
+            pass
+
+        # LVS engine result (netlist comparison)
+        try:
+            from lvs_engine import run_lvs_analysis
+            sch_nl = self.results_dir / f"{self.design_name}_sky130.v"
+            ext_spice = self.results_dir / "extracted.spice"
+            lvs_rpt = self.results_dir / "lvs_report.txt"
+            lvs_eng_result = run_lvs_analysis(
+                sch_nl if sch_nl.exists() else self.results_dir / f"{self.design_name}.v",
+                ext_spice if ext_spice.exists() else None,
+                lvs_rpt if lvs_rpt.exists() else None,
+            )
+            if lvs_eng_result.status != "NOT_RUN":
+                db.lvs_result = lvs_eng_result
+        except Exception:
+            pass
+
+        # Layout info
+        gds_path_obj = self.results_dir / f"{self.design_name}.gds"
+        if gds_path_obj.exists():
+            from design_db import LayoutInfo
+            gds_size_kb = round(gds_path_obj.stat().st_size / 1024, 1)
+            db.layout = LayoutInfo(gds_path=str(gds_path_obj), area_um2=power.get("core_area_um2"))
+
+        # SPEF / parasitic extraction
+        try:
+            from spef_engine import extract_from_routing
+            spef_result = extract_from_routing(
+                self.design_name,
+                routed_def_path=self.results_dir / "routed.def",
+                routing_log_path=self.results_dir / "routing.log",
+            )
+            if spef_result.nets or spef_result.total_wire_length_um > 0:
+                db.spef = spef_result
+        except Exception:
+            pass
+
+        # Artifacts
+        db.artifacts = [str(p) for p in self.results_dir.glob("*.txt")]
+
+        # Save DesignDB
+        db_path = self.results_dir / "design_db.json"
+        try:
+            save_design_db(db, db_path)
+            summary["design_db_path"] = str(db_path)
+            log.info("DesignDB saved: %s", db_path)
+        except Exception as _db_save_err:
+            log.warning("DesignDB save failed: %s", _db_save_err)
+
+        # ── QoR Report (power + hold + Fmax + congestion) ──────────────
+        try:
+            from qor_engine import build_qor_report, build_qor_from_db
+            _work_dir = Path(OPENLANE_HOST)
+            _qor = build_qor_from_db(db)
+            # Also try the full engine if DB-only insufficient
+            if _qor is None or _qor.fmax_mhz is None:
+                _qor = build_qor_report(
+                    design_name     = self.design_name,
+                    run_dir_windows = self.results_dir,
+                    work_dir_windows=_work_dir,
+                    existing_metrics= summary,
+                    docker_manager  = self.docker,
+                    period_ns       = 10.0,
+                )
+            summary["qor"]          = _qor.to_dict()
+            summary["fmax_mhz"]     = _qor.fmax_mhz
+            summary["hold_slack_ns"]= _qor.hold_slack_ns
+            summary["dynamic_mw"]   = _qor.dynamic_mw
+            summary["leakage_uw"]   = _qor.leakage_uw
+            summary["total_mw"]     = _qor.total_mw
+            summary["h_overflow_pct"]  = _qor.h_overflow_pct
+            summary["v_overflow_pct"]  = _qor.v_overflow_pct
+            summary["utilization_pct"] = _qor.utilization_pct
+            log.info("QoR complete: Fmax=%.1f MHz Total=%.4f mW",
+                     _qor.fmax_mhz or 0, _qor.total_mw or 0)
+        except Exception as _qor_err:
+            log.warning("QoR engine non-blocking error: %s", _qor_err)
+
         return summary
 
     def _get_testbench_content(self) -> str:
