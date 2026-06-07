@@ -2748,7 +2748,8 @@ menu_option = st.sidebar.radio(
          "📚 Design History",
          "✅ Sign-Off",
          "📊 Pipeline Monitor",
-         "[CAT] IP Catalog"
+         "[CAT] IP Catalog",
+         "🏗️ Hierarchy Builder"
      ],
     label_visibility="collapsed"
 )
@@ -3832,3 +3833,6 @@ elif menu_option == "📊 Pipeline Monitor":
 elif menu_option == "[CAT] IP Catalog":
     from component_catalog import render_catalog_streamlit
     render_catalog_streamlit()
+elif menu_option == "🏗️ Hierarchy Builder":
+    from hierarchy_builder import render_hierarchy_builder_streamlit
+    render_hierarchy_builder_streamlit()
