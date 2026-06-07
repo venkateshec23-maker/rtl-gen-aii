@@ -1796,41 +1796,100 @@ def show_signoff():
             st.info("Synthesized netlist file not found.")
 
     with tab1:
-        from netlist_viewer import render_netlist_streamlit
-        render_netlist_streamlit(selected_dir, design_name)
-
-    with tab2:
+        # ── Vivado/Cadence gate-level schematic (v2.7) ──────────────────
         try:
-            from waveform_enhanced import render_waveform_enhanced_streamlit
+            from schematic_vivado import render_schematic_vivado_streamlit
             from pathlib import Path as _Path
 
-            _rd = _Path(str(results))
-            _vcd_candidates = [
-                _rd / "trace.vcd",
-                _rd / "simulation" / "trace.vcd",
-                _rd / "sim" / "trace.vcd",
-                _Path("cache/verification/sim_workspace/trace.vcd"),
-                _Path("outputs/trace.vcd"),
-            ]
-            _vcd_path = next((p for p in _vcd_candidates if p.exists()), None)
+            # Search for synthesized netlist
+            _nl = None
+            _results = _Path(r"C:\tools\OpenLane\results")
+            if design_name:
+                _candidates = []
+                if selected_dir:
+                    _rd2 = _Path(str(selected_dir))
+                    _candidates += [
+                        _rd2 / f"{design_name}_sky130.v",
+                        _rd2 / f"{design_name}_synth.v",
+                    ]
+                if _results.exists():
+                    _candidates += [
+                        _results / f"{design_name}_sky130.v",
+                        _results / f"{design_name}_synth.v",
+                    ]
+                _nl = next((p for p in _candidates if p.exists()), None)
 
-            _log_candidates = [
-                _rd / "simulation.log",
-                _rd / "rtl_sim.log",
-                _rd / "sim.log",
-            ]
-            _log_path = next((p for p in _log_candidates if p.exists()), None)
+                # Last resort: newest *_sky130.v in results/
+                if _nl is None and _results.exists():
+                    sky130_files = sorted(
+                        _results.glob("*_sky130.v"),
+                        key=lambda p: p.stat().st_mtime, reverse=True
+                    )
+                    _nl = sky130_files[0] if sky130_files else None
 
-            render_waveform_enhanced_streamlit(
-                vcd_path=_vcd_path, sim_log_path=_log_path, key_prefix="sgnff_wv",
+            render_schematic_vivado_streamlit(
+                netlist_path = _nl,
+                key_prefix   = "vivado_sch",
             )
-        except Exception as _wv_err:
-            st.warning(f"Enhanced waveform error: {_wv_err}")
+
+        except Exception as _sch_err:
+            st.warning(f"Schematic viewer: {_sch_err}")
             try:
-                from waveform_display import render_waveform_streamlit
-                render_waveform_streamlit(selected_dir, design_name)
+                from netlist_viewer import render_netlist_streamlit
+                render_netlist_streamlit(selected_dir, design_name)
             except Exception:
-                st.info("No waveform data available.")
+                st.info("No netlist data available. Run synthesis first.")
+
+    with tab2:
+        # ── Vivado-style waveform viewer (v2.7) ────────────────────────
+        try:
+            from waveform_vivado import render_waveform_vivado_streamlit
+            from pathlib import Path as _Path
+
+            # Search for VCD file
+            _vcd = None
+            _log = None
+            if results:
+                _rd = _Path(str(results))
+                for _candidate in [
+                    _rd / "trace.vcd",
+                    _rd / "simulation" / "trace.vcd",
+                    _rd / "sim" / "trace.vcd",
+                ]:
+                    if _candidate.exists():
+                        _vcd = _candidate
+                        break
+                # Search for sim log
+                for _lc in [_rd / "simulation.log", _rd / "rtl_sim.log", _rd / "sim.log"]:
+                    if _lc.exists():
+                        _log = _lc
+                        break
+
+            # Workspace fallback
+            if _vcd is None:
+                for _fb in [
+                    _Path("cache/verification/sim_workspace/trace.vcd"),
+                    _Path("outputs/trace.vcd"),
+                ]:
+                    if _fb.exists():
+                        _vcd = _fb
+                        break
+
+            render_waveform_vivado_streamlit(
+                vcd_path     = _vcd,
+                sim_log_path = _log,
+                height       = 540,
+                key          = "vivado_wv",
+            )
+
+        except Exception as _wv_err:
+            st.warning(f"Vivado waveform viewer: {_wv_err}")
+            # Fallback chain
+            try:
+                from waveform_enhanced import render_waveform_enhanced_streamlit
+                render_waveform_enhanced_streamlit(_vcd, _log)
+            except Exception:
+                st.info("No waveform data available. Run the pipeline first.")
 
     with tab3:
         # ── Enhanced KLayout layout viewer (v2.5) ──────────────────────
