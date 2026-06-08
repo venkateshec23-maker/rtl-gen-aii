@@ -2970,7 +2970,8 @@ menu_option = st.sidebar.radio(
          "📊 Pipeline Monitor",
          "[CAT] IP Catalog",
          "🏗️ Hierarchy Builder",
-         "💬 Conversational Designer"
+         "💬 Conversational Designer",
+         "📚 Example Library"
      ],
     label_visibility="collapsed"
 )
@@ -4066,3 +4067,14 @@ elif menu_option == "🏗️ Hierarchy Builder":
 elif menu_option == "💬 Conversational Designer":
     from conversational_rtl import render_conversational_rtl_streamlit
     render_conversational_rtl_streamlit()
+
+elif menu_option == "📚 Example Library":
+    from rag_engine import _EXAMPLES, retrieve
+    st.title("Verilog Example Library")
+    st.caption(f"{len(_EXAMPLES)} proven synthesizable designs")
+    search = st.text_input("Search", placeholder="uart, counter, alu...")
+    shown = retrieve(search, top_k=35) if search else _EXAMPLES
+    for ex in shown:
+        with st.expander(f"{ex['id']} — {ex['desc']}"):
+            st.code(ex['verilog'], language='verilog')
+            st.caption("Keywords: " + ", ".join(ex['keywords']))

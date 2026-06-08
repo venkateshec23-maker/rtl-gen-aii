@@ -306,10 +306,18 @@ def generate_verilog_gemini(
     if not _key:
         raise ValueError("GEMINI_API_KEY not set in .env")
 
+    # Build prompt with RAG enhancement
+    prompt = f"Design name: {module_name}\n\nDescription: {description}"
+    try:
+        from rag_engine import build_rag_prompt
+        prompt = build_rag_prompt(description, prompt)
+    except Exception:
+        pass
+
     client = genai.Client(api_key=_key)
     response = client.models.generate_content(
         model="gemini-2.5-flash",
-        contents=f"Design name: {module_name}\n\nDescription: {description}",
+        contents=prompt,
         config=dict(
             system_instruction=VERILOG_SYSTEM_PROMPT,
             http_options=dict(timeout=60)
@@ -347,18 +355,22 @@ def generate_verilog_groq(
 
     client = Groq(api_key=_key)
 
+    # Build user prompt
+    prompt = f"Design name: {module_name}\n\nDescription: {description}"
+
+    # RAG enhancement
+    try:
+        from rag_engine import build_rag_prompt
+        prompt = build_rag_prompt(description, prompt)
+    except Exception:
+        pass
+
     chat = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
         max_tokens=4000,
         messages=[
             {"role": "system", "content": VERILOG_SYSTEM_PROMPT},
-            {
-                "role": "user",
-                "content": (
-                    f"Design name: {module_name}\n\n"
-                    f"Description: {description}"
-                )
-            }
+            {"role": "user", "content": prompt}
         ]
     )
 
@@ -471,11 +483,18 @@ def generate_verilog_github(
         base_url=_base_url
     )
     
+    prompt = f"Design name: {module_name}\n\nDescription: {description}"
+    try:
+        from rag_engine import build_rag_prompt
+        prompt = build_rag_prompt(description, prompt)
+    except Exception:
+        pass
+
     chat = client.chat.completions.create(
         model=_model,
         messages=[
             {"role": "system", "content": VERILOG_SYSTEM_PROMPT},
-            {"role": "user", "content": f"Design name: {module_name}\n\nDescription: {description}"}
+            {"role": "user", "content": prompt}
         ],
         temperature=0.3,
         max_tokens=4000
@@ -597,6 +616,11 @@ def generate_verilog_opencode(
         "Generate COMPLETE synthesizable RTL and a self-checking testbench. "
         "Use the exact output format with ```rtl ... ``` and ```testbench ... ``` blocks."
     )
+    try:
+        from rag_engine import build_rag_prompt
+        prompt = build_rag_prompt(description, prompt)
+    except Exception:
+        pass
 
     sid = None
     rtl_code, tb_code = None, None
