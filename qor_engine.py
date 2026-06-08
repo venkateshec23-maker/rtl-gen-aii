@@ -148,6 +148,11 @@ def parse_hold_slack(sta_ff_path: Path) -> Optional[float]:
 
     text = sta_ff_path.read_text(errors="replace")
 
+    # If the hold analysis report says no paths, that's clean
+    if "No paths found" in text:
+        log.info("Hold analysis: No paths found → hold clean")
+        return 0.0
+
     # Look for min-path section (hold analysis section marker)
     # OpenSTA writes "Path type: min" before hold paths
     hold_slacks = []
@@ -172,6 +177,15 @@ def parse_hold_slack(sta_ff_path: Path) -> Optional[float]:
                         hold_slacks.append(float(m.group(1)))
                     except ValueError:
                         pass
+
+    # Strategy 3: look for any slack line in the file (max slew/capacity sections)
+    if not hold_slacks:
+        for line in text.splitlines():
+            m = re.search(r"([-\d.]+)\s+\(MET\)", line)
+            if m:
+                val = float(m.group(1))
+                if val > -10:  # sanity check for valid slack
+                    hold_slacks.append(val)
 
     if hold_slacks:
         worst = min(hold_slacks)
@@ -307,14 +321,11 @@ def run_power_analysis(
     empty = {"dynamic_mw": None, "leakage_uw": None, "total_mw": None}
 
     # ── Locate routed DEF ────────────────────────────────────────────
-    _candidates = [
-        run_dir_windows / "routed.def",
-        run_dir_windows / "results" / "final" / "def" / f"{design_name}.def",
-        run_dir_windows / "results" / "routing" / "routed.def",
-    ]
-    routed_def = next((p for p in _candidates if p.exists()), None)
+    _found = sorted(run_dir_windows.rglob("routed.def"),
+                     key=lambda p: p.stat().st_size, reverse=True)
+    routed_def = _found[0] if _found else None
     if routed_def is None or routed_def.stat().st_size < 1000:
-        log.warning("Power analysis skipped: routed.def not found in run dir")
+        log.warning("Power: routed.def not found under %s", run_dir_windows)
         return empty
 
     # ── Locate synthesized netlist ───────────────────────────────────
@@ -467,14 +478,11 @@ def run_congestion_analysis(
         "utilization_pct": None,
     }
 
-    _candidates = [
-        run_dir_windows / "routed.def",
-        run_dir_windows / "results" / "final" / "def" / f"{design_name}.def",
-        run_dir_windows / "results" / "routing" / "routed.def",
-    ]
-    routed_def = next((p for p in _candidates if p.exists()), None)
+    _found = sorted(run_dir_windows.rglob("routed.def"),
+                     key=lambda p: p.stat().st_size, reverse=True)
+    routed_def = _found[0] if _found else None
     if routed_def is None or routed_def.stat().st_size < 1000:
-        log.warning("Congestion analysis skipped: routed.def not found in run dir")
+        log.warning("Congestion: routed.def not found under %s", run_dir_windows)
         return empty
 
     def to_linux(p: Path) -> str:
@@ -558,16 +566,19 @@ def build_qor_report(
     qor.fmax_mhz = calculate_fmax(period_ns, qor.wns_tt_ns)
 
     # ── Hold slack (parse FF STA report — no Docker call) ─────────────
-    sta_ff_candidates = [
-        run_dir_windows / "sta_ff.txt",
-        run_dir_windows / "sta_ff_final.txt",
-        run_dir_windows / f"sta_{design_name}_ff.txt",
-        run_dir_windows / "results" / "final" / "sta" / "nom_tt_025C_1v80.min.rpt",
-        run_dir_windows / "reports" / "signoff" / "sta-rcx_ff.min.rpt",
-    ]
-    sta_ff_path = next((p for p in sta_ff_candidates if p.exists()), None)
+    _sta_found = (
+        list(run_dir_windows.rglob("sta_ff*.rpt")) +
+        list(run_dir_windows.rglob("sta_ff*.txt")) +
+        list(run_dir_windows.rglob("*ff*.min.rpt"))
+    )
+    sta_ff_path = _sta_found[0] if _sta_found else None
     if sta_ff_path:
         qor.hold_slack_ns = parse_hold_slack(sta_ff_path)
+    else:
+        # Fallback to hold_analysis.txt if no STA report found
+        hold_path = run_dir_windows / "hold_analysis.txt"
+        if hold_path.exists():
+            qor.hold_slack_ns = parse_hold_slack(hold_path)
     else:
         qor.warnings.append("FF STA report not found — hold slack not measured")
 

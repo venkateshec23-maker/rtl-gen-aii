@@ -1,0 +1,55 @@
+{
+  "session_id": "test_001",
+  "design_name": "adder_8bit",
+  "created_at": "2026-06-08T22:02:29.530509",
+  "messages": [
+    {
+      "role": "user",
+      "content": "8-bit adder",
+      "timestamp": "2026-06-08T22:02:29.530509"
+    },
+    {
+      "role": "assistant",
+      "content": "Generated v1",
+      "timestamp": "2026-06-08T22:02:29.530509"
+    },
+    {
+      "role": "user",
+      "content": "make it 16-bit",
+      "timestamp": "2026-06-08T22:02:29.530509"
+    },
+    {
+      "role": "assistant",
+      "content": "Updated to v2",
+      "timestamp": "2026-06-08T22:02:29.530509"
+    }
+  ],
+  "versions": [
+    {
+      "version": 1,
+      "timestamp": "2026-06-07T10:00:00",
+      "user_request": "8-bit adder",
+      "rtl_code": "module adder_8bit();\nendmodule",
+      "cell_count": 58,
+      "area_um2": 250.0,
+      "fmax_mhz": 133.3,
+      "syntax_ok": true,
+      "synth_ok": true,
+      "gds_size_kb": 268.0,
+      "summary": ""
+    },
+    {
+      "version": 2,
+      "timestamp": "2026-06-07T10:05:00",
+      "user_request": "make it 16-bit",
+      "rtl_code": "module adder_8bit();\n\nendmodule",
+      "cell_count": 96,
+      "area_um2": 450.0,
+      "fmax_mhz": 128.2,
+      "syntax_ok": true,
+      "synth_ok": false,
+      "gds_size_kb": 0.0,
+      "summary": ""
+    }
+  ]
+}
