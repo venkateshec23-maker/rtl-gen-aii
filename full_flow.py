@@ -1932,16 +1932,20 @@ class RTLtoGDSIIFlow:
             # These paths assume the PDK is mounted at runtime.
             # The GF180MCU PDK is not bundled in the efabless/openlane container.
             # To use GF180MCU, mount the PDK volume: -v /path/to/pdk:/pdk
+            # GF180MCU PDK absent in efabless/openlane:latest
+            # Requires: docker run -v /local/gf180:/pdk/gf180 ...
             self.c_liberty = (
                 f"{self.c_pdk}/gf180mcuD/libraries/"
                 f"gf180mcu_fd_sc_mcu7t5v0/latest/liberty/"
                 f"gf180mcu_fd_sc_mcu7t5v0__tt_025C_3v30.lib"
             )
+            # GF180MCU PDK absent in efabless/openlane:latest
             self.c_liberty_ss = (
                 f"{self.c_pdk}/gf180mcuD/libraries/"
                 f"gf180mcu_fd_sc_mcu7t5v0/latest/liberty/"
                 f"gf180mcu_fd_sc_mcu7t5v0__ss_125C_3v00.lib"
             )
+            # GF180MCU PDK absent in efabless/openlane:latest
             self.c_liberty_ff = (
                 f"{self.c_pdk}/gf180mcuD/libraries/"
                 f"gf180mcu_fd_sc_mcu7t5v0/latest/liberty/"

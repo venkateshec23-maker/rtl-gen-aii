@@ -579,8 +579,8 @@ def build_qor_report(
         hold_path = run_dir_windows / "hold_analysis.txt"
         if hold_path.exists():
             qor.hold_slack_ns = parse_hold_slack(hold_path)
-    else:
-        qor.warnings.append("FF STA report not found — hold slack not measured")
+        else:
+            qor.warnings.append("FF STA report not found — hold slack not measured")
 
     # ── Power analysis (Docker call) ──────────────────────────────────
     power = run_power_analysis(
