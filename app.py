@@ -21,6 +21,21 @@ import logging
 import os
 from pathlib import Path
 from datetime import datetime
+from design_db import DesignDB
+from eco_manager import (
+    apply_eco,
+    compare_eco_results,
+    find_setup_violations,
+    find_hold_violations,
+    generate_eco_recommendations,
+)
+from dse_engine import (
+    run_design_space_exploration,
+    generate_pareto_frontier,
+    render_pareto_chart,
+    DSEPoint,
+    DSEResult,
+)
 from full_flow import (
     RTLtoGDSIIFlow,
     RealMetricsParser,
@@ -1331,6 +1346,68 @@ def render_qor_table(results_dir: str, design_name: str):
     )
 
 
+# ── ECO Dashboard helper plots ───────────────────────────────────────────────
+
+def plot_fmax_improvement(eco) -> "plotly.graph_objects.Figure":
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    orig = eco.original_qor.get("fmax_mhz", 0) if eco.original_qor else 0
+    opt  = eco.optimized_qor.get("fmax_mhz", 0) if eco.optimized_qor else 0
+    fig.add_trace(go.Bar(name="Before", x=["Fmax"], y=[orig],
+                         marker_color="#FF6B6B"))
+    fig.add_trace(go.Bar(name="After", x=["Fmax"], y=[opt],
+                         marker_color="#51CF66"))
+    fig.update_layout(title="Fmax Improvement", yaxis_title="MHz",
+                      template="plotly_dark", paper_bgcolor="#1e1e1e",
+                      plot_bgcolor="#1e1e1e", font=dict(color="#cccccc"))
+    return fig
+
+
+def plot_power_change(eco) -> "plotly.graph_objects.Figure":
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    orig = eco.original_qor.get("power_mw", 0) if eco.original_qor else 0
+    opt  = eco.optimized_qor.get("power_mw", 0) if eco.optimized_qor else 0
+    fig.add_trace(go.Bar(name="Before", x=["Power"], y=[orig],
+                         marker_color="#FF6B6B"))
+    fig.add_trace(go.Bar(name="After", x=["Power"], y=[opt],
+                         marker_color="#51CF66"))
+    fig.update_layout(title="Power Change", yaxis_title="mW",
+                      template="plotly_dark", paper_bgcolor="#1e1e1e",
+                      plot_bgcolor="#1e1e1e", font=dict(color="#cccccc"))
+    return fig
+
+
+def plot_area_change(eco) -> "plotly.graph_objects.Figure":
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    orig = eco.original_qor.get("area_um2", 0) if eco.original_qor else 0
+    opt  = eco.optimized_qor.get("area_um2", 0) if eco.optimized_qor else 0
+    fig.add_trace(go.Bar(name="Before", x=["Area"], y=[orig],
+                         marker_color="#FF6B6B"))
+    fig.add_trace(go.Bar(name="After", x=["Area"], y=[opt],
+                         marker_color="#51CF66"))
+    fig.update_layout(title="Area Change", yaxis_title="um2",
+                      template="plotly_dark", paper_bgcolor="#1e1e1e",
+                      plot_bgcolor="#1e1e1e", font=dict(color="#cccccc"))
+    return fig
+
+
+def plot_slack_improvement(eco) -> "plotly.graph_objects.Figure":
+    import plotly.graph_objects as go
+    fig = go.Figure()
+    orig = eco.original_qor.get("slack_ns", 0) if eco.original_qor else 0
+    opt  = eco.optimized_qor.get("slack_ns", 0) if eco.optimized_qor else 0
+    fig.add_trace(go.Bar(name="Before", x=["Slack"], y=[orig],
+                         marker_color="#FF6B6B"))
+    fig.add_trace(go.Bar(name="After", x=["Slack"], y=[opt],
+                         marker_color="#51CF66"))
+    fig.update_layout(title="Slack Improvement", yaxis_title="ns",
+                      template="plotly_dark", paper_bgcolor="#1e1e1e",
+                      plot_bgcolor="#1e1e1e", font=dict(color="#cccccc"))
+    return fig
+
+
 def show_signoff():
     """
     Professional sign-off page with all views.
@@ -1691,7 +1768,7 @@ def show_signoff():
         st.caption(f"QoR table unavailable: {_ui_err}")
 
     # ── TABS FOR EACH VIEW ──
-    tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9 = st.tabs([
+    tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
         "📝 Source Code",
         "📐 Netlist",
         "📊 Waveforms",
@@ -1702,6 +1779,7 @@ def show_signoff():
         "💠 MCMM",
         "🛡️ DRC/LVS",
         "⚡ SPEF",
+        "🔧 ECO",
     ])
 
     with tab0:
@@ -1918,7 +1996,7 @@ def show_signoff():
             _known_gds = (
                 latest.get("gds_path")
                 or latest.get("gds_file")
-            )
+            ) if latest else None
             if _known_gds:
                 _gds_candidates.insert(0, _Path(str(_known_gds)))
 
@@ -2047,6 +2125,148 @@ def show_signoff():
                 st.info("SPEF data not available. Run the full RTL→GDS flow first.")
         except Exception as _sp_err:
             st.warning(f"SPEF error: {_sp_err}")
+
+    with tab10:
+        st.markdown("""
+        <div style="font-family:'Share Tech Mono',monospace;
+             font-size:0.7rem;letter-spacing:2px;
+             color:#00d4ff;border-bottom:1px solid #30363d;
+             padding-bottom:6px;margin-bottom:12px">
+        ▸ ECO ANALYSIS & DESIGN SPACE EXPLORATION
+        </div>""", unsafe_allow_html=True)
+
+        # Build a DesignDB from current results
+        eco_db = DesignDB(design_name=design_name, rtl_sources=[], netlist_path="")
+        if tt_slack is not None:
+            from design_db import TimingData, TimingCorner
+            eco_db.timing = TimingData(
+                period_ns=10.0,
+                fmax_mhz=None,
+                corners={
+                    "TT": TimingCorner(corner="TT", slack_ns=tt_slack, met=(tt_status == "MET")),
+                },
+            )
+
+        col_eco1, col_eco2, col_eco3, col_eco4 = st.columns(4)
+        with col_eco1:
+            setup_v = find_setup_violations(eco_db)
+            st.metric("Setup Violations", len(setup_v),
+                      delta=f"WNS={setup_v[0]['slack_ns']:.2f}ns" if setup_v else "0")
+        with col_eco2:
+            hold_v = find_hold_violations(eco_db)
+            st.metric("Hold Violations", len(hold_v),
+                      delta=f"{hold_v[0]['slack_ns']:.3f}ns" if hold_v else "0")
+        with col_eco3:
+            recs = generate_eco_recommendations(eco_db)
+            st.metric("ECO Recommendations", len(recs))
+        with col_eco4:
+            try:
+                eco_result = apply_eco(eco_db, strategy="full")
+                st.metric("ECO Applied", f"{len(eco_result.applied_actions)} actions",
+                          delta=f"Fmax +{eco_result.timing_improvement:.3f}ns")
+            except Exception:
+                st.metric("ECO Applied", "N/A")
+
+        # Before/After comparison charts
+        st.markdown("### QoR Impact Comparison")
+        co_ec1, co_ec2 = st.columns(2)
+        with co_ec1:
+            if eco_db.eco and len(eco_db.eco.actions) > 0:
+                try:
+                    fig_fmax = plot_fmax_improvement(eco_db.eco)
+                    st.plotly_chart(fig_fmax, use_container_width=True)
+                except Exception:
+                    st.caption("Fmax improvement chart unavailable")
+        with co_ec2:
+            if eco_db.eco and len(eco_db.eco.actions) > 0:
+                try:
+                    fig_power = plot_power_change(eco_db.eco)
+                    st.plotly_chart(fig_power, use_container_width=True)
+                except Exception:
+                    st.caption("Power change chart unavailable")
+
+        co_ec3, co_ec4 = st.columns(2)
+        with co_ec3:
+            if eco_db.eco and len(eco_db.eco.actions) > 0:
+                try:
+                    fig_area = plot_area_change(eco_db.eco)
+                    st.plotly_chart(fig_area, use_container_width=True)
+                except Exception:
+                    st.caption("Area change chart unavailable")
+        with co_ec4:
+            if eco_db.eco and len(eco_db.eco.actions) > 0:
+                try:
+                    fig_slack = plot_slack_improvement(eco_db.eco)
+                    st.plotly_chart(fig_slack, use_container_width=True)
+                except Exception:
+                    st.caption("Slack improvement chart unavailable")
+
+        # Design Space Exploration
+        st.markdown("### Design Space Exploration — Pareto Frontier")
+        if st.button("🚀 Run Design Space Exploration", type="primary"):
+            with st.spinner("Exploring 60 design configurations..."):
+                dse_result = run_design_space_exploration(eco_db)
+                st.session_state["dse_result"] = dse_result
+                st.success(f"Exploration complete: {len(dse_result.points)} points, "
+                          f"{len(dse_result.pareto_frontier)} Pareto-optimal")
+
+        if "dse_result" in st.session_state:
+            dse_res = st.session_state["dse_result"]
+            col_dse1, col_dse2, col_dse3, col_dse4 = st.columns(4)
+            with col_dse1:
+                if dse_res.best_fmax:
+                    st.metric("Best Fmax",
+                              f"{dse_res.best_fmax.fmax_mhz:.0f} MHz",
+                              help=f"CP={dse_res.best_fmax.clock_period_ns}ns, "
+                                   f"Util={dse_res.best_fmax.utilization_pct}%, "
+                                   f"Den={dse_res.best_fmax.placement_density}")
+            with col_dse2:
+                if dse_res.best_area:
+                    st.metric("Best Area",
+                              f"{dse_res.best_area.area_um2:.0f} um²",
+                              help=f"CP={dse_res.best_area.clock_period_ns}ns, "
+                                   f"Util={dse_res.best_area.utilization_pct}%")
+            with col_dse3:
+                if dse_res.best_power:
+                    st.metric("Best Power",
+                              f"{dse_res.best_power.power_mw:.4f} mW",
+                              help=f"CP={dse_res.best_power.clock_period_ns}ns, "
+                                   f"Util={dse_res.best_power.utilization_pct}%")
+            with col_dse4:
+                if dse_res.best_balanced:
+                    st.metric("Balanced Design",
+                              f"{dse_res.best_balanced.fmax_mhz:.0f} MHz",
+                              help=f"CP={dse_res.best_balanced.clock_period_ns}ns, "
+                                   f"Area={dse_res.best_balanced.area_um2:.0f} um², "
+                                   f"Power={dse_res.best_balanced.power_mw:.4f}mW")
+
+            # Pareto charts
+            pco1, pco2 = st.columns(2)
+            with pco1:
+                try:
+                    fig1 = render_pareto_chart(dse_res, "area_um2", "fmax_mhz",
+                                               "Area vs Fmax")
+                    st.plotly_chart(fig1, use_container_width=True)
+                except Exception as e:
+                    st.caption(f"Area-Fmax chart unavailable: {e}")
+            with pco2:
+                try:
+                    fig2 = render_pareto_chart(dse_res, "power_mw", "fmax_mhz",
+                                               "Power vs Fmax")
+                    st.plotly_chart(fig2, use_container_width=True)
+                except Exception as e:
+                    st.caption(f"Power-Fmax chart unavailable: {e}")
+
+            pco3, _ = st.columns([1, 1])
+            with pco3:
+                try:
+                    fig3 = render_pareto_chart(dse_res, "congestion_score", "fmax_mhz",
+                                               "Congestion vs Fmax")
+                    st.plotly_chart(fig3, use_container_width=True)
+                except Exception as e:
+                    st.caption(f"Congestion-Fmax chart unavailable: {e}")
+        else:
+            st.info("Click 'Run Design Space Exploration' to generate the Pareto frontier.")
 
 
 def _render_reports_tab(results: Path, design_name: str):
@@ -2749,7 +2969,8 @@ menu_option = st.sidebar.radio(
          "✅ Sign-Off",
          "📊 Pipeline Monitor",
          "[CAT] IP Catalog",
-         "🏗️ Hierarchy Builder"
+         "🏗️ Hierarchy Builder",
+         "💬 Conversational Designer"
      ],
     label_visibility="collapsed"
 )
@@ -3152,6 +3373,11 @@ def page_upload_custom():
                 index=0
             )
         with col2:
+            pdk_choice = st.selectbox(
+                "PDK / Process",
+                ["sky130A", "gf180mcuD (beta)", "IHP SG13G2 (coming soon)"],
+                index=0
+            )
             max_retries = st.slider(
                 "Max repair attempts", 1, 5, 3
             )
@@ -3836,3 +4062,7 @@ elif menu_option == "[CAT] IP Catalog":
 elif menu_option == "🏗️ Hierarchy Builder":
     from hierarchy_builder import render_hierarchy_builder_streamlit
     render_hierarchy_builder_streamlit()
+
+elif menu_option == "💬 Conversational Designer":
+    from conversational_rtl import render_conversational_rtl_streamlit
+    render_conversational_rtl_streamlit()

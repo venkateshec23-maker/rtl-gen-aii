@@ -2156,7 +2156,7 @@ def _gen_tb_data_dict(bits: int) -> dict:
         end
     end
 """
-    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}];\n" + fill
+    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}];\ninitial begin\n" + fill + "    end\n"
     data["adder"] = (decls, loop)
 
     # ── Subtractor ──────────────────────────────────────────────────
@@ -2181,7 +2181,7 @@ def _gen_tb_data_dict(bits: int) -> dict:
         end
     end
 """
-    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}];\n" + fill
+    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}];\ninitial begin\n" + fill + "    end\n"
     data["subtractor"] = (decls, loop)
 
     # ── Multiplier ──────────────────────────────────────────────────
@@ -2205,7 +2205,7 @@ def _gen_tb_data_dict(bits: int) -> dict:
         end
     end
 """
-    decls = f"reg [{out_w2-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}];\n" + fill
+    decls = f"reg [{out_w2-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}];\ninitial begin\n" + fill + "    end\n"
     data["multiplier"] = (decls, loop)
 
     # ── ALU ─────────────────────────────────────────────────────────
@@ -2228,7 +2228,7 @@ def _gen_tb_data_dict(bits: int) -> dict:
         end
     end
 """
-    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}]; reg [1:0] t_op_tv [0:{_NUM_TESTS-1}];\n" + fill
+    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}]; reg [1:0] t_op_tv [0:{_NUM_TESTS-1}];\ninitial begin\n" + fill + "    end\n"
     data["alu"] = (decls, loop)
 
     # ── Adder_Subtractor ────────────────────────────────────────────
@@ -2254,7 +2254,7 @@ def _gen_tb_data_dict(bits: int) -> dict:
         end
     end
 """
-    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}]; reg t_mode_tv [0:{_NUM_TESTS-1}];\n" + fill
+    decls = f"reg [{out_w-1}:0] t_exp_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}]; reg t_mode_tv [0:{_NUM_TESTS-1}];\ninitial begin\n" + fill + "    end\n"
     data["adder_subtractor"] = (decls, loop)
 
     # ── Comparator ──────────────────────────────────────────────────
@@ -2280,7 +2280,7 @@ def _gen_tb_data_dict(bits: int) -> dict:
         end
     end
 """
-    decls = f"reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}]; reg t_eq_tv [0:{_NUM_TESTS-1}]; reg t_gt_tv [0:{_NUM_TESTS-1}]; reg t_lt_tv [0:{_NUM_TESTS-1}];\n" + fill
+    decls = f"reg [{bits-1}:0] t_a_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_b_tv [0:{_NUM_TESTS-1}]; reg t_eq_tv [0:{_NUM_TESTS-1}]; reg t_gt_tv [0:{_NUM_TESTS-1}]; reg t_lt_tv [0:{_NUM_TESTS-1}];\ninitial begin\n" + fill + "    end\n"
     data["comparator"] = (decls, loop)
 
     # ── Mux ─────────────────────────────────────────────────────────
@@ -2305,7 +2305,7 @@ def _gen_tb_data_dict(bits: int) -> dict:
         end
     end
 """
-    decls = f"reg [{bits-1}:0] t_in0_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in1_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in2_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in3_tv [0:{_NUM_TESTS-1}]; reg [1:0] t_sel_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_exp_tv [0:{_NUM_TESTS-1}];\n" + fill
+    decls = f"reg [{bits-1}:0] t_in0_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in1_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in2_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in3_tv [0:{_NUM_TESTS-1}]; reg [1:0] t_sel_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_exp_tv [0:{_NUM_TESTS-1}];\ninitial begin\n" + fill + "    end\n"
     data["mux"] = (decls, loop)
 
     # ── Counter (3 tests: count to 100, hold, reset) ────────────────
