@@ -147,7 +147,6 @@ read_lef {lef}
 read_liberty {liberty}
 read_def {routed_def}
 read_sdc {sdc}
-link_design {design_name}
 
 # ============================================================
 # REAL RC EXTRACTION via OpenRCX

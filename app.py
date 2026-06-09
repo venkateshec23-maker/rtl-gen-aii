@@ -21,6 +21,9 @@ import logging
 import os
 from pathlib import Path
 from datetime import datetime
+
+_CLOUD_MODE = os.getenv("STREAMLIT_CLOUD", "0") == "1" or \
+              not os.path.exists(r"C:\tools\OpenLane")
 from design_db import DesignDB
 from eco_manager import (
     apply_eco,
@@ -782,9 +785,12 @@ def show_home():
     st.subheader("Run Pipeline")
     col_btn1, col_btn2 = st.columns(2)
     with col_btn1:
-        if st.button("▶️ Run adder_8bit Full Flow", type="primary"):
-            with st.spinner("Running RTL to GDSII — ~90 seconds..."):
-                flow = RTLtoGDSIIFlow(
+        if st.button("Run adder_8bit Full Flow", type="primary"):
+            if _CLOUD_MODE:
+                st.warning("Pipeline execution requires Docker (not available on Streamlit Cloud). Run locally for full EDA pipeline.")
+            else:
+                with st.spinner("Running RTL to GDSII — ~90 seconds..."):
+                    flow = RTLtoGDSIIFlow(
                     design_name  = "adder_8bit",
                     verilog_file = str(
                         DESIGNS_DIR / "adder_8bit.v"
@@ -811,29 +817,32 @@ def show_home():
                 st.json(summary["steps"])
 
     with col_btn2:
-        if st.button("▶️ Run counter_4bit Full Flow"):
-            with st.spinner("Running counter_4bit — ~90 seconds..."):
-                flow = RTLtoGDSIIFlow(
-                    design_name  = "counter_4bit",
-                    verilog_file = str(
-                        WORK_DIR / "designs/counter_4bit/counter_4bit.v"
-                    ),
-                    work_dir     = str(WORK_DIR),
-                    pdk_dir      = str(PDK_DIR),
-                    clock_period = 10.0
-                )
-                summary = flow.run_full_flow()
-                st.session_state["active_results_dir"] = summary.get(
-                    "results_dir", str(results_dir)
-                )
-                if summary["tapeout_ready"]:
-                    st.success(
-                        f"✅ counter_4bit TAPE-OUT READY in "
-                        f"{summary['elapsed_sec']}s"
+        if st.button("Run counter_4bit Full Flow"):
+            if _CLOUD_MODE:
+                st.warning("Pipeline execution requires Docker (not available on Streamlit Cloud).")
+            else:
+                with st.spinner("Running counter_4bit — ~90 seconds..."):
+                    flow = RTLtoGDSIIFlow(
+                        design_name  = "counter_4bit",
+                        verilog_file = str(
+                            WORK_DIR / "designs/counter_4bit/counter_4bit.v"
+                        ),
+                        work_dir     = str(WORK_DIR),
+                        pdk_dir      = str(PDK_DIR),
+                        clock_period = 10.0
                     )
-                else:
-                    st.error("❌ Flow incomplete")
-                st.json(summary["steps"])
+                    summary = flow.run_full_flow()
+                    st.session_state["active_results_dir"] = summary.get(
+                        "results_dir", str(results_dir)
+                    )
+                    if summary["tapeout_ready"]:
+                        st.success(
+                            f"counter_4bit TAPE-OUT READY in "
+                            f"{summary['elapsed_sec']}s"
+                        )
+                    else:
+                        st.error("Flow incomplete")
+                    st.json(summary["steps"])
 
 
 # ============================================================
@@ -1749,10 +1758,11 @@ def show_signoff():
                 cell_count     = latest.get("cell_count"),
                 chip_area_um2  = latest.get("chip_area_um2"),
                 gds_size_kb    = round((latest.get("gds_size_bytes") or 0)/1024, 1),
-                fmax_mhz       = calculate_fmax(10.0, latest.get("timing_slack_ns")),
-                hold_slack_ns  = latest.get("hold_slack_ns"),
-                dynamic_mw     = latest.get("dynamic_mw"),
-                total_mw       = latest.get("total_mw"),
+                fmax_mhz       = latest.get("fmax_mhz") or calculate_fmax(10.0, latest.get("timing_slack_ns")),
+                hold_slack_ns  = latest.get("hold_slack_ns") or latest.get("worst_hold_slack"),
+                dynamic_mw     = latest.get("dynamic_mw") or latest.get("dynamic_power_mw"),
+                leakage_uw     = latest.get("leakage_uw") or (latest.get("static_power_mw") * 1000 if latest.get("static_power_mw") else None),
+                total_mw       = latest.get("total_mw") or latest.get("total_power_mw"),
                 utilization_pct= latest.get("utilization_pct"),
                 tapeout_ready  = bool(latest.get("tapeout_ready")),
             )
@@ -1768,18 +1778,19 @@ def show_signoff():
         st.caption(f"QoR table unavailable: {_ui_err}")
 
     # ── TABS FOR EACH VIEW ──
-    tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10 = st.tabs([
-        "📝 Source Code",
-        "📐 Netlist",
-        "📊 Waveforms",
-        "🔲 Layout",
-        "⏱️ Timing",
-        "📄 Reports",
-        "🚦 Congestion",
-        "💠 MCMM",
-        "🛡️ DRC/LVS",
-        "⚡ SPEF",
-        "🔧 ECO",
+    tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
+        "Source Code",
+        "Netlist",
+        "Waveforms",
+        "Layout",
+        "Timing",
+        "Reports",
+        "Congestion",
+        "MCMM",
+        "DRC/LVS",
+        "SPEF",
+        "ECO",
+        "Formal",
     ])
 
     with tab0:
@@ -2268,6 +2279,37 @@ def show_signoff():
         else:
             st.info("Click 'Run Design Space Exploration' to generate the Pareto frontier.")
 
+    with tab11:
+        st.subheader("Formal Property Verification")
+        st.caption(
+            "Properties verified using Yosys SAT solver "
+            "(built into efabless/openlane:latest -- no extra tools)."
+        )
+        try:
+            from formal_verify import (
+                render_formal_results_streamlit,
+                FormalReport, PropertyResult
+            )
+            _fr = None
+            _formal_pass  = latest.get("formal_pass")  if latest else None
+            _formal_total = latest.get("formal_total") if latest else None
+            if _formal_pass is not None and _formal_total is not None:
+                _fr = FormalReport(
+                    design_name  = design_name or "",
+                    netlist_path = "",
+                    module_name  = design_name or "",
+                    total        = _formal_total,
+                    passed       = _formal_pass,
+                    failed       = latest.get("formal_fail", 0),
+                )
+            render_formal_results_streamlit(
+                report      = _fr,
+                run_dir     = Path(selected_dir) if selected_dir else None,
+                design_name = design_name or "",
+            )
+        except Exception as _fe:
+            st.caption(f"Formal verification data unavailable: {_fe}")
+
 
 def _render_reports_tab(results: Path, design_name: str):
     """Show all report files for download."""
@@ -2286,6 +2328,7 @@ def _render_reports_tab(results: Path, design_name: str):
         "Timing TT":      "sta_final.txt",
         "Timing SS":      "sta_ss.txt",
         "Timing FF":      "sta_ff.txt",
+        "Formal Report":  f"{design_name}_formal_report.txt",
         "IR Drop":        "ir_drop_vdd.txt",
         "Coverage":       "coverage_report.txt",
         "ERC":            "erc_report.txt",
@@ -2634,16 +2677,19 @@ def page_generate_design():
         status   = st.empty()
         
         if guaranteed_clicked:
-            # GUARANTEED FLOW - Always works
-            status.info("Running Guaranteed GDS2 Flow...")
-            progress.progress(10)
-            
-            from guaranteed_flow import generate_guaranteed_gds
-            result = generate_guaranteed_gds(
-                description=description,
-                module_name=module_name,
-                llm_provider=provider
-            )
+            if _CLOUD_MODE:
+                st.warning("Pipeline execution requires Docker (not available on Streamlit Cloud). Run locally for full EDA pipeline.")
+            else:
+                # GUARANTEED FLOW - Always works
+                status.info("Running Guaranteed GDS2 Flow...")
+                progress.progress(10)
+                
+                from guaranteed_flow import generate_guaranteed_gds
+                result = generate_guaranteed_gds(
+                    description=description,
+                    module_name=module_name,
+                    llm_provider=provider
+                )
             progress.progress(100)
             
             if result.get("status") == "SUCCESS":
@@ -3568,10 +3614,9 @@ def page_upload_custom():
 
 
 def _run_custom_pipeline(module_name, rtl_code, tb_code):
-    """
-    Execute complete pipeline for custom design.
-    Shows real-time progress. Never skips steps.
-    """
+    if _CLOUD_MODE:
+        st.warning("Pipeline execution requires Docker (not available on Streamlit Cloud).")
+        return
     from full_flow import RTLtoGDSIIFlow
 
     WORK = Path(r"C:\tools\OpenLane")

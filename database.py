@@ -253,7 +253,13 @@ def _save_run_json(summary: Dict) -> bool:
         "elapsed_sec":   summary.get("elapsed_sec"),
         "results_dir":   str(summary.get("results_dir", "")),
         "gds_path":      summary.get("gds_path", ""),
-        "timestamp":     datetime.now().isoformat()
+        "timestamp":     datetime.now().isoformat(),
+        "qor":           summary.get("qor"),
+        "fmax_mhz":      summary.get("fmax_mhz"),
+        "hold_slack_ns": summary.get("hold_slack_ns"),
+        "dynamic_mw":    summary.get("dynamic_mw"),
+        "total_mw":      summary.get("total_mw"),
+        "utilization_pct": summary.get("utilization_pct"),
     })
 
     with open(index_path, 'w') as f:

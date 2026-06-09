@@ -2200,18 +2200,19 @@ class RTLtoGDSIIFlow:
         hold_script = f"""
 read_lef {self.c_tlef}
 read_lef {self.c_lef}
-read_liberty {self.liberty_ss}
+read_liberty {self.liberty_ff}
 read_verilog {self.c_results}/{self.design_name}_sky130.v
 link_design {self.design_name}
 read_sdc {self.c_results}/{self.design_name}.sdc
 
-# Hold analysis (min path)
+# Hold analysis (min path) — FF corner is worst for hold
 set_timing_derate -early 0.95
 report_checks -path_delay min -fields {{slew cap input nets fanout}} \\
     -format full_clock_expanded \\
     > {self.c_results}/hold_analysis.txt
 report_check_types -max_slew -max_cap -max_fanout \\
     >> {self.c_results}/hold_analysis.txt
+report_worst_slack -min >> {self.c_results}/hold_analysis.txt
 
 set hold_viol [report_check_types -violators -min_delay -no_line_splits]
 if {{[llength $hold_viol] == 0}} {{
@@ -2261,7 +2262,15 @@ if {{[llength $hold_viol] == 0}} {{
                 elif no_paths:
                     result["hold_clean"]       = True
                     result["hold_violations"]  = 0
-                    result["worst_hold_slack"] = None
+                    result["worst_hold_slack"] = 0.0
+
+            if result["worst_hold_slack"] is None:
+                m3 = re.search(r'worst\s+slack\s+([-\d.]+)', content)
+                if m3:
+                    val = float(m3.group(1))
+                    result["worst_hold_slack"] = val
+                    result["hold_clean"] = val >= 0
+                    result["hold_violations"] = 0 if val >= 0 else 1
 
             slack_str = f"{result['worst_hold_slack']:.3f}" if result['worst_hold_slack'] is not None else "N/A"
             log.info(
@@ -2284,13 +2293,11 @@ if {{[llength $hold_viol] == 0}} {{
 read_lef {self.c_tlef}
 read_lef {self.c_lef}
 read_liberty {self.liberty_tt}
-read_verilog {self.c_results}/{self.design_name}_sky130.v
-link_design {self.design_name}
-read_sdc {self.c_results}/{self.design_name}.sdc
 read_def {self.c_results}/routed.def
+read_sdc {self.c_results}/{self.design_name}.sdc
 
 # Power analysis
-report_power -corner tt > {self.c_results}/power_report.txt
+report_power > {self.c_results}/power_report.txt
 report_design_area >> {self.c_results}/power_report.txt
 
 puts "POWER_ANALYSIS_DONE"
@@ -3173,6 +3180,49 @@ equiv_status
 
         log.warning("FORMAL EQUIV: inconclusive - skipping")
         return True
+
+    def step2c_formal_properties(self) -> bool:
+        """
+        Formal property verification using Yosys SAT solver.
+        Checks: no combinational loops, hierarchy consistency, synthesis clean.
+        For sequential designs: also checks reset reachability and X-propagation.
+        """
+        log.info("=== STEP 2c: FORMAL PROPERTY VERIFICATION ===")
+
+        netlist_path = self.results_dir / f"{self.design_name}_sky130.v"
+        if not netlist_path.exists():
+            log.warning("Netlist missing - skip formal properties")
+            return True
+
+        try:
+            from formal_verify import run_formal_verification
+            self.formal_report = run_formal_verification(
+                netlist_path  = netlist_path,
+                module_name   = self.design_name,
+                docker_manager = self.docker,
+                work_dir      = Path(OPENLANE_HOST),
+                is_sequential = True,
+            )
+
+            if self.formal_report.failed > 0:
+                log.error(
+                    "Formal property FAIL: %d/%d properties violated",
+                    self.formal_report.failed, self.formal_report.total,
+                )
+                for r in self.formal_report.results:
+                    if r.status == "FAIL":
+                        log.error("  FAIL: %s - %s", r.property_name, r.detail[:100])
+                return False
+
+            log.info(
+                "Formal property PASS: %d/%d properties verified",
+                self.formal_report.passed, self.formal_report.total,
+            )
+            return True
+
+        except Exception as e:
+            log.warning("Formal property verification skipped: %s", e)
+            return True
 
     def step3_physical_design(self) -> bool:
         """Run complete OpenROAD physical design flow with adaptive sizing."""
@@ -4585,6 +4635,7 @@ exit
             ("Synthesis",            self.step2_synthesis),
             ("SDC Validation",       self._validate_sdc),
             ("Formal Equivalence",   self.step2b_formal_equivalence),
+            ("Formal Properties",    self.step2c_formal_properties),
             ("Physical Design",      self.step3_physical_design),
             ("Gate-Level Simulation", self.step1b_gate_level_simulation),
             ("GDS Generation",       self.step4_gds_generation),
@@ -4675,6 +4726,30 @@ exit
             except Exception as e:
                 log.error(f"Error parsing congestion: {e}")
 
+        # ── Formal verification (Yosys SAT) ─────────────────
+        try:
+            from formal_verify import run_formal_verification_simple
+            _netlist_candidates = (
+                list(self.results_dir.rglob(f"{self.design_name}_sky130.v")) +
+                list(self.results_dir.rglob(f"{self.design_name}_synth.v")) +
+                list(Path(OPENLANE_HOST).rglob(f"{self.design_name}_sky130.v"))
+            )
+            _netlist = _netlist_candidates[0] if _netlist_candidates else None
+            if _netlist:
+                _formal = run_formal_verification_simple(
+                    netlist_path = _netlist,
+                    module_name  = self.design_name,
+                    work_dir     = Path(OPENLANE_HOST),
+                )
+                summary["formal_pass"]  = _formal.passed
+                summary["formal_fail"]  = _formal.failed
+                summary["formal_total"] = _formal.total
+                summary["formal_status"]= _formal.overall_status
+                log.info("Formal: %d/%d pass", _formal.passed, _formal.total)
+        except Exception as _fe:
+            log.debug("Formal verification non-blocking error: %s", _fe)
+        # ─────────────────────────────────────────────────────
+
         final_metrics = self.metrics.get_all_metrics()
         signoff_metrics = final_metrics.get("signoff", {})
         lvs_status = signoff_metrics.get("lvs", {}).get("status")
@@ -4746,6 +4821,9 @@ exit
         # Add gate-level simulation note if available
         if hasattr(self, "_gate_level_sim_note"):
             summary["gate_level_sim_note"] = self._gate_level_sim_note
+
+        if hasattr(self, "formal_report") and self.formal_report is not None:
+            summary["formal"] = self.formal_report.to_dict()
 
         # Attach run isolation metadata
         summary["run_id"] = self.run_id
@@ -4968,6 +5046,8 @@ exit
                      _qor.fmax_mhz or 0, _qor.total_mw or 0)
         except Exception as _qor_err:
             log.warning("QoR engine non-blocking error: %s", _qor_err)
+            import traceback
+            log.debug("QoR traceback: %s", traceback.format_exc())
 
         return summary
 

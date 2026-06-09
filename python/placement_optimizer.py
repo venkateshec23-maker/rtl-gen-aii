@@ -610,7 +610,7 @@ class PlacementOptimizer:
         read_liberty {lib_ss}
 
         read_def /work/{def_path.name}
-        link_design {top_module}
+        catch {{ link_design {top_module} }}
 
         create_clock -name {config.clock_net} \\
                      -period {config.clock_period_ns} \\

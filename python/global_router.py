@@ -381,9 +381,9 @@ class GlobalRouter:
         read_liberty {lib_tt}
 
         # ── 2. Read netlist and post-CTS DEF ─────────────────────────
-        catch {{ read_verilog /work/{top_module}_synth.v }}
-        catch {{ link_design {top_module} }}
+        read_verilog /work/{top_module}_synth.v
         read_def /work/{def_path.name}
+        catch {{ link_design {top_module} }}
 
         # ── 3. Clock constraint ───────────────────────────────────────
         create_clock -name {config.clock_net} \\
