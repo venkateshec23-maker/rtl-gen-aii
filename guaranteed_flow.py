@@ -137,20 +137,20 @@ endmodule
 ''',
 
 "alu": '''
-module {name} (
-    input              clk,
-    input              reset_n,
-    input  [3:0]       a,
-    input  [3:0]       b,
-    input  [1:0]       opcode,
-    output reg [4:0]   result,
-    output reg         zero_flag
+module {name} #(parameter WIDTH = {bits}) (
+    input                     clk,
+    input                     reset_n,
+    input  [WIDTH-1:0]        a,
+    input  [WIDTH-1:0]        b,
+    input  [1:0]              op,
+    output reg [WIDTH:0]      result,
+    output reg                zero_flag
 );
     always @(posedge clk) begin
         if (!reset_n) begin
             result <= 0; zero_flag <= 0;
         end else begin
-            case (opcode)
+            case (op)
                 2'b00: result <= {{1'b0,a}} + {{1'b0,b}};
                 2'b01: result <= {{1'b0,a}} - {{1'b0,b}};
                 2'b10: result <= {{1'b0,a}} & {{1'b0,b}};
@@ -1344,11 +1344,11 @@ module {name}_tb();
     reg clk, reset_n;
     reg [{bits}-1:0] a, b;
     reg [3:0] op;
-    wire [{bits}-1:0] result;
+    wire [{bits}:0] result;
     integer pass_count = 0;
     integer fail_count = 0;
 
-    {name} #(.WIDTH({bits})) dut(.clk(clk), .reset_n(reset_n), .a(a), .b(b), .op(op), .result(result));
+    {name} #(.WIDTH({bits})) dut(.clk(clk), .reset_n(reset_n), .a(a), .b(b), .op(op), .result(result), .zero_flag());
 
     initial clk = 0;
     always #5 clk = ~clk;
@@ -2214,7 +2214,7 @@ def _gen_tb_data_dict(bits: int) -> dict:
         a = random.randint(0, max_val)
         b = random.randint(0, max_val)
         op = random.randint(0, 3)
-        exp = {0: a+b, 1: a-b if a>=b else 0, 2: a&b, 3: a|b}[op]
+        exp = {0: a+b, 1: (a - b) % (1 << out_w), 2: a&b, 3: a|b}[op]
         fill += f"    t_a_tv[{idx}]={bits}'d{a}; t_b_tv[{idx}]={bits}'d{b}; t_op_tv[{idx}]={2}'d{op}; t_exp_tv[{idx}]={out_w}'d{exp};\n"
     loop = f"""
     for (i=0; i<{_NUM_TESTS}; i=i+1) begin
@@ -2308,19 +2308,20 @@ def _gen_tb_data_dict(bits: int) -> dict:
     decls = f"reg [{bits-1}:0] t_in0_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in1_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in2_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_in3_tv [0:{_NUM_TESTS-1}]; reg [1:0] t_sel_tv [0:{_NUM_TESTS-1}]; reg [{bits-1}:0] t_exp_tv [0:{_NUM_TESTS-1}];\ninitial begin\n" + fill + "    end\n"
     data["mux"] = (decls, loop)
 
-    # ── Counter (3 tests: count to 100, hold, reset) ────────────────
+    # ── Counter (3 tests: count to N, hold, reset) ──────────────────
+    exp_count = _NUM_TESTS % (1 << bits)
     loop = f"""
     enable = 1;
     for (i=0; i<{_NUM_TESTS}; i=i+1) @(posedge clk);
     #1;
-    if (count == {bits}'d{_NUM_TESTS}) begin
-        $display("PASS Counter: reached {_NUM_TESTS}"); pass_count = pass_count + 1;
+    if (count == {bits}'d{exp_count}) begin
+        $display("PASS Counter: reached {exp_count}"); pass_count = pass_count + 1;
     end else begin
-        $display("FAIL Counter: count=%0d exp=%0d", count, {_NUM_TESTS}); fail_count = fail_count + 1;
+        $display("FAIL Counter: count=%0d exp=%0d", count, {exp_count}); fail_count = fail_count + 1;
     end
     enable = 0;
     repeat(3) @(posedge clk); #1;
-    if (count == {bits}'d{_NUM_TESTS}) begin
+    if (count == {bits}'d{exp_count}) begin
         $display("PASS Counter: hold"); pass_count = pass_count + 1;
     end else begin
         $display("FAIL Counter: changed when disabled"); fail_count = fail_count + 1;
@@ -2352,13 +2353,13 @@ def _gen_tb_data_dict(bits: int) -> dict:
     return data
 
 
-_TB_DATA_CACHE = None
+_TB_DATA_CACHE: dict = {}
 
 def _get_tb_data(bits: int):
     global _TB_DATA_CACHE
-    if _TB_DATA_CACHE is None:
-        _TB_DATA_CACHE = _gen_tb_data_dict(bits)
-    return _TB_DATA_CACHE
+    if bits not in _TB_DATA_CACHE:
+        _TB_DATA_CACHE[bits] = _gen_tb_data_dict(bits)
+    return _TB_DATA_CACHE[bits]
 
 
 def safe_format(template: str, **kwargs) -> str:

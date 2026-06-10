@@ -500,13 +500,18 @@ def run_full_pipeline_on_version(
         version.gds_size_kb = gds_kb
         version.synth_ok    = result.get("status") not in ("FAILED", None)
 
-        steps = result.get("steps", {})
-        qor   = steps.get("qor", {})
-        if qor:
-            version.cell_count = qor.get("cell_count")
-            version.area_um2   = qor.get("chip_area_um2")
-            version.fmax_mhz   = qor.get("fmax_mhz")
-            version.wns_ns     = qor.get("wns_tt_ns")
+        qor = result.get("qor") or {}
+        if not qor:
+            qor = {
+                "fmax_mhz":      result.get("fmax_mhz"),
+                "cell_count":    result.get("utilization_pct"),
+                "chip_area_um2": None,
+                "wns_tt_ns":     result.get("timing_slack_ns"),
+            }
+        version.cell_count = qor.get("cell_count")
+        version.area_um2   = qor.get("chip_area_um2")
+        version.fmax_mhz   = qor.get("fmax_mhz") or result.get("fmax_mhz")
+        version.wns_ns     = qor.get("wns_tt_ns") or result.get("timing_slack_ns")
 
         status = result.get("status", "UNKNOWN")
         msg = (
