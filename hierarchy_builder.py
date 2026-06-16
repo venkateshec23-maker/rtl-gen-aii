@@ -66,7 +66,7 @@ class SubModuleSpec:
 class HierarchyResult:
     """Result of the hierarchical build flow."""
     design_name:  str
-    status:       str       # SUCCESS | PARTIAL | FAILED
+    status:       str       = "PENDING"   # SUCCESS | PARTIAL | FAILED
     sub_modules:  List[SubModuleSpec] = field(default_factory=list)
     top_rtl_path: Optional[Path]      = None
     gds_path:     Optional[Path]      = None
@@ -316,7 +316,7 @@ def generate_sub_module(spec: SubModuleSpec, designs_dir: Path) -> bool:
 
         result = generate_guaranteed_gds(
             description = spec.description,
-            design_name = spec.name,
+            module_name = spec.name,
         )
 
         # We only need the RTL, not the full GDS for sub-modules
@@ -423,7 +423,7 @@ def run_top_synthesis(
 
         return generate_guaranteed_gds(
             description = f"Hierarchical design: {top_name}",
-            design_name = run_name,
+            module_name = run_name,
         )
 
     except Exception as e:

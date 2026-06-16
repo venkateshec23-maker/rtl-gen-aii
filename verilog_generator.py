@@ -196,6 +196,55 @@ RESPOND ONLY WITH THE TWO CODE BLOCKS.
 
 
 # ============================================================
+# PROVIDER 6: LOCAL fine-tuned RTL model (Phase 4)
+# ============================================================
+
+def generate_verilog_local_model(
+    description: str,
+    module_name: str,
+) -> Tuple[str, str]:
+    """
+    Generate Verilog using the Phase 4 fine-tuned local model.
+    Requires LOCAL_MODEL_PATH and LOCAL_MODEL_ENABLED=true in .env.
+    Falls back gracefully (raises) if model not available.
+    """
+    import os
+    from dotenv import load_dotenv
+    load_dotenv(override=True)
+
+    model_path_str = os.getenv("LOCAL_MODEL_PATH", "")
+    enabled        = os.getenv("LOCAL_MODEL_ENABLED", "false").lower() == "true"
+
+    if not enabled or not model_path_str:
+        raise RuntimeError(
+            "Local model not enabled. "
+            "Run: python model_trainer.py --deploy --model outputs/rtl_model_final"
+        )
+
+    model_path = Path(model_path_str)
+    if not model_path.exists():
+        raise RuntimeError(f"Local model path not found: {model_path}")
+
+    try:
+        from model_trainer import generate_verilog_local
+        rtl = generate_verilog_local(description, model_path)
+    except ImportError as e:
+        raise RuntimeError(f"model_trainer.py not found: {e}")
+
+    if not rtl:
+        raise RuntimeError("Local model returned empty output")
+
+    # The local model only produces RTL — generate testbench via universal_testbench
+    try:
+        from universal_testbench import generate_testbench
+        tb = generate_testbench(rtl, description)
+    except Exception:
+        tb = ""
+
+    return rtl, tb
+
+
+# ============================================================
 # PROVIDER 1: NVIDIA (DeepSeek-V3 — PRIMARY)
 # ============================================================
 
@@ -1442,17 +1491,19 @@ def generate_and_validate(
         ]
     else:
         all_p = [
-            ("gemini", None),
-            ("groq", None),
+            ("local",      None),
+            ("gemini",     None),
+            ("groq",       None),
             ("openrouter", req_model),
-            ("github", None),
-            ("opencode", None)
+            ("github",     None),
+            ("opencode",   None),
         ]
         requested = [(p, m) for p, m in all_p if p == llm_provider]
         if requested:
             providers_to_try = requested + [(p, m) for p, m in all_p if p != llm_provider]
         else:
             providers_to_try = [("openrouter", req_model)] + all_p
+
     
     last_error = None
 
@@ -1507,6 +1558,8 @@ def generate_and_validate(
                         rtl, tb = generate_verilog_nvidia(description, module_name)
                     elif provider == "opencode":
                         rtl, tb = generate_verilog_opencode(description, module_name)
+                    elif provider == "local":
+                        rtl, tb = generate_verilog_local_model(description, module_name)
                     else:
                         raise ValueError(f"Unknown provider '{provider}'")
                 except Exception as e:
@@ -1529,7 +1582,7 @@ def generate_and_validate(
             if validation["errors"]:
                 print(f"Validation errors: {validation['errors']}")
 
-                # Try rule-based auto-fix first
+                # Step 1: Rule-based auto-fix (fastest, no LLM)
                 tb_autofixed = auto_fix_testbench(tb, module_name, rtl)
                 auto_val = validate_verilog_syntax(rtl, tb_autofixed, module_name)
 
@@ -1538,19 +1591,41 @@ def generate_and_validate(
                     tb = tb_autofixed
                     validation = auto_val
                 elif attempt < max_retries:
-                    # Use LLM to repair
-                    print("Attempting LLM repair...")
-                    rtl, tb = repair_verilog(
-                        rtl, tb_autofixed, module_name,
-                        auto_val["errors"], provider,
-                        description=description,
-                        sim_output=""
-                    )
-                    rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
-                    validation = validate_verilog_syntax(rtl, tb, module_name)
-                    if validation["errors"]:
-                        print(f"Still failing after repair: {validation['errors']}")
-                        continue
+                    # Step 2: rtl_repair targeted compile-error fix (cheap LLM call)
+                    try:
+                        from rtl_repair import repair_rtl_errors as _rre
+                        _err_log = "\n".join(auto_val["errors"])
+                        _fixed_rtl = _rre(rtl, _err_log, description, module_name)
+                        if _fixed_rtl:
+                            print("[rtl_repair] Compile-error fix applied")
+                            rtl = _fixed_rtl
+                            rtl, tb_autofixed, _ = normalize_module_name(
+                                rtl, tb_autofixed, module_name
+                            )
+                            auto_val = validate_verilog_syntax(
+                                rtl, tb_autofixed, module_name
+                            )
+                            if not auto_val["errors"]:
+                                print("[rtl_repair] RTL now compiles cleanly")
+                                tb = tb_autofixed
+                                validation = auto_val
+                    except Exception as _re_err:
+                        log.debug("rtl_repair skipped: %s", _re_err)
+
+                    if auto_val["errors"]:
+                        # Step 3: Full LLM repair (expensive, use last)
+                        print("Attempting LLM repair...")
+                        rtl, tb = repair_verilog(
+                            rtl, tb_autofixed, module_name,
+                            auto_val["errors"], provider,
+                            description=description,
+                            sim_output=""
+                        )
+                        rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
+                        validation = validate_verilog_syntax(rtl, tb, module_name)
+                        if validation["errors"]:
+                            print(f"Still failing after repair: {validation['errors']}")
+                            continue
                 else:
                     continue
 
@@ -1608,14 +1683,32 @@ def generate_and_validate(
                 if attempt < max_retries:
                     errs_to_fix = sim_result['output'].split("\n")[-20:]
                     print(f"[REPAIR] Attempting logic repair...")
-                    
+
+                    # Step 1: Targeted simulation-failure fix via rtl_repair
+                    try:
+                        from rtl_repair import repair_from_simulation_log as _rfsl
+                        _fixed_rtl = _rfsl(
+                            rtl, sim_result.get("output", ""),
+                            description, module_name
+                        )
+                        if _fixed_rtl:
+                            print("[rtl_repair] Simulation logic fix applied")
+                            rtl = _fixed_rtl
+                            rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
+                            continue
+                    except Exception as _re_err:
+                        log.debug("rtl_repair sim-fix skipped: %s", _re_err)
+
+                    # Step 2: Full VCD-informed LLM repair
                     vcd_path_opt = None
                     if paths and "testbench" in paths:
                         trace_vcd = Path(paths["testbench"]).parent / "trace.vcd"
                         if trace_vcd.exists():
                             import vcd_parser
-                            vcd_path_opt = vcd_parser.extract_failure_truth_table(str(trace_vcd), max_ticks=10)
-                            
+                            vcd_path_opt = vcd_parser.extract_failure_truth_table(
+                                str(trace_vcd), max_ticks=10
+                            )
+
                     rtl, tb = repair_verilog(
                         rtl,
                         tb,

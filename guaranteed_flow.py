@@ -1256,7 +1256,7 @@ module {name}_tb();
     integer pass_count = 0;
     integer fail_count = 0;
 
-    {name} #(.WIDTH({bits})) dut(.clk(clk), .reset_n(reset_n), .en(en), .din(din), .dout(dout));
+    {name} #(.N({bits})) dut(.clk(clk), .reset_n(reset_n), .shift_en(en), .serial_in(din), .parallel_out(dout));
 
     initial clk = 0;
     always #5 clk = ~clk;
@@ -1991,8 +1991,25 @@ def classify_design(description: str, bits: int = 8, module_name: str = "") -> D
             "counter", "count", "increment",
             "decrement", "binary"
         ],
+        "multiplier": [
+            "multiplier", "multiply", "product", "mult"
+        ],
+        "arbiter": [
+            "arbiter", "arbitration", "round robin", "roundrobin",
+            "grant"
+        ],
+        "pipeline": [
+            "pipeline", "pipelined", "hazard", "forwarding",
+            "stage"
+        ],
+        "pwm": [
+            "pwm", "pulse width", "duty cycle"
+        ],
+        "crc": [
+            "crc", "cyclic redundancy", "checksum"
+        ],
         "shift_reg": [
-            "shift", "register", "sipo", "piso",
+            "shift", "sipo", "piso",
             "serial in", "parallel out"
         ],
         "mux":       [
@@ -2013,15 +2030,6 @@ def classify_design(description: str, bits: int = 8, module_name: str = "") -> D
         ],
         "encoder": [
             "encoder", "encode", "priority"
-        ],
-        "pwm": [
-            "pwm", "pulse width", "duty cycle"
-        ],
-        "crc": [
-            "crc", "cyclic redundancy", "checksum"
-        ],
-        "multiplier": [
-            "multiplier", "multiply", "product", "mult"
         ],
         "clk_div": [
             "clock divider", "clk_div", "clock div", "frequency divider"
@@ -2196,7 +2204,7 @@ def _gen_tb_data_dict(bits: int) -> dict:
     loop = f"""
     for (i=0; i<{_NUM_TESTS}; i=i+1) begin
         a = t_a_tv[i]; b = t_b_tv[i];
-        @(posedge clk); #1;
+        @(posedge clk); @(posedge clk); #1;
         if (product !== t_exp_tv[i]) begin
             $display("FAIL MULTIPLIER Test %0d: %0d*%0d=%0d exp=%0d", i+1, a, b, product, t_exp_tv[i]);
             fail_count = fail_count + 1;
@@ -2385,17 +2393,20 @@ def build_from_template(module_name: str, description: str) -> Tuple[str, str]:
     rtl = safe_format(rtl_template, name=module_name, bits=bits, depth=depth)
     rtl = rtl.strip()
     
+    # Use the actual RTL template type for TB lookup
+    rtl_type = template_type if template_type in TEMPLATES_RTL else "adder"
+    
     # Generate testbench with ~100 auto-adapted test vectors
-    if template_type in TEMPLATES_TB:
-        tb_template = TEMPLATES_TB[template_type]
+    if rtl_type in TEMPLATES_TB:
+        tb_template = TEMPLATES_TB[rtl_type]
         tb = safe_format(tb_template, name=module_name, bits=bits, depth=depth)
         # Inject comprehensive test vectors for known types
-        tb = _inject_test_vectors(tb, template_type, bits)
-        log.info(f"Using template TB with {_NUM_TESTS} test vectors for: {template_type}")
+        tb = _inject_test_vectors(tb, rtl_type, bits)
+        log.info(f"Using template TB with {_NUM_TESTS} test vectors for: {rtl_type}")
     else:
         # Fallback to universal testbench generator
-        tb = generate_testbench(rtl, description, template_type)
-        log.info(f"Using universal TB generator for: {template_type}")
+        tb = generate_testbench(rtl, description, rtl_type)
+        log.info(f"Using universal TB generator for: {rtl_type}")
 
     log.info(f"Built from template: {template_type} {bits}-bit depth={depth}")
     return rtl, tb.strip()
@@ -2503,7 +2514,29 @@ def generate_guaranteed_gds(
                 except Exception as e:
                     log.warning(f"Post-GDS verification skipped: {e}")
                     verify_result = {"success": True, "passed": 0, "num_tests": 0}
-                
+
+                # ── Phase 3: collect training example ──────────────────────
+                try:
+                    from dataset_builder import collect_example as _collect
+                    _rtl_text = rtl_path.read_text(encoding="utf-8", errors="replace")
+                    _collect(
+                        description=description,
+                        rtl_code=_rtl_text,
+                        pipeline_result={
+                            "module_name":  module_name,
+                            "gds_size_kb":  gds_kb,
+                            "tapeout_ready": True,
+                            "steps":        summary.get("steps", {}),
+                            "fmax_mhz":     summary.get("fmax_mhz"),
+                            "total_mw":     summary.get("total_mw") or summary.get("total_power_mw"),
+                            "hold_slack_ns": summary.get("hold_slack_ns") or summary.get("worst_hold_slack"),
+                        },
+                        llm_provider=llm_provider,
+                    )
+                except Exception as _ds_err:
+                    log.debug("dataset_builder hook skipped: %s", _ds_err)
+                # ──────────────────────────────────────────────────────────
+
                 return {
                     "status":          "SUCCESS",
                     "gds_path":        str(gds),
@@ -2647,6 +2680,7 @@ def generate_guaranteed_gds(
         
         rtl_content = TEMPLATES_RTL["adder"].format(name=module_name, bits=8)
         tb_content = TEMPLATES_TB["adder"].format(name=module_name, bits=8)
+        tb_content = _inject_test_vectors(tb_content, "adder", 8)
 
         rtl_path.write_text(rtl_content.strip(), encoding="utf-8")
         tb_path.write_text(tb_content.strip(), encoding="utf-8")

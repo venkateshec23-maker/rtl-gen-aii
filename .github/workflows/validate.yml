@@ -1,0 +1,58 @@
+name: RTL-Gen AI Validation
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  unit-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run unit tests
+        run: python -m pytest tests/test_unit.py -v --tb=short
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+      - name: Self-test all modules
+        run: |
+          python qor_engine.py
+          python waveform_vivado.py
+          python schematic_vivado.py
+          python waveform_enhanced.py
+          python rag_engine.py
+          python formal_verify.py
+          python rtl_repair.py
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+
+  module-imports:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Verify all modules import
+        run: |
+          python -c "
+          import waveform_vivado, schematic_vivado, layout_enhanced
+          import waveform_enhanced, qor_engine, component_catalog
+          import hierarchy_builder, conversational_rtl, rag_engine
+          import formal_verify, rtl_repair, dataset_builder
+          print('All 12 modules import OK')
+          "

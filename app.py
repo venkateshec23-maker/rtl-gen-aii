@@ -3009,6 +3009,7 @@ menu_option = st.sidebar.radio(
     "NAVIGATION",
     [
          "🏠 Home",
+         "🖼️ Design Gallery",
          "🤖 Generate / Upload",
          "🔍 Verify GDS",
          "📚 Design History",
@@ -3017,7 +3018,8 @@ menu_option = st.sidebar.radio(
          "[CAT] IP Catalog",
          "🏗️ Hierarchy Builder",
          "💬 Conversational Designer",
-         "📚 Example Library"
+         "📚 Example Library",
+         "🗃️ Training Dataset",
      ],
     label_visibility="collapsed"
 )
@@ -4092,6 +4094,67 @@ Output only the testbench module code, no RTL."""
 # Route to pages
 if menu_option == "🏠 Home":
     show_home()
+elif menu_option == "🖼️ Design Gallery":
+    st.title("🖼️ Design Gallery")
+    st.caption("All proven tape-out ready designs — click any card to view details")
+
+    from component_catalog import CatalogStore, IPComponent
+    store = CatalogStore()
+    comps = store.load_all()
+
+    if not comps:
+        st.info("No designs in catalog yet. Run the pipeline on any design first.")
+    else:
+        # Filter bar
+        col_f, col_s = st.columns([2, 3])
+        with col_f:
+            type_filter = st.selectbox(
+                "Type", ["All"] + sorted({c.component_type for c in comps}),
+                label_visibility="collapsed"
+            )
+        with col_s:
+            proven_only = st.checkbox("Tape-out ready only", value=True)
+
+        shown = comps
+        if type_filter != "All":
+            shown = [c for c in shown if c.component_type == type_filter]
+        if proven_only:
+            shown = [c for c in shown if c.is_proven]
+
+        st.caption(f"Showing {len(shown)} of {len(comps)} designs")
+        st.divider()
+
+        # Gallery grid
+        cols = st.columns(3)
+        for i, comp in enumerate(shown):
+            with cols[i % 3]:
+                proven_color = "green" if comp.is_proven else "orange"
+                st.markdown(
+                    f"### {comp.icon} {comp.name.replace('_',' ').title()}"
+                )
+                st.caption(f":{proven_color}[{'✅ TAPE-OUT READY' if comp.is_proven else '⚠️ NOT VERIFIED'}]")
+
+                metric_cols = st.columns(2)
+                metric_cols[0].metric("GDS",  f"{comp.gds_size_kb:.0f} KB")
+                metric_cols[1].metric("Fmax", f"{comp.fmax_mhz:.0f} MHz" if comp.fmax_mhz else "—")
+
+                metric_cols2 = st.columns(2)
+                metric_cols2[0].metric("Cells", comp.cell_count or "—")
+                metric_cols2[1].metric("Power", f"{comp.total_mw:.1f} mW" if comp.total_mw else "—")
+
+                drc_icon = "✅" if comp.drc_violations == 0 else f"❌ {comp.drc_violations}"
+                lvs_icon = "✅" if "MATCHED" in comp.lvs_status else "❌"
+                st.caption(f"DRC: {drc_icon}  LVS: {lvs_icon}")
+
+                if comp.gds_path and Path(comp.gds_path).exists():
+                    st.download_button(
+                        label     = "⬇ GDS",
+                        data      = Path(comp.gds_path).read_bytes(),
+                        file_name = f"{comp.name}.gds",
+                        mime      = "application/octet-stream",
+                        key       = f"gallery_dl_{comp.name}_{i}",
+                    )
+                st.divider()
 elif menu_option == "🤖 Generate / Upload":
     page_upload_custom()
 elif menu_option == "🔍 Verify GDS":
@@ -4123,3 +4186,7 @@ elif menu_option == "📚 Example Library":
         with st.expander(f"{ex['id']} — {ex['desc']}"):
             st.code(ex['verilog'], language='verilog')
             st.caption("Keywords: " + ", ".join(ex['keywords']))
+
+elif menu_option == "🗃️ Training Dataset":
+    from dataset_builder import render_dataset_browser_streamlit
+    render_dataset_browser_streamlit()
