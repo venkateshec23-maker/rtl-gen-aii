@@ -435,17 +435,16 @@ def generate_verilog_openrouter(
     description: str,
     module_name: str,
     api_key: str = None,
-    model: str = "moonshotai/kimi-k2.6:free"
+    model: str = "meta-llama/llama-3.3-70b-instruct:free"
 ) -> Tuple[str, str]:
     """
     Generate Verilog using OpenRouter with free models.
-    Free models available:
-      moonshotai/kimi-k2.6:free       (Kimi K2.6)
-      deepseek/deepseek-chat:free     (DeepSeek V3)
-      deepseek/deepseek-r1:free       (reasoning)
-      qwen/qwen3-235b-a22b:free       (large)
-      meta-llama/llama-3.3-70b-instruct:free
-      google/gemma-3-27b-it:free
+    Free models confirmed working (June 2026):
+      meta-llama/llama-3.3-70b-instruct:free  (best quality, ~Groq llama3.3)
+      openai/gpt-oss-120b:free                (large GPT-class)
+      openai/gpt-oss-20b:free                 (fast)
+      nvidia/nemotron-3-ultra-550b-a55b:free  (very large)
+      google/gemma-4-31b-it:free              (Google Gemma)
     Returns (rtl_code, testbench_code)
     """
     import requests
@@ -1470,16 +1469,16 @@ def generate_and_validate(
     print(f"{'='*60}")
 
     providers_to_try = []
-    req_model = openrouter_model or "moonshotai/kimi-k2.6:free"
+    req_model = openrouter_model or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
     
     if llm_provider == "openrouter":
         model_list = [
-            "moonshotai/kimi-k2.6:free",
-            "deepseek/deepseek-chat:free",
-            "deepseek/deepseek-r1:free",
-            "qwen/qwen3-235b-a22b:free",
-            "meta-llama/llama-3.3-70b-instruct:free",
-            "google/gemma-3-27b-it:free",
+            "meta-llama/llama-3.3-70b-instruct:free",   # best quality free
+            "openai/gpt-oss-120b:free",                  # large GPT-class
+            "openai/gpt-oss-20b:free",                   # fast fallback
+            "nvidia/nemotron-3-ultra-550b-a55b:free",    # very large
+            "google/gemma-4-31b-it:free",                # Google Gemma
+            "nousresearch/hermes-3-llama-3.1-405b:free", # large hermes
         ]
         providers_to_try = [("openrouter", req_model)]
         for m in model_list:
