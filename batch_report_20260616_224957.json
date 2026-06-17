@@ -1,0 +1,25 @@
+{
+  "pass": 3,
+  "fail": 0,
+  "total": 3,
+  "details": [
+    {
+      "name": "adder_8bit_b",
+      "ok": true,
+      "gds_kb": 241.8,
+      "elapsed": 76.99054217338562
+    },
+    {
+      "name": "adder_16bit_b",
+      "ok": true,
+      "gds_kb": 432.5,
+      "elapsed": 83.49153995513916
+    },
+    {
+      "name": "counter_4bit_b",
+      "ok": true,
+      "gds_kb": 172.2,
+      "elapsed": 76.6862280368805
+    }
+  ]
+}

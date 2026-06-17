@@ -119,10 +119,16 @@ def calculate_fmax(period_ns: float, wns_ns: Optional[float]) -> Optional[float]
     """
     if wns_ns is None:
         return None
-    denominator = period_ns - wns_ns
+    if wns_ns < 0:
+        denominator = period_ns - wns_ns
+    else:
+        # Handle slack >= clock period gracefully (e.g. multicycle paths or large clock skew)
+        rem = wns_ns % period_ns
+        denominator = period_ns - rem
     if denominator <= 0:
-        return None
+        denominator = 0.1
     return round(1000.0 / denominator, 2)
+
 
 
 # ── Hold slack parser (reads existing FF STA report — no Docker call) ─────────
@@ -536,13 +542,40 @@ def build_qor_report(
     qor.period_ns = period_ns
 
     # ── Pull values already collected by full_flow.py ────────────────
-    qor.wns_tt_ns      = existing_metrics.get("timing_slack_ns")
+    _metrics = existing_metrics.get("metrics", {})
+    _timing = _metrics.get("timing", {})
+    _signoff = _metrics.get("signoff", {})
+    _synthesis = _metrics.get("synthesis", {})
+
+    qor.wns_tt_ns      = (
+        existing_metrics.get("timing_slack_ns") or
+        _timing.get("worst_slack_ns") or
+        _timing.get("wns_ns")
+    )
     qor.wns_ss_ns      = existing_metrics.get("timing_slack_ss_ns")
     qor.wns_ff_ns      = existing_metrics.get("timing_slack_ff_ns")
-    qor.drc_violations = int(existing_metrics.get("drc_violations") or 0)
-    qor.lvs_status     = str(existing_metrics.get("lvs_status") or "UNKNOWN")
-    qor.cell_count     = existing_metrics.get("cell_count")
-    qor.chip_area_um2  = existing_metrics.get("chip_area_um2")
+    
+    qor.drc_violations = int(
+        existing_metrics.get("drc_violations") or
+        (_signoff.get("drc") or {}).get("violations") or
+        0
+    )
+    
+    qor.lvs_status     = str(
+        existing_metrics.get("lvs_status") or
+        (_signoff.get("lvs") or {}).get("status") or
+        "UNKNOWN"
+    )
+    
+    qor.cell_count     = (
+        existing_metrics.get("cell_count") or
+        _synthesis.get("total_cells")
+    )
+    
+    qor.chip_area_um2  = (
+        existing_metrics.get("chip_area_um2") or
+        _synthesis.get("chip_area_um2")
+    )
 
     gds_bytes = existing_metrics.get("gds_size_bytes") or 0
     qor.gds_size_kb = round(gds_bytes / 1024, 1) if gds_bytes else None

@@ -1491,18 +1491,18 @@ def generate_and_validate(
         ]
     else:
         all_p = [
-            ("local",      None),
-            ("gemini",     None),
             ("groq",       None),
             ("openrouter", req_model),
+            ("gemini",     None),
             ("github",     None),
+            ("local",      None),
             ("opencode",   None),
         ]
         requested = [(p, m) for p, m in all_p if p == llm_provider]
         if requested:
             providers_to_try = requested + [(p, m) for p, m in all_p if p != llm_provider]
         else:
-            providers_to_try = [("openrouter", req_model)] + all_p
+            providers_to_try = [("groq", None)] + all_p
 
     
     last_error = None

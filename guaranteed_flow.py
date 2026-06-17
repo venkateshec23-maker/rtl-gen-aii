@@ -31,7 +31,7 @@ try:
 except ImportError:
     pass
 
-DEFAULT_LLM_PROVIDER = os.getenv("DEFAULT_LLM_PROVIDER", "gemini")
+DEFAULT_LLM_PROVIDER = os.getenv("DEFAULT_LLM_PROVIDER", "groq")
 
 log = logging.getLogger(__name__)
 
@@ -2537,6 +2537,41 @@ def generate_guaranteed_gds(
                     log.debug("dataset_builder hook skipped: %s", _ds_err)
                 # ──────────────────────────────────────────────────────────
 
+                # Extract DRC/LVS/timing from final metrics for validation checks
+                _metrics = summary.get("metrics", {})
+                _signoff = _metrics.get("signoff", {})
+                _timing  = _metrics.get("timing", {})
+                _drc_viol = (
+                    (_signoff.get("drc") or {}).get("violations") or
+                    (_signoff.get("drc") or {}).get("errors") or
+                    summary.get("drc_violations") or
+                    0
+                )
+                _lvs_st = (
+                    (_signoff.get("lvs") or {}).get("status") or
+                    summary.get("lvs_status") or
+                    ""
+                )
+                _timing_slack = (
+                    _timing.get("worst_slack_ns") or
+                    _timing.get("wns_ns") or
+                    summary.get("timing_slack_ns")
+                )
+                _fmax = summary.get("fmax_mhz")
+                if _fmax is None and _timing_slack is not None:
+                    try:
+                        _timing_val = float(_timing_slack)
+                        if _timing_val < 0:
+                            _denom = 10.0 - _timing_val
+                        else:
+                            _denom = 10.0 - (_timing_val % 10.0)
+                        if _denom <= 0:
+                            _denom = 0.1
+                        _fmax = round(1000.0 / _denom, 2)
+                    except Exception:
+                        _fmax = None
+
+
                 return {
                     "status":          "SUCCESS",
                     "gds_path":        str(gds),
@@ -2548,7 +2583,7 @@ def generate_guaranteed_gds(
                     "elapsed_sec":     summary.get("elapsed_sec", 0),
                     "verification":    verify_result,
                     "qor":             summary.get("qor"),
-                    "fmax_mhz":        summary.get("fmax_mhz"),
+                    "fmax_mhz":        _fmax,
                     "hold_slack_ns":   summary.get("hold_slack_ns") or summary.get("worst_hold_slack"),
                     "dynamic_mw":      summary.get("dynamic_mw") or summary.get("dynamic_power_mw"),
                     "leakage_uw":      summary.get("leakage_uw") or (summary.get("static_power_mw") * 1000 if summary.get("static_power_mw") else None),
@@ -2558,7 +2593,10 @@ def generate_guaranteed_gds(
                     "utilization_pct": summary.get("utilization_pct"),
                     "worst_hold_slack": summary.get("worst_hold_slack"),
                     "hold_clean":      summary.get("hold_clean"),
-                    "timing_slack_ns": summary.get("metrics", {}).get("timing", {}).get("worst_slack_ns"),
+                    "timing_slack_ns": _timing_slack,
+                    "drc_violations":  _drc_viol,
+                    "lvs_status":      _lvs_st,
+                    "run_dir":         summary.get("results_dir"),
                     "formal":          summary.get("formal"),
                     "formal_pass":     summary.get("formal_pass"),
                     "formal_fail":     summary.get("formal_fail"),

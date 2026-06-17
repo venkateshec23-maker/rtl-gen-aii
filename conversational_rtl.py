@@ -176,7 +176,7 @@ Keep it technical but concise."""
 
 def _call_llm(prompt: str, max_tokens: int = 1500) -> Optional[str]:
     """
-    Call the configured LLM (Groq primary, Gemini fallback).
+    Call the configured LLM (Groq primary, OpenRouter secondary, Gemini tertiary).
     Returns the response text or None on failure.
     """
     provider = os.getenv("DEFAULT_LLM_PROVIDER", "groq").lower()
@@ -204,6 +204,31 @@ def _call_llm(prompt: str, max_tokens: int = 1500) -> Optional[str]:
             except Exception as e:
                 log.warning("Groq call failed: %s", e)
 
+    # OpenRouter fallback (secondary, between Groq and Gemini)
+    openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
+    if openrouter_key:
+        try:
+            import requests
+            resp = requests.post(
+                "https://openrouter.ai/api/v1/chat/completions",
+                headers={"Authorization": f"Bearer {openrouter_key}",
+                         "Content-Type": "application/json",
+                         "HTTP-Referer": "https://rtl-gen-ai.app",
+                         "X-Title": "RTL-Gen AI"},
+                json={
+                    "model":       "meta-llama/llama-3.3-70b-instruct:free",
+                    "messages":    [{"role": "user", "content": prompt}],
+                    "max_tokens":  max_tokens,
+                    "temperature": 0.2,
+                },
+                timeout=45,
+            )
+            if resp.status_code == 200:
+                return resp.json()["choices"][0]["message"]["content"]
+            log.warning("OpenRouter API error: %s", resp.status_code)
+        except Exception as e:
+            log.warning("OpenRouter call failed: %s", e)
+
     # Gemini fallback
     gemini_key = os.getenv("GEMINI_API_KEY", "")
     if gemini_key:
@@ -219,6 +244,7 @@ def _call_llm(prompt: str, max_tokens: int = 1500) -> Optional[str]:
             log.warning("Gemini call failed: %s", e)
 
     return None
+
 
 
 def _extract_verilog(text: str, module_name: str) -> Optional[str]:

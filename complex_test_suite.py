@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """
 complex_test_suite.py -- Phase 2 Complex Design Validation
 RTL-Gen AI
@@ -226,7 +227,7 @@ def run_conversational_tests() -> List[Dict]:
                 break
             if len(session.versions) >= 2:
                 diff = _diff_summary(session.versions[-2], session.versions[-1])
-                print(f"  v{j}: '{refinement[:40]}' → {diff}")
+                print(f"  v{j}: '{refinement[:40]}' -> {diff}")
 
         from conversational_rtl import validate_syntax
         syntax_ok, err = validate_syntax(session.current_rtl, session_name)

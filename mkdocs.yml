@@ -1,0 +1,58 @@
+site_name: RTL-Gen AI
+site_url: https://venkateshec23-maker.github.io/rtl-gen-aii/
+site_author: Venkatesh E
+site_description: Open-source LLM-powered RTL-to-GDSII pipeline
+
+repo_name: rtl-gen-aii
+repo_url: https://github.com/venkateshec23-maker/rtl-gen-aii
+
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    scheme: slate
+    primary: cyan
+    accent: cyan
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.expand
+    - search.suggest
+    - search.highlight
+    - content.tabs.link
+    - content.code.annotation
+    - content.code.copy
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+plugins:
+  - search
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: index.md
+  - Quick Start: quickstart.md
+  - API Reference: api.md
+  - Design Examples: examples.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/venkateshec23-maker/rtl-gen-aii
+  version:
+    provider: mike
+
+copyright: Copyright &copy; 2026 RTL-Gen AI Project

@@ -1,0 +1,19 @@
+{
+    "$schema": "https://opencode.ai/config.json",
+    "provider": {
+        "modal": {
+            "npm": "@ai-sdk/openai-compatible",
+            "name": "Modal",
+            "options": {
+                "baseURL": "https://api.us-west-2.modal.direct/v1",
+                "apiKey": "modalresearch_iNaI_1Gti9GeqcRGjUm8J1rAZVuqI_OlXXhLZHRI-Ws"
+            },
+            "models": {
+                "zai-org/GLM-5-FP8": {
+                    "name": "GLM-5.1"
+                }
+            }
+        }
+    },
+    "model": "modal/zai-org/GLM-5-FP8"
+}
