@@ -1,0 +1,97 @@
+{
+  "pass": 14,
+  "fail": 1,
+  "total": 15,
+  "details": [
+    {
+      "name": "adder_8bit_b",
+      "ok": true,
+      "gds_kb": 241.8,
+      "elapsed": 82.76991581916809
+    },
+    {
+      "name": "adder_16bit_b",
+      "ok": true,
+      "gds_kb": 432.5,
+      "elapsed": 96.39774823188782
+    },
+    {
+      "name": "counter_4bit_b",
+      "ok": true,
+      "gds_kb": 172.2,
+      "elapsed": 84.3295476436615
+    },
+    {
+      "name": "counter_8bit_b",
+      "ok": true,
+      "gds_kb": 190.8,
+      "elapsed": 76.72675848007202
+    },
+    {
+      "name": "counter_updown_b",
+      "ok": true,
+      "gds_kb": 250.0,
+      "elapsed": 81.94213652610779
+    },
+    {
+      "name": "alu_8bit_b",
+      "ok": true,
+      "gds_kb": 358.4,
+      "elapsed": 98.78175568580627
+    },
+    {
+      "name": "mux_4to1_b",
+      "ok": true,
+      "gds_kb": 970.3,
+      "elapsed": 133.57339239120483
+    },
+    {
+      "name": "decoder_3to8_b",
+      "ok": false,
+      "gds_kb": 432.5,
+      "elapsed": 68.88369941711426
+    },
+    {
+      "name": "encoder_8to3_b",
+      "ok": true,
+      "gds_kb": 203.3,
+      "elapsed": 82.62706065177917
+    },
+    {
+      "name": "comparator_8_b",
+      "ok": true,
+      "gds_kb": 236.8,
+      "elapsed": 80.84534192085266
+    },
+    {
+      "name": "reg_file_8x8_b",
+      "ok": true,
+      "gds_kb": 758.3,
+      "elapsed": 118.40104746818542
+    },
+    {
+      "name": "uart_tx_b",
+      "ok": true,
+      "gds_kb": 568.8,
+      "elapsed": 100.41488981246948
+    },
+    {
+      "name": "spi_master_b",
+      "ok": true,
+      "gds_kb": 621.7,
+      "elapsed": 112.55371904373169
+    },
+    {
+      "name": "i2c_master_b",
+      "ok": true,
+      "gds_kb": 678.6,
+      "elapsed": 121.05475378036499
+    },
+    {
+      "name": "pwm_8bit_b",
+      "ok": true,
+      "gds_kb": 280.0,
+      "elapsed": 85.86765766143799
+    }
+  ]
+}

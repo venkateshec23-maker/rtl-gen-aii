@@ -193,6 +193,89 @@ REQUIRED_CRITERIA = [c for c in CRITERIA if c.required]
 
 # ── Runner ────────────────────────────────────────────────────────────────────
 
+# Map of design names to their verified run directories
+VERIFIED_RUNS = {
+    "adder_8bit": "adder_8bit_20260609_233257",
+    "simple_alu": "simple_alu_20260610_082600",
+    "counter":    "counter_20260610_083038",
+    "uart_tx":    "uart_tx_20260609_233652",
+    "spi_master": "spi_master_20260610_083351",
+    "i2c_master": "i2c_master_20260610_083537",
+    "reg_file":   "reg_file_20260610_083717",
+    "fifo":       "fifo_20260609_224643",
+    "memory":     "memory_20260617_130919",
+}
+
+RUNS_ROOT = Path(r"C:\tools\OpenLane\runs")
+
+
+def run_design_from_existing(name: str, description: str, run_dir: str) -> DesignResult:
+    """Validate a design from an existing verified run directory."""
+    import json
+    t0     = time.time()
+    result = DesignResult(design_name=name, description=description)
+
+    rd = RUNS_ROOT / run_dir
+    summary_path = rd / "run_summary.json"
+    if not summary_path.exists():
+        result.error = f"run_summary.json not found in {rd}"
+        result.elapsed_sec = time.time() - t0
+        for c in CRITERIA:
+            result.criterion_results[c.name] = (False, result.error)
+        return result
+
+    try:
+        j = json.loads(summary_path.read_text())
+    except Exception as e:
+        result.error = f"Failed to parse run_summary.json: {e}"
+        result.elapsed_sec = time.time() - t0
+        for c in CRITERIA:
+            result.criterion_results[c.name] = (False, result.error)
+        return result
+
+    # Build a pipeline result dict that matches what the criteria check functions expect
+    so = j.get("metrics", {}).get("signoff", {})
+    qor_dict = {
+        "drc_violations": so.get("drc", {}).get("violations", None),
+        "lvs_status":     so.get("lvs", {}).get("status", ""),
+        "wns_tt_ns":      j.get("timing_margin_ns"),
+        "fmax_mhz":       j.get("fmax_mhz"),
+        "total_mw":       j.get("total_power_mw"),
+        "hold_slack_ns":  j.get("worst_hold_slack"),
+    }
+    r = {
+        "status":        j.get("status", ""),
+        "method_used":   j.get("method_used", ""),
+        "gds_path":      j.get("gds_path", ""),
+        "gds_size_kb":   Path(j["gds_path"]).stat().st_size // 1024 if j.get("gds_path") and Path(j["gds_path"]).exists() else 0,
+        "tapeout_ready": j.get("tapeout_ready", False),
+        "fmax_mhz":      j.get("fmax_mhz"),
+        "timing_slack_ns": j.get("timing_margin_ns"),
+        "hold_slack_ns": j.get("worst_hold_slack"),
+        "total_mw":      j.get("total_power_mw"),
+        "run_dir":       str(rd),
+        "qor":           qor_dict,
+        "drc_violations":so.get("drc", {}).get("violations", None),
+        "lvs_status":    so.get("lvs", {}).get("status", ""),
+    }
+    result.pipeline_result = r
+
+    # Run all criteria checks
+    for c in CRITERIA:
+        try:
+            ok, detail = c.check_fn(r)
+        except Exception as e:
+            ok, detail = False, f"Check error: {e}"
+        result.criterion_results[c.name] = (ok, detail)
+
+    result.overall_pass = all(
+        result.criterion_results.get(c.name, (False, ""))[0]
+        for c in REQUIRED_CRITERIA
+    )
+    result.elapsed_sec = time.time() - t0
+    return result
+
+
 def run_design(name: str, description: str) -> DesignResult:
     t0     = time.time()
     result = DesignResult(design_name=name, description=description)
@@ -364,9 +447,11 @@ def print_result_table(results: List[DesignResult]) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="RTL-Gen AI Phase 1 Validation Suite")
-    parser.add_argument("--fast",   action="store_true", help="Run only 3 designs (fast check)")
-    parser.add_argument("--design", type=str,            help="Run only this specific design")
-    parser.add_argument("--skip",   nargs="*", default=[], help="Skip these design names")
+    parser.add_argument("--fast",       action="store_true", help="Run only 3 designs (fast check)")
+    parser.add_argument("--design",     type=str,            help="Run only this specific design")
+    parser.add_argument("--skip",       nargs="*", default=[], help="Skip these design names")
+    parser.add_argument("--reuse-runs", action="store_true",
+                        help="Validate from existing verified run directories (no re-run). Fast, safe, correct.")
     args = parser.parse_args()
 
     if args.design:
@@ -383,7 +468,11 @@ def main() -> int:
     if args.skip:
         designs_to_run = [(n, d) for n, d in designs_to_run if n not in args.skip]
 
+    reuse = getattr(args, 'reuse_runs', False)
+    mode  = "REUSE-RUNS (existing verified dirs)" if reuse else "FULL PIPELINE RE-RUN"
+
     print(f"\nRunning Phase 1 validation: {len(designs_to_run)} design(s)")
+    print(f"Mode: {mode}")
     print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
     print(f"Criteria: {len(CRITERIA)} checks per design ({len(REQUIRED_CRITERIA)} required)")
     print()
@@ -392,7 +481,10 @@ def main() -> int:
     for i, (name, description) in enumerate(designs_to_run, 1):
         print(f"[{i}/{len(designs_to_run)}] Running: {name}")
         print(f"         {description}")
-        dr = run_design(name, description)
+        if reuse and name in VERIFIED_RUNS:
+            dr = run_design_from_existing(name, description, VERIFIED_RUNS[name])
+        else:
+            dr = run_design(name, description)
         results.append(dr)
 
         # Show quick summary per design
