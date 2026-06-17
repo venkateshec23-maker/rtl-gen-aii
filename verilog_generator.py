@@ -1454,7 +1454,7 @@ def generate_and_validate(
     description:       str,
     module_name:       str,
     llm_provider:      str = "openrouter",
-    openrouter_model:  str = "deepseek/deepseek-chat:free",
+    openrouter_model:  Optional[str] = None,
     max_retries:       int = 3
 ) -> Dict:
     """
@@ -1736,7 +1736,7 @@ def generate_and_validate(
         "validation":  validation,
         "simulation":  sim_result,
         "testbench_honest": not lying_check.get("is_lying", True),
-        "attempts":    max_retries * len(providers),
+        "attempts":    max_retries * len(providers_to_try),
         "error":       f"All providers failed. Last error: {last_error}"
     }
 

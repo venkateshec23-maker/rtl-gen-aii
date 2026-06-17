@@ -207,27 +207,42 @@ def _call_llm(prompt: str, max_tokens: int = 1500) -> Optional[str]:
     # OpenRouter fallback (secondary, between Groq and Gemini)
     openrouter_key = os.getenv("OPENROUTER_API_KEY", "")
     if openrouter_key:
-        try:
-            import requests
-            resp = requests.post(
-                "https://openrouter.ai/api/v1/chat/completions",
-                headers={"Authorization": f"Bearer {openrouter_key}",
-                         "Content-Type": "application/json",
-                         "HTTP-Referer": "https://rtl-gen-ai.app",
-                         "X-Title": "RTL-Gen AI"},
-                json={
-                    "model":       "meta-llama/llama-3.3-70b-instruct:free",
-                    "messages":    [{"role": "user", "content": prompt}],
-                    "max_tokens":  max_tokens,
-                    "temperature": 0.2,
-                },
-                timeout=45,
-            )
-            if resp.status_code == 200:
-                return resp.json()["choices"][0]["message"]["content"]
-            log.warning("OpenRouter API error: %s", resp.status_code)
-        except Exception as e:
-            log.warning("OpenRouter call failed: %s", e)
+        req_model = os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
+        models_to_try = [req_model]
+        fallback_models = [
+            "meta-llama/llama-3.3-70b-instruct:free",
+            "openai/gpt-oss-120b:free",
+            "openai/gpt-oss-20b:free",
+            "nvidia/nemotron-3-ultra-550b-a55b:free",
+            "google/gemma-4-31b-it:free",
+            "nousresearch/hermes-3-llama-3.1-405b:free",
+        ]
+        for m in fallback_models:
+            if m not in models_to_try:
+                models_to_try.append(m)
+
+        for model in models_to_try:
+            try:
+                import requests
+                resp = requests.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={"Authorization": f"Bearer {openrouter_key}",
+                             "Content-Type": "application/json",
+                             "HTTP-Referer": "https://rtl-gen-ai.app",
+                             "X-Title": "RTL-Gen AI"},
+                    json={
+                        "model":       model,
+                        "messages":    [{"role": "user", "content": prompt}],
+                        "max_tokens":  max_tokens,
+                        "temperature": 0.2,
+                    },
+                    timeout=45,
+                )
+                if resp.status_code == 200:
+                    return resp.json()["choices"][0]["message"]["content"]
+                log.warning("OpenRouter API error with %s: %s", model, resp.status_code)
+            except Exception as e:
+                log.warning("OpenRouter call failed with %s: %s", model, e)
 
     # Gemini fallback
     gemini_key = os.getenv("GEMINI_API_KEY", "")
@@ -305,7 +320,7 @@ def validate_syntax(rtl_code: str, module_name: str) -> Tuple[bool, str]:
                 docker_result = subprocess.run(
                     ["docker", "run", "--rm",
                      "-v", f"{vf.parent}:/work",
-                     "hdlc/icarus:latest",
+                     "efabless/openlane:latest",
                      "iverilog", "-tnull", f"/work/{module_name}.v"],
                     capture_output=True, text=True, timeout=30,
                 )
