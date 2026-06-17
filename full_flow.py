@@ -3378,9 +3378,12 @@ equiv_status
 
         # Boost Magic timeout for large designs (cell count from synthesis)
         magic_timeout = self.docker_timeout
-        if hasattr(self, 'cell_count') and self.cell_count > 5000:
+        if hasattr(self, 'cell_count') and self.cell_count > 3000:
             magic_timeout = max(magic_timeout, 3600)
-            log.info(f"Boosted Magic timeout: {magic_timeout}s (cell count: {self.cell_count})")
+            log.info(f"Boosted Magic GDS timeout: {magic_timeout}s (cell_count={self.cell_count} > 3000)")
+        elif hasattr(self, 'estimated_cells') and self.estimated_cells > 3000:
+            magic_timeout = max(magic_timeout, 3600)
+            log.info(f"Boosted Magic GDS timeout: {magic_timeout}s (estimated_cells={self.estimated_cells} > 3000)")
 
         cmd = (
             f"magic -noconsole -dnull "
