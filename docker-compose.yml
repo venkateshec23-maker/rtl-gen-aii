@@ -1,6 +1,9 @@
 services:
-  app:
-    build: .
+  # --- Streamlit Dashboard ---
+  ui:
+    build:
+      context: .
+      dockerfile: Dockerfile
     ports:
       - "8501:8501"
     environment:
@@ -8,13 +11,50 @@ services:
       - GROQ_API_KEY=${GROQ_API_KEY}
       - GOOGLE_API_KEY=${GOOGLE_API_KEY}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
       - DATABASE_URL=postgresql://postgres:postgres@db:5432/rtlgenai
+      - REDIS_URL=redis://redis:6379/0
     volumes:
       - ./openroad:/openroad
       - ./pdk:/pdk
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
 
+  # --- FastAPI Backend ---
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8502:8502"
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - GROQ_API_KEY=${GROQ_API_KEY}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
+      - OPENROUTER_API_KEY=${OPENROUTER_API_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+      - DATABASE_URL=postgresql://postgres:postgres@db:5432/rtlgenai
+      - REDIS_URL=redis://redis:6379/0
+    command: uvicorn api:app --host 0.0.0.0 --port 8502
+    volumes:
+      - ./outputs:/app/outputs
+      - ./logs:/app/logs
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
+
+  # --- PostgreSQL Database ---
   db:
     image: postgres:15-alpine
     environment:
@@ -25,6 +65,22 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # --- Redis (job queue + cache) ---
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    restart: unless-stopped
 
 volumes:
   postgres_data:
+  redis_data:

@@ -7,6 +7,18 @@ on:
     branches: [main]
 
 jobs:
+  sonar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+    - name: SonarCloud Scan
+      uses: SonarSource/sonarcloud-github-action@v4
+      env:
+        SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
   test:
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -25,7 +37,7 @@ jobs:
       run: |
         pip install -r requirements.txt
         pip install pytest pytest-timeout
-        pip install reportlab fastapi uvicorn
+        pip install reportlab fastapi uvicorn sentry-sdk
 
     - name: Check syntax (all Python files)
       run: |

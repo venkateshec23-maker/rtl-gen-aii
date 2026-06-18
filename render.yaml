@@ -1,0 +1,65 @@
+# Render deployment config for RTL-Gen AI
+# https://render.com/docs/yaml-spec
+# Three services: Streamlit UI, FastAPI, and Postgres DB
+
+services:
+  # --- Streamlit Dashboard ---
+  - type: web
+    name: rtl-gen-ui
+    runtime: python
+    repo: https://github.com/venkateshec23-maker/rtl-gen-aii
+    branch: main
+    plan: free
+    envVars:
+      - key: STREAMLIT_CLOUD
+        value: "1"
+      - key: DATABASE_URL
+        fromService:
+          type: pserv
+          name: rtl-gen-db
+          property: hostport
+          envVar: DATABASE_URL
+      - key: SENTRY_DSN
+        sync: false
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run app.py --server.port 10000
+    healthCheckPath: /health
+
+  # --- FastAPI Backend ---
+  - type: web
+    name: rtl-gen-api
+    runtime: python
+    repo: https://github.com/venkateshec23-maker/rtl-gen-aii
+    branch: main
+    plan: free
+    envVars:
+      - key: DATABASE_URL
+        fromService:
+          type: pserv
+          name: rtl-gen-db
+          property: hostport
+          envVar: DATABASE_URL
+      - key: SENTRY_DSN
+        sync: false
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api:app --host 0.0.0.0 --port 10001
+    healthCheckPath: /api/health
+
+  # --- PostgreSQL Database ---
+  - type: pserv
+    name: rtl-gen-db
+    plan: free
+    runtime: image
+    image:
+      url: postgres:15-alpine
+    envVars:
+      - key: POSTGRES_DB
+        value: rtlgenai
+      - key: POSTGRES_USER
+        value: postgres
+      - key: POSTGRES_PASSWORD
+        value: postgres
+    disk:
+      name: data
+      mountPath: /var/lib/postgresql/data
+      sizeGB: 1

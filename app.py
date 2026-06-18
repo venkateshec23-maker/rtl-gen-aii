@@ -4,6 +4,40 @@ Real hardware pipeline for custom RTL designs on SKY130A 130nm
 Professional Cadence-style UI
 """
 
+import os
+import sys
+import logging
+
+# --- Structured JSON logging (opt-in: set JSON_LOGS=1) ---
+_log_fmt = '%(asctime)s [%(levelname)s] %(message)s'
+if os.getenv("JSON_LOGS", "0") == "1":
+    _log_fmt = '{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}'
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format=_log_fmt,
+    handlers=[logging.StreamHandler()],
+)
+
+log = logging.getLogger(__name__)
+
+# --- Sentry error tracking (opt-in via SENTRY_DSN env var) ---
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            traces_sample_rate=0.1,
+            profiles_sample_rate=0.1,
+            integrations=[LoggingIntegration(level=logging.INFO, event_level=logging.ERROR)],
+        )
+        log.info("Sentry error tracking enabled")
+    except ImportError:
+        log.warning("SENTRY_DSN set but sentry-sdk not installed; pip install sentry-sdk")
+    except Exception as exc:
+        log.warning("Sentry init failed: %s", exc)
+
 import streamlit as st
 
 # MUST BE FIRST STREAMLIT CALL — before any st.session_state or st.* usage
@@ -17,8 +51,6 @@ import json
 import subprocess
 import re
 import base64
-import logging
-import os
 from pathlib import Path
 from datetime import datetime
 

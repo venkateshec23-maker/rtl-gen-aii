@@ -191,6 +191,19 @@ def parse_hold_slack(sta_ff_path: Path) -> Optional[float]:
                 if val > -10:  # sanity check for valid slack
                     hold_slacks.append(val)
 
+    # Strategy 4: look for any numeric value after "worst slack" in a min-path context
+    if not hold_slacks:
+        for line in text.splitlines():
+            if "worst" in line.lower() and "slack" in line.lower():
+                nums = re.findall(r"[-\d.]+", line)
+                for n in nums:
+                    try:
+                        v = float(n)
+                        if -5.0 < v < 5.0:   # reasonable hold slack range
+                            hold_slacks.append(v)
+                    except ValueError:
+                        pass
+
     if hold_slacks:
         worst = min(hold_slacks)
         log.info("Hold slack (FF corner): %.3f ns", worst)
@@ -351,7 +364,7 @@ def run_power_analysis(
     try:
         tcl_linux = to_linux(tcl_path)
         cmd       = f"openroad -exit {tcl_linux}"
-        stdout, stderr, returncode = docker_manager.run_command(cmd, timeout=120)
+        returncode, stdout, stderr = docker_manager.run_command(cmd, timeout=120)
         combined  = (stdout or "") + (stderr or "")
 
         dynamic_mw, leakage_uw, total_mw = _parse_power_output(combined)
@@ -484,7 +497,7 @@ def run_congestion_analysis(
 
     try:
         cmd     = f"openroad -exit {to_linux(tcl_path)}"
-        stdout, stderr, returncode = docker_manager.run_command(cmd, timeout=90)
+        returncode, stdout, stderr = docker_manager.run_command(cmd, timeout=90)
         combined = (stdout or "") + (stderr or "")
         result   = _parse_congestion_output(combined)
 

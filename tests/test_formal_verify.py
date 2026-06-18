@@ -32,35 +32,30 @@ class TestTCLBuilder:
         tcl = _build_formal_tcl("/work/test.v", "my_design", UNIVERSAL_PROPERTIES)
         assert "read_verilog /work/test.v" in tcl
         assert "hierarchy -top my_design" in tcl
-        assert "=FORMAL_START=" in tcl
-        assert "=FORMAL_END=" in tcl
+        assert "RTL_FORMAL_START" in tcl
+        assert "RTL_FORMAL_END" in tcl
 
     def test_property_markers(self):
         tcl = _build_formal_tcl("/work/test.v", "top", UNIVERSAL_PROPERTIES)
         for prop in UNIVERSAL_PROPERTIES:
-            assert f"=PROP:{prop.name}=" in tcl
-            assert "=RESULT:" in tcl
+            assert f"RTL_PROP_START:{prop.name}" in tcl
+            assert "RTL_PROP_RESULT:" in tcl
 
     def test_empty_properties(self):
         tcl = _build_formal_tcl("/work/test.v", "top", [])
         assert "read_verilog /work/test.v" in tcl
-        assert "=FORMAL_START=" in tcl
+        assert "RTL_FORMAL_START" in tcl
 
 
 class TestParser:
     def test_all_pass(self):
         fake_output = """
-=FORMAL_START=
-=PROP:no_combinational_loops=
-No combinational loops
-=RESULT:=
-=PROP:hierarchy_consistent=
-End of script
-=RESULT:=
-=PROP:synthesis_clean=
-End of script.
-=RESULT:=
-=FORMAL_END=
+RTL_PROP_START:no_combinational_loops
+RTL_PROP_RESULT:PASS:ok
+RTL_PROP_START:hierarchy_consistent
+RTL_PROP_RESULT:PASS:ok
+RTL_PROP_START:synthesis_clean
+RTL_PROP_RESULT:PASS:ok
 """
         results = _parse_formal_output(fake_output, UNIVERSAL_PROPERTIES)
         assert len(results) == len(UNIVERSAL_PROPERTIES)
@@ -69,11 +64,10 @@ End of script.
 
     def test_fail_detected(self):
         fail_output = """
-=PROP:no_combinational_loops=
-ERROR: Found combinational loop
-=RESULT:Found combinational loop=
-=PROP:hierarchy_consistent=
-=RESULT:=
+RTL_PROP_START:no_combinational_loops
+RTL_PROP_RESULT:FAIL:error
+RTL_PROP_START:hierarchy_consistent
+RTL_PROP_RESULT:PASS:ok
 """
         results = _parse_formal_output(fail_output, UNIVERSAL_PROPERTIES[:2])
         statuses = {r.property_name: r.status for r in results}
@@ -81,12 +75,12 @@ ERROR: Found combinational loop
         assert statuses["hierarchy_consistent"] == "PASS"
 
     def test_skip_for_missing_property(self):
-        output = "=FORMAL_START=\n=FORMAL_END=\n"
+        output = "RTL_FORMAL_START\nRTL_FORMAL_END\n"
         results = _parse_formal_output(output, UNIVERSAL_PROPERTIES[:1])
         assert results[0].status == "SKIP"
 
     def test_empty_catch_is_pass(self):
-        output = "=PROP:hierarchy_consistent=\n=RESULT:=\n"
+        output = "RTL_PROP_START:hierarchy_consistent\nRTL_PROP_RESULT:PASS:ok\n"
         results = _parse_formal_output(output, [UNIVERSAL_PROPERTIES[1]])
         assert results[0].status == "PASS"
 

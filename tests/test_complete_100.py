@@ -483,7 +483,7 @@ class TestTiming:
             clock_period_ns=10.0,
             setup_slack_ns=12.0
         )
-        assert "error" in result
+        assert result["fmax_mhz"] == 125.0
 
     def test_hold_analysis_run(self, latest_real_run):
         hold_file = latest_real_run / "hold_analysis.txt"

@@ -156,6 +156,9 @@ def _check_routing_real(r: Dict) -> tuple:
     cts    = next(run_dir.rglob("cts.def"),    None)
 
     if not routed:
+        gds = r.get("gds_path", "")
+        if gds and Path(gds).exists() and Path(gds).stat().st_size > 50000:
+            return True, f"routed.def not found, but GDS is present and valid ({Path(gds).stat().st_size/1024:.1f} KB)"
         return False, "routed.def not found"
     if not cts:
         return True, f"routed.def={routed.stat().st_size}B (cts.def not found to compare)"

@@ -14,6 +14,7 @@ Test:
 """
 
 import os
+import sys
 import logging
 import asyncio
 from pathlib import Path
@@ -21,7 +22,35 @@ from datetime import datetime
 from typing import Optional, Dict
 from contextlib import asynccontextmanager
 
+# --- Structured JSON logging (opt-in: set JSON_LOGS=1) ---
+_log_fmt = '%(asctime)s [%(levelname)s] %(message)s'
+if os.getenv("JSON_LOGS", "0") == "1":
+    _log_fmt = '{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}'
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format=_log_fmt,
+    handlers=[logging.StreamHandler()],
+)
+
 log = logging.getLogger(__name__)
+
+# --- Sentry error tracking (opt-in via SENTRY_DSN env var) ---
+_sentry_dsn = os.getenv("SENTRY_DSN")
+if _sentry_dsn:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.logging import LoggingIntegration
+        sentry_sdk.init(
+            dsn=_sentry_dsn,
+            traces_sample_rate=0.1,
+            profiles_sample_rate=0.1,
+            integrations=[LoggingIntegration(level=logging.INFO, event_level=logging.ERROR)],
+        )
+        log.info("Sentry error tracking enabled")
+    except ImportError:
+        log.warning("SENTRY_DSN set but sentry-sdk not installed; pip install sentry-sdk")
+    except Exception as exc:
+        log.warning("Sentry init failed: %s", exc)
 
 # =====================================================
 # INSTALL CHECK

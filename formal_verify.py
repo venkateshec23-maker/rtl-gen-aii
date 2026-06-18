@@ -266,7 +266,7 @@ def run_formal_verification(
     try:
         tcl_linux = "/work/" + str(tcl_path.relative_to(work_dir)).replace("\\", "/")
         cmd = f"yosys -s {tcl_linux}"
-        stdout, stderr, rc = docker_manager.run_command(cmd, timeout=120)
+        rc, stdout, stderr = docker_manager.run_command(cmd, timeout=120)
         output = (stdout or "") + (stderr or "")
 
         report.yosys_available = True

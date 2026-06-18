@@ -788,10 +788,9 @@ module {name}_tb();
 {test_vectors}
 
         // Summary
-        if (fail_count == 0)
-            $display("RESULTS: PASS %0d / FAIL %0d", pass_count, fail_count);
-        else
-            $display("RESULTS: PASS %0d / FAIL %0d", pass_count, fail_count);
+        $display("RESULTS: %0d PASS / %0d FAIL", pass_count, fail_count);
+        if (fail_count == 0) $display("ALL_TESTS_PASSED");
+        else $display("TESTS_FAILED");
         $finish;
     end
 
@@ -1936,6 +1935,28 @@ endmodule
 }
 
 
+def _classify_design_family(name_or_desc: str) -> str:
+    """Map design name/description to a broad functional family."""
+    n = name_or_desc.lower()
+    for family, keywords in {
+        "uart":       ["uart", "serial", "baud"],
+        "spi":        ["spi", "mosi", "miso", "sck"],
+        "i2c":        ["i2c", "sda", "scl", "twi"],
+        "memory":     ["memory", "sram", "ram", "fifo", "buffer"],
+        "arithmetic": ["adder", "alu", "multiplier", "adder"],
+        "counter":    ["counter", "gray", "bcd", "lfsr"],
+        "crc":        ["crc", "checksum"],
+        "encoder":    ["encoder", "encode"],
+        "decoder":    ["decoder", "decode"],
+        "arbiter":    ["arbiter", "arb", "round_robin"],
+        "pwm":        ["pwm", "pulse", "duty"],
+        "shift":      ["shift", "barrel", "rotate"],
+    }.items():
+        if any(k in n for k in keywords):
+            return family
+    return "generic"
+
+
 def classify_design(description: str, bits: int = 8, module_name: str = "") -> Dict:
     desc = description.lower()
     combined = f"{desc} {module_name.lower()}"
@@ -2572,12 +2593,47 @@ def generate_guaranteed_gds(
                         _fmax = None
 
 
+                _template_used = method
+                _template_name = ""
+                if method == "template":
+                    try:
+                        _template_name = classify_design(description).get("type", "")
+                    except Exception:
+                        _template_name = ""
+                elif method == "adder_fallback":
+                    _template_name = "adder"
+
+                _design_family   = _classify_design_family(description)
+                _template_family = _classify_design_family(_template_name)
+
+                _intent_matched  = (
+                    "template" not in _template_used
+                    or _design_family == _template_family
+                    or _template_family == "generic"
+                )
+
+                _tapeout_ready = True
+                _tapeout_blocked_reason = None
+                if not _intent_matched:
+                    _tapeout_ready = False
+                    _tapeout_blocked_reason = (
+                        f"Template mismatch: '{_template_name}' used for '{_design_family}' design"
+                    )
+
+                if _tapeout_ready:
+                    _msg = f"GDS2 generated successfully using {method}. Size: {gds_kb} KB. Tape-out ready. Verification: {verify_result['passed']}/{verify_result['num_tests']} tests passed."
+                else:
+                    _msg = f"GDS2 generated successfully using {method}. Size: {gds_kb} KB. Tape-out blocked: {_tapeout_blocked_reason}. Verification: {verify_result['passed']}/{verify_result['num_tests']} tests passed."
+
                 return {
                     "status":          "SUCCESS",
                     "gds_path":        str(gds),
                     "gds_size_kb":     gds_kb,
                     "method_used":     method,
-                    "tapeout_ready":   True,
+                    "tapeout_ready":   _tapeout_ready,
+                    "tapeout_blocked_reason": _tapeout_blocked_reason,
+                    "design_intent_matched": _intent_matched,
+                    "template_used":         _template_name,
                     "module_name":     module_name,
                     "steps":           summary.get("steps", {}),
                     "elapsed_sec":     summary.get("elapsed_sec", 0),
@@ -2602,7 +2658,7 @@ def generate_guaranteed_gds(
                     "formal_fail":     summary.get("formal_fail"),
                     "formal_total":    summary.get("formal_total"),
                     "formal_status":   summary.get("formal_status"),
-                    "message": f"GDS2 generated successfully using {method}. Size: {gds_kb} KB. Tape-out ready. Verification: {verify_result['passed']}/{verify_result['num_tests']} tests passed."
+                    "message":         _msg
                 }
         except Exception as e:
             log.warning(f"Pipeline failed via {method}: {e}")

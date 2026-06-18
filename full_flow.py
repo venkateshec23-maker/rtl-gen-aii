@@ -24,12 +24,14 @@ from design_db import DesignDB, save_design_db
 # LOGGING SETUP
 # ============================================================
 
+_json_logs = os.getenv("JSON_LOGS", "0") == "1"
+_log_fmt = '%(asctime)s [%(levelname)s] %(message)s' if not _json_logs else '{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}'
 logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s [%(levelname)s] %(message)s',
+    level=os.getenv("LOG_LEVEL", "INFO"),
+    format=_log_fmt,
     handlers=[
         logging.StreamHandler(),
-        logging.FileHandler('full_flow.log')
+        logging.FileHandler(os.getenv("LOG_FILE", "full_flow.log")),
     ]
 )
 log = logging.getLogger(__name__)
@@ -2523,8 +2525,24 @@ puts "POWER_ANALYSIS_DONE"
         """Verify pipeline environment (gracefully handles missing Docker)"""
         log.info("=== STEP 0: ENVIRONMENT VERIFICATION ===")
 
+        VALID_PDKS = {"sky130A", "gf180mcuD", "gf180mcuC", "sg13g2"}
+        pdk_name = getattr(self, "pdk_type", "sky130A")
+
+        if pdk_name not in VALID_PDKS:
+            log.error("Invalid PDK: '%s'. Valid options: %s", pdk_name, VALID_PDKS)
+            return False
+
         # Check if Docker is available
         docker_available = self._check_docker_available()
+
+        if docker_available:
+            # Also check the PDK actually exists in the container
+            ok, out, _ = self.docker.run_command(
+                f"test -d /pdk/{pdk_name} && echo PDK_EXISTS || echo PDK_MISSING"
+            )
+            if "PDK_MISSING" in (out or ""):
+                log.error("PDK directory /pdk/%s not found in container", pdk_name)
+                return False
 
         if not docker_available:
             log.warning(
@@ -3172,20 +3190,32 @@ equiv_status
 
         log_content = (out or "") + (err or "")
         
-        if "Equivalence successfully proven" in log_content:
+        formal_output = log_content
+        if "Equivalence successfully proven" in formal_output:
             log.info("FORMAL EQUIV: RTL == Netlist PROVEN")
+            self.run_metadata["formal_equiv"] = "PASS"
             return True
-        
-        if "Not equivalent" in log_content:
-            log.error("FORMAL EQUIV: MISMATCH - synthesis bug")
-            return False
 
-        if "ERROR" in log_content:
-            log.warning("FORMAL EQUIV: ERROR found - cell library issue (non-blocking)")
-            for line in log_content.split('\n'):
-                if 'ERROR' in line:
-                    log.warning(f"  {line}")
-            return True
+        if "Not equivalent" in formal_output or "MISMATCH" in formal_output or "ERROR" in formal_output:
+            error_is_library_only = (
+                "cell library issue" in formal_output.lower()
+                or "primitives.v" in formal_output
+                or "Unknown module type" in formal_output
+            )
+            if error_is_library_only:
+                # Library parsing issue — not a design bug. Continue with warning.
+                log.warning("Formal equiv: library parsing issue (non-blocking)")
+                self.run_metadata["formal_equiv"] = "LIBRARY_WARNING"
+                return True
+            else:
+                # Real equivalence mismatch — synthesis changed the logic
+                log.error("Formal equiv: MISMATCH detected — synthesis may have changed behavior")
+                self.run_metadata["formal_equiv"] = "MISMATCH"
+                # Do not set tapeout_ready = True downstream
+                self.run_metadata["formal_equiv_blocked"] = True
+                return False
+        else:
+            self.run_metadata["formal_equiv"] = "PASS"
         
         if rc != 0:
             log.warning(f"FORMAL EQUIV: Command failed with rc={rc} (non-blocking)")
@@ -5374,7 +5404,7 @@ LVS_PASSED
             "lvs": lvs_status in ("MATCHED", "MATCHED_WITH_WARNINGS"),
             "timing": final_metrics.get("timing", {}).get("status") == "PASS",
         }
-        tapeout_ready = all_steps_passed and all(evidence_gate.values())
+        tapeout_ready = all_steps_passed and all(evidence_gate.values()) and not self.run_metadata.get("formal_equiv_blocked", False)
 
         if all_steps_passed and not tapeout_ready:
             missing = [k for k, ok in evidence_gate.items() if not ok]

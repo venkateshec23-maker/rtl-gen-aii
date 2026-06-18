@@ -71,6 +71,7 @@ class TrainingExample:
     llm_provider:  str          = ""
     rtl_lines:     int          = 0
     complexity:    str          = ""   # simple/medium/complex
+    template_used: str          = ""
 
     def quality_score(self) -> float:
         """0.0 to 1.0 score based on available metrics."""
@@ -102,6 +103,7 @@ class TrainingExample:
                 "llm_provider":   self.llm_provider,
                 "quality_score":  round(self.quality_score(), 2),
                 "complexity":     self.complexity,
+                "template_used":  self.template_used,
             },
         }, ensure_ascii=False)
 
@@ -141,6 +143,28 @@ class TrainingExample:
 
 # ── Quality filter ─────────────────────────────────────────────────────────────
 
+def _classify_design_family(name_or_desc: str) -> str:
+    """Map design name/description to a broad functional family."""
+    n = name_or_desc.lower()
+    for family, keywords in {
+        "uart":       ["uart", "serial", "baud"],
+        "spi":        ["spi", "mosi", "miso", "sck"],
+        "i2c":        ["i2c", "sda", "scl", "twi"],
+        "memory":     ["memory", "sram", "ram", "fifo", "buffer"],
+        "arithmetic": ["adder", "alu", "multiplier", "adder"],
+        "counter":    ["counter", "gray", "bcd", "lfsr"],
+        "crc":        ["crc", "checksum"],
+        "encoder":    ["encoder", "encode"],
+        "decoder":    ["decoder", "decode"],
+        "arbiter":    ["arbiter", "arb", "round_robin"],
+        "pwm":        ["pwm", "pulse", "duty"],
+        "shift":      ["shift", "barrel", "rotate"],
+    }.items():
+        if any(k in n for k in keywords):
+            return family
+    return "generic"
+
+
 def _passes_quality_filter(ex: TrainingExample) -> bool:
     """
     Only include examples that are genuinely verified silicon designs.
@@ -153,6 +177,31 @@ def _passes_quality_filter(ex: TrainingExample) -> bool:
     if len(ex.rtl_code) < 100:         return False   # non-trivial RTL
     if "endmodule" not in ex.rtl_code: return False   # complete module
     if ex.rtl_lines < 5:               return False   # at least 5 lines
+
+    # Reject if cell count seems wrong for design type
+    name = ex.module_name.lower()
+    cells = ex.cell_count or 0
+
+    # SRAM designs should have many more cells than simple logic
+    if ("sram" in name or "memory" in name) and cells < 500:
+        log.debug("Rejecting %s: SRAM with only %d cells is suspicious",
+                  ex.module_name, cells)
+        return False
+
+    # FIFO with 0 cells is wrong
+    if "fifo" in name and cells < 50:
+        return False
+
+    # Design intent must match (no CRC using I2C template)
+    if ex.llm_provider != "seed" and getattr(ex, "template_used", ""):
+        desc_family     = _classify_design_family(ex.description)
+        template_family = _classify_design_family(ex.template_used)
+        if (desc_family != "generic" and template_family != "generic"
+                and desc_family != template_family):
+            log.debug("Rejecting %s: template mismatch (%s vs %s)",
+                      ex.module_name, template_family, desc_family)
+            return False
+
     return True
 
 
@@ -227,6 +276,7 @@ def collect_example(
         llm_provider   = llm_provider,
         rtl_lines      = rtl_code.count("\n"),
         complexity     = _classify_complexity(qor.get("cell_count")),
+        template_used  = pipeline_result.get("template_used", ""),
     )
 
     if not _passes_quality_filter(ex):
@@ -311,6 +361,7 @@ def load_all_examples() -> List[TrainingExample]:
                 llm_provider  = meta.get("llm_provider", ""),
                 complexity    = meta.get("complexity", "unknown"),
                 rtl_lines     = d["output"].count("\n"),
+                template_used = meta.get("template_used", ""),
             )
             examples.append(ex)
         except Exception as e:
