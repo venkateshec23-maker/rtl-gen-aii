@@ -158,20 +158,24 @@ def _build_formal_tcl(
     module_name:   str,
     properties:    List[Property],
 ) -> str:
-    checks = "\n".join(
-        f"puts \"=PROP:{p.name}=\"\n"
-        f"catch {{ {p.yosys_cmd} }} err\n"
-        f"puts \"=RESULT:$err=\"\n"
-        for p in properties
-    )
+    checks = ""
+    for p in properties:
+        checks += f"""
+puts "RTL_PROP_START:{p.name}"
+if {{ [catch {{ {p.yosys_cmd} }} err] }} {{
+    puts "RTL_PROP_RESULT:FAIL:$err"
+}} else {{
+    puts "RTL_PROP_RESULT:PASS:ok"
+}}
+"""
     return f"""
 # RTL-Gen AI Formal Verification Script
 read_verilog {netlist_linux}
 hierarchy -top {module_name}
 
-puts "=FORMAL_START="
+puts "RTL_FORMAL_START"
 {checks}
-puts "=FORMAL_END="
+puts "RTL_FORMAL_END"
 exit
 """.strip()
 
@@ -185,8 +189,8 @@ def _parse_formal_output(
     results = []
 
     for prop in properties:
-        start_marker = f"=PROP:{prop.name}="
-        result_marker = "=RESULT:"
+        start_marker = f"RTL_PROP_START:{prop.name}"
+        result_marker = f"RTL_PROP_RESULT:"
 
         prop_start = output.find(start_marker)
         if prop_start < 0:
@@ -203,24 +207,12 @@ def _parse_formal_output(
             status = "SKIP"
             detail = "No result found"
         else:
-            result_end = output.find("=", result_start + len(result_marker))
-            detail = output[result_start + len(result_marker):result_end].strip()
-
-            error_keywords = ["error", "Error", "ERROR", "FAIL", "fail",
-                              "assertion failed", "loop detected", "not found"]
-            pass_keywords  = ["End of script", "SAT proof finished",
-                              "No combinational loops", "0 problems"]
-
-            if any(kw in detail for kw in error_keywords):
-                status = "FAIL"
-            elif prop.expected and prop.expected in output[prop_start:result_end]:
-                status = "PASS"
-            elif prop.expected == "" and not any(kw in detail for kw in error_keywords):
-                status = "PASS"
-            elif not detail or detail == "{}":
-                status = "PASS"
-            else:
-                status = "PASS" if not detail else "FAIL"
+            line_end = output.find("\n", result_start)
+            res_line = output[result_start:line_end] if line_end >= 0 else output[result_start:]
+            res_line = res_line.strip()
+            parts = res_line.split(":", 2)
+            status = parts[1] if len(parts) > 1 else "SKIP"
+            detail = parts[2] if len(parts) > 2 else ""
 
         results.append(PropertyResult(
             property_name = prop.name,
@@ -461,23 +453,18 @@ if __name__ == "__main__":
     assert "read_verilog /work/test.v" in tcl
     assert "hierarchy -top adder_8bit" in tcl
     for prop in UNIVERSAL_PROPERTIES:
-        assert f"=PROP:{prop.name}=" in tcl
+        assert f"RTL_PROP_START:{prop.name}" in tcl
     print(f"[PASS] TCL generated: {len(tcl)} chars, all property markers present")
     passed += 1
 
     total += 1
     fake_output = """
-=FORMAL_START=
-=PROP:no_combinational_loops=
-No combinational loops
-=RESULT:=
-=PROP:hierarchy_consistent=
-End of script
-=RESULT:=
-=PROP:synthesis_clean=
-End of script.
-=RESULT:=
-=FORMAL_END=
+RTL_PROP_START:no_combinational_loops
+RTL_PROP_RESULT:PASS:ok
+RTL_PROP_START:hierarchy_consistent
+RTL_PROP_RESULT:PASS:ok
+RTL_PROP_START:synthesis_clean
+RTL_PROP_RESULT:PASS:ok
 """
     results = _parse_formal_output(fake_output, UNIVERSAL_PROPERTIES)
     assert len(results) == len(UNIVERSAL_PROPERTIES)
@@ -489,11 +476,10 @@ End of script.
 
     total += 1
     fail_output = """
-=PROP:no_combinational_loops=
-ERROR: Found combinational loop involving signal _net_042_
-=RESULT:Found combinational loop=
-=PROP:hierarchy_consistent=
-=RESULT:=
+RTL_PROP_START:no_combinational_loops
+RTL_PROP_RESULT:FAIL:Found combinational loop
+RTL_PROP_START:hierarchy_consistent
+RTL_PROP_RESULT:PASS:ok
 """
     fail_results = _parse_formal_output(fail_output, UNIVERSAL_PROPERTIES[:2])
     fail_statuses = {r.property_name: r.status for r in fail_results}

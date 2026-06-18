@@ -119,15 +119,13 @@ def calculate_fmax(period_ns: float, wns_ns: Optional[float]) -> Optional[float]
     """
     if wns_ns is None:
         return None
-    if wns_ns < 0:
-        denominator = period_ns - wns_ns
-    else:
-        # Handle slack >= clock period gracefully (e.g. multicycle paths or large clock skew)
-        rem = wns_ns % period_ns
-        denominator = period_ns - rem
-    if denominator <= 0:
-        denominator = 0.1
-    return round(1000.0 / denominator, 2)
+    max_wns = period_ns * 0.85
+    safe_wns = min(wns_ns, max_wns)
+    denominator = period_ns - safe_wns
+    if denominator <= 0.5:
+        denominator = 0.5
+    raw_fmax = round(1000.0 / denominator, 2)
+    return min(raw_fmax, 500.0)   # Sky130A hard ceiling 500 MHz
 
 
 
@@ -438,15 +436,11 @@ def _parse_congestion_output(text: str) -> Dict[str, Optional[float]]:
     # ── Design area / utilization ────────────────────────────────────
     # "Design area X um^2 Y% utilization."
     util_match = re.search(
-        r"Design area\s+([\d.]+)\s+u[m\xb2].*?([\d.]+)\s*%\s*utilization",
+        r"Design area\s+([\d.]+)\s+u[m²^2]*\s+([\d.]+)%\s*utilization",
         text, re.IGNORECASE
     )
-    if not util_match:
-        util_match = re.search(
-            r"Design area\s+([\d.]+)\s+u[m\xb2].*?([\d.]+)\s*%",
-            text, re.IGNORECASE
-        )
     if util_match:
+        result["chip_area_um2"]   = float(util_match.group(1))
         result["utilization_pct"] = float(util_match.group(2))
 
     return result
@@ -614,10 +608,27 @@ def build_qor_report(
     qor.h_overflow_pct  = congestion["h_overflow_pct"]
     qor.v_overflow_pct  = congestion["v_overflow_pct"]
     qor.max_density_pct = congestion["max_density_pct"]
+    if congestion.get("chip_area_um2") is not None:
+        qor.chip_area_um2 = congestion["chip_area_um2"]
     if congestion["utilization_pct"] is not None:
         qor.utilization_pct = congestion["utilization_pct"]
     elif qor.chip_area_um2:
         qor.utilization_pct = None
+
+    if qor.chip_area_um2 is None:
+        for rpt in run_dir_windows.rglob("*.log"):
+            try:
+                txt = rpt.read_text(errors="replace")
+                m = re.search(
+                    r"Design area\s+([\d.]+)\s+u[m²^2]*\s+([\d.]+)%",
+                    txt, re.IGNORECASE
+                )
+                if m:
+                    qor.chip_area_um2   = float(m.group(1))
+                    qor.utilization_pct = float(m.group(2))
+                    break
+            except Exception:
+                pass
 
     # ── Routing quality ───────────────────────────────────────────────
     routing_log = run_dir_windows / "routing.log"
