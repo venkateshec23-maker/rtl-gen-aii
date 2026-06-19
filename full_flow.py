@@ -2902,6 +2902,32 @@ Advise: Run Verilator with --coverage flag for detailed analysis.
             log.warning("Native yosys timed out - continuing anyway")
             return True
 
+    def _prepare_sanitized_tb(self) -> str:
+        """
+        Creates a temporary testbench without named/positional parameter instantiations
+        to avoid gate-level / post-layout simulation compiler errors.
+        Returns the container path to the sanitized testbench.
+        """
+        import re
+        tb_path = self.work_dir / "designs" / self.design_name / f"{self.design_name}_tb.v"
+        if not tb_path.exists():
+            return f"{WORK_CONTAINER}/designs/{self.design_name}/{self.design_name}_tb.v"
+            
+        try:
+            content = tb_path.read_text(encoding="utf-8", errors="ignore")
+            # Pattern to match: design_name #(.PARAM(val), ...) instance_name ( or design_name #(val) instance_name (
+            pattern = r'\b' + re.escape(self.design_name) + r'\s*#\s*\((?:[^()]*|\([^()]*\))*\)\s*(\w+)\s*\('
+            sanitized = re.sub(pattern, self.design_name + r' \1 (', content)
+            
+            # Write to local run directory
+            sanitized_path = self.results_dir / "tb_gate.v"
+            sanitized_path.write_text(sanitized, encoding="utf-8")
+            log.info(f"Sanitized testbench written to: {sanitized_path}")
+            return f"{self.c_results}/tb_gate.v"
+        except Exception as e:
+            log.warning(f"Failed to sanitize testbench: {e}")
+            return f"{WORK_CONTAINER}/designs/{self.design_name}/{self.design_name}_tb.v"
+
     def step1b_gate_level_simulation(self) -> bool:
         """
         Gate-level simulation using Sky130 functional models (requires Docker).
@@ -2941,10 +2967,7 @@ Advise: Run Verilator with --coverage flag for detailed analysis.
         )
 
         c_netlist = self.c_netlist
-        c_tb = (
-            f"{WORK_CONTAINER}/designs/"
-            f"{self.design_name}/{self.design_name}_tb.v"
-        )
+        c_tb = self._prepare_sanitized_tb()
         c_gate_log = f"{self.c_results}/gate_simulation.log"
 
         # First check if Sky130 verilog models are accessible
@@ -4635,7 +4658,7 @@ LVS_PASSED
         )
 
         c_netlist = f"{self.c_results}/{routed_netlist.name}"
-        c_tb = f"{WORK_CONTAINER}/designs/{self.design_name}/{self.design_name}_tb.v"
+        c_tb = self._prepare_sanitized_tb()
         c_sdf = f"{self.c_results}/{self.design_name}.sdf"
         c_post_sim_log = f"{self.c_results}/post_layout_simulation.log"
 
@@ -4729,15 +4752,16 @@ LVS_PASSED
             if not has_fatal_b:
                 log.info(
                     "Strategy B: Gate-level functional simulation "
-                    "with behavioral stubs succeeded."
+                    "with behavioral stubs completed."
                 )
-                return self._parse_post_sim_results(
-                    content_b, "FUNCTIONAL_STUB"
+                if self._parse_post_sim_results(content_b, "FUNCTIONAL_STUB"):
+                    return True
+                log.warning("Strategy B functional simulation failed. Falling back to Strategy C.")
+            else:
+                log.warning(
+                    f"Strategy B: Stub simulation has unknown modules. "
+                    f"Snippet: {content_b[:300]}"
                 )
-            log.warning(
-                f"Strategy B: Stub simulation has unknown modules. "
-                f"Snippet: {content_b[:300]}"
-            )
         else:
             log.warning("Strategy B: Could not generate behavioral stubs.")
 

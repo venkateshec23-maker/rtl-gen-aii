@@ -643,9 +643,11 @@ def generate_verilog_opencode(
     # Auto-start ACP server if not running
     if not _acp_is_running(acp_base):
         print("OpenCode ACP not running — starting on port 4096...")
+        is_windows = platform.system() == "Windows"
         _sp.Popen(
             ["opencode", "acp", "--port", "4096", "--hostname", "127.0.0.1"],
-            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL
+            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
+            shell=is_windows
         )
         import time as _t
         _t.sleep(4)

@@ -326,54 +326,70 @@ def scan_for_components(
     """
     components: Dict[str, IPComponent] = {}
 
-    #  Scan results/ directory 
+    # Gather and sort all GDS files by modification time (newest first)
+    gds_files = []
     if results_dir.exists():
-        for gds_file in sorted(results_dir.glob("*.gds")):
-            if gds_file.stat().st_size < _MIN_GDS_BYTES:
-                continue
+        gds_files.extend(results_dir.glob("*.gds"))
+    if runs_dir.exists():
+        gds_files.extend(runs_dir.rglob("*.gds"))
+    
+    # Sort by modification time, newest first, so we process the latest run for each design name
+    gds_files = sorted(gds_files, key=lambda p: p.stat().st_mtime, reverse=True)
 
-            name = gds_file.stem
-            if name in components:
-                continue
+    for gds_file in gds_files:
+        if gds_file.stat().st_size < _MIN_GDS_BYTES:
+            continue
 
-            comp = IPComponent(
-                name           = name,
-                component_type = _classify(name),
-                gds_path       = str(gds_file),
-                gds_size_kb    = round(gds_file.stat().st_size / 1024, 1),
+        # Get core design name (e.g. from adder_8bit_20260618_233537 -> adder_8bit or memory_fallback -> memory)
+        name = gds_file.stem
+        # Strip timestamp suffix if present (e.g. name_20260617_232644)
+        m = re.match(r'^(.*?)(?:_\d{8}_\d{6})?$', name)
+        if m:
+            name = m.group(1)
+        # Strip fallback suffix
+        name = name.replace("_fallback", "")
+
+        if name in components:
+            continue
+
+        comp = IPComponent(
+            name           = name,
+            component_type = _classify(name),
+            gds_path       = str(gds_file),
+            gds_size_kb    = round(gds_file.stat().st_size / 1024, 1),
+        )
+
+        # Try to find the corresponding run directory
+        run_dir = None
+        if runs_dir.exists():
+            matches = sorted(
+                [d for d in runs_dir.iterdir()
+                 if d.is_dir() and d.name.startswith(name)],
+                key=lambda d: d.stat().st_mtime,
+                reverse=True,
             )
+            run_dir = matches[0] if matches else None
 
-            # Try to find the corresponding run directory
-            run_dir = None
-            if runs_dir.exists():
-                matches = sorted(
-                    [d for d in runs_dir.iterdir()
-                     if d.is_dir() and d.name.startswith(name)],
-                    key=lambda d: d.stat().st_mtime,
-                    reverse=True,
-                )
-                run_dir = matches[0] if matches else None
+        if run_dir:
+            comp.run_dir = str(run_dir)
+            # Extract metadata from reports
+            comp.__dict__.update(_parse_synthesis_report(run_dir, name))
+            comp.__dict__.update(_parse_sta_report(run_dir))
+            comp.__dict__.update(_parse_power_report(run_dir))
+            comp.__dict__.update(_parse_drc_report(run_dir))
+            comp.__dict__.update(_parse_lvs_report(run_dir))
+            comp.ports = _extract_ports_from_verilog(run_dir, name)
 
-            if run_dir:
-                comp.run_dir = str(run_dir)
-                # Extract metadata from reports
-                comp.__dict__.update(_parse_synthesis_report(run_dir, name))
-                comp.__dict__.update(_parse_sta_report(run_dir))
-                comp.__dict__.update(_parse_power_report(run_dir))
-                comp.__dict__.update(_parse_drc_report(run_dir))
-                comp.__dict__.update(_parse_lvs_report(run_dir))
-                comp.ports = _extract_ports_from_verilog(run_dir, name)
+        # Tape-out decision
+        comp.tapeout_ready = (
+            comp.gds_size_kb > 50
+            and comp.drc_violations == 0
+            and "MATCHED" in comp.lvs_status
+        )
 
-            # Tape-out decision
-            comp.tapeout_ready = (
-                comp.gds_size_kb > 50
-                and comp.drc_violations == 0
-                and "MATCHED" in comp.lvs_status
-            )
-
-            # Auto description
-            comp.description = _auto_description(comp)
-            components[name] = comp
+        # Auto description
+        comp.description = _auto_description(comp)
+        components[name] = comp
 
     log.info("Catalog scan: found %d proven components", len(components))
     return list(components.values())
@@ -515,6 +531,11 @@ class CatalogStore:
             import sqlalchemy as sa
             import os
             url = os.getenv("DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/rtlgenai")
+            if url.startswith("postgresql://"):
+                try:
+                    import psycopg2
+                except ImportError:
+                    url = url.replace("postgresql://", "postgresql+psycopg://", 1)
             self._engine = sa.create_engine(url, pool_pre_ping=True)
             with self._engine.connect() as conn:
                 conn.execute(sa.text("""

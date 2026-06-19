@@ -64,6 +64,7 @@ class OpenCodeGenerator:
                 ["opencode", "--version"],
                 capture_output=True,
                 text=True,
+                shell=(os.name == 'nt'),
                 timeout=5
             )
             return result.returncode == 0
@@ -87,6 +88,7 @@ class OpenCodeGenerator:
                     ["opencode"] + command.split(),
                     capture_output=True,
                     text=True,
+                    shell=(os.name == 'nt'),
                     timeout=timeout
                 )
                 return result.returncode, result.stdout, result.stderr
@@ -195,6 +197,7 @@ class OpenCodeGenerator:
                 ["opencode", prompt],
                 capture_output=True,
                 text=True,
+                shell=(os.name == 'nt'),
                 timeout=60
             )
             
@@ -229,6 +232,7 @@ Original code:
                 ["opencode", prompt],
                 capture_output=True,
                 text=True,
+                shell=(os.name == 'nt'),
                 timeout=60
             )
             
@@ -337,6 +341,7 @@ Return only the Verilog code."""
                 ["opencode", prompt],
                 capture_output=True,
                 text=True,
+                shell=(os.name == 'nt'),
                 timeout=60
             )
             
