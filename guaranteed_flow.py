@@ -2487,6 +2487,34 @@ def generate_guaranteed_gds(
         timestamp = datetime.now().strftime("%H%M%S")
         module_name = f"design_{timestamp}"
 
+    design_name = module_name
+    # Route complex designs through hierarchy builder
+    try:
+        from generation_fixes import should_use_hierarchy_builder
+        if should_use_hierarchy_builder(description):
+            log.info("Complex design detected (score>=%d) — routing to hierarchy builder",
+                     60)
+            from hierarchy_builder import build_hierarchical_design
+            _hr = build_hierarchical_design(
+                description     = description,
+                design_name     = design_name,
+                max_sub_modules = 4,
+            )
+            if _hr.status in ("SUCCESS", "PARTIAL") and _hr.gds_size_kb > 50:
+                return {
+                    "status":        _hr.status,
+                    "gds_size_kb":   _hr.gds_size_kb,
+                    "gds_path":      str(_hr.gds_path) if _hr.gds_path else "",
+                    "tapeout_ready": _hr.tapeout_ready,
+                    "method_used":   "hierarchy_builder",
+                    "design_name":   design_name,
+                    "sub_modules":   [s.name for s in _hr.sub_modules],
+                    "message":       _hr.message,
+                }
+            log.warning("Hierarchy builder did not produce GDS — falling back to single-call")
+    except Exception as _cx_err:
+        log.warning("Complexity routing non-blocking: %s", _cx_err)
+
     log.info(f"Starting guaranteed GDS2 generation for {module_name} with PDK={pdk_type}")
     design_dir = DESIGNS / module_name
     design_dir.mkdir(parents=True, exist_ok=True)

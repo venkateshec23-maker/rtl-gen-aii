@@ -176,10 +176,31 @@ Keep it technical but concise."""
 
 def _call_llm(prompt: str, max_tokens: int = 1500) -> Optional[str]:
     """
-    Call the configured LLM (Groq primary, OpenRouter secondary, Gemini tertiary).
+    Call the configured LLM (GitHub Models, Groq primary, OpenRouter secondary, Gemini tertiary).
     Returns the response text or None on failure.
     """
     provider = os.getenv("DEFAULT_LLM_PROVIDER", "groq").lower()
+
+    if provider == "github" or os.getenv("GITHUB_TOKEN"):
+        github_key = os.getenv("GITHUB_TOKEN", "")
+        if github_key:
+            try:
+                import openai
+                _model = os.getenv("GITHUB_MODEL", "gpt-4o")
+                _base_url = os.getenv("GITHUB_BASE_URL", "https://models.inference.ai.azure.com")
+                client = openai.OpenAI(
+                    api_key=github_key,
+                    base_url=_base_url
+                )
+                resp = client.chat.completions.create(
+                    model=_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=max_tokens,
+                    temperature=0.2,
+                )
+                return resp.choices[0].message.content
+            except Exception as e:
+                log.warning("GitHub Models call failed: %s", e)
 
     if provider in ("groq", "auto"):
         groq_key = os.getenv("GROQ_API_KEY", "")

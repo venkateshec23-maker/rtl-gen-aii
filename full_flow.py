@@ -234,28 +234,66 @@ class DockerManager:
         cmd = self._build_docker_cmd(container_cmd)
         log.info(f"Docker: {container_cmd[:80]}...")
 
+        import uuid
+        import os
+
+        # Unique temporary filenames to avoid conflicts and pipe deadlocks on Windows
+        rand_id = uuid.uuid4().hex[:8]
+        self.host_logs.mkdir(parents=True, exist_ok=True)
+        out_temp = self.host_logs / f"stdout_{rand_id}.tmp"
+        err_temp = self.host_logs / f"stderr_{rand_id}.tmp"
+
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout
-            )
+            with open(out_temp, 'w', encoding='utf-8', errors='ignore') as out_f, \
+                 open(err_temp, 'w', encoding='utf-8', errors='ignore') as err_f:
+                result = subprocess.run(
+                    cmd,
+                    stdout=out_f,
+                    stderr=err_f,
+                    text=True,
+                    timeout=timeout
+                )
+
+            # Read back outputs
+            stdout_val = out_temp.read_text(encoding='utf-8', errors='ignore') if out_temp.exists() else ""
+            stderr_val = err_temp.read_text(encoding='utf-8', errors='ignore') if err_temp.exists() else ""
+
+            # Cleanup temp files
+            for temp_file in (out_temp, err_temp):
+                try:
+                    if temp_file.exists():
+                        os.remove(temp_file)
+                except Exception:
+                    pass
 
             if log_file:
                 log_path = self.host_logs / log_file
                 log_path.parent.mkdir(parents=True, exist_ok=True)
-                with open(log_path, 'w') as f:
-                    f.write(result.stdout)
-                    f.write(result.stderr)
+                with open(log_path, 'w', encoding='utf-8', errors='ignore') as f:
+                    f.write(stdout_val)
+                    f.write(stderr_val)
 
-            return result.returncode, result.stdout, result.stderr
+            return result.returncode, stdout_val, stderr_val
 
         except subprocess.TimeoutExpired:
             log.error(f"Docker command timed out after {timeout}s")
+            # Cleanup temp files
+            for temp_file in (out_temp, err_temp):
+                try:
+                    if temp_file.exists():
+                        os.remove(temp_file)
+                except Exception:
+                    pass
             return -1, "", f"TIMEOUT after {timeout}s"
         except Exception as e:
             log.error(f"Docker command failed: {e}")
+            # Cleanup temp files
+            for temp_file in (out_temp, err_temp):
+                try:
+                    if temp_file.exists():
+                        os.remove(temp_file)
+                except Exception:
+                    pass
             return -1, "", str(e)
 
     def run_script(

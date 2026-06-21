@@ -95,6 +95,15 @@ def run_batch(designs, count=None):
                 "name": name, "ok": ok,
                 "gds_kb": r.get("gds_size_kb", 0), "elapsed": elapsed
             })
+            # Cleanup run directory to prevent disk exhaustion
+            run_dir_str = r.get("run_dir")
+            if run_dir_str and Path(run_dir_str).exists():
+                log.info("  Cleaning up run directory to save disk space: %s", run_dir_str)
+                try:
+                    import shutil
+                    shutil.rmtree(run_dir_str, ignore_errors=True)
+                except Exception as e:
+                    log.warning("  Cleanup warning: %s", e)
         except Exception as e:
             log.error("  ERROR %s: %s", name, e)
             results["fail"] += 1
@@ -125,5 +134,25 @@ if __name__ == "__main__":
     else:
         designs = BATCH_DESIGNS
 
+    # Enable sleep prevention on Windows
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            # ES_CONTINUOUS (0x80000000) | ES_SYSTEM_REQUIRED (0x00000001)
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+            log.info("System sleep prevention enabled.")
+        except Exception as e:
+            log.warning("Could not enable sleep prevention: %s", e)
+
     results = run_batch(designs, args.count)
+
+    # Restore sleep settings
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+            log.info("System sleep settings restored.")
+        except Exception:
+            pass
+
     sys.exit(0 if results["fail"] == 0 else 1)

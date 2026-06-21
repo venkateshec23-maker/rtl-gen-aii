@@ -213,7 +213,7 @@ def _classify_complexity(cell_count: Optional[int]) -> str:
 
 
 def _make_id(description: str, rtl_code: str) -> str:
-    payload = (description + rtl_code[:200]).encode()
+    payload = (description + rtl_code).encode()
     return hashlib.sha256(payload).hexdigest()[:16]
 
 

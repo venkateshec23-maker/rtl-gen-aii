@@ -143,9 +143,29 @@ def _build_repair_prompt(
 
 def _call_llm_repair(prompt: str) -> Optional[str]:
     """
-    Call LLM for repair — tries Groq first (fastest), then Gemini.
+    Call LLM for repair — tries GitHub Models first, then Groq (fastest), then Gemini.
     Low temperature (0.1) keeps fixes deterministic.
     """
+    github_key = os.getenv("GITHUB_TOKEN", "")
+    if github_key:
+        try:
+            import openai
+            _model = os.getenv("GITHUB_MODEL", "gpt-4o")
+            _base_url = os.getenv("GITHUB_BASE_URL", "https://models.inference.ai.azure.com")
+            client = openai.OpenAI(
+                api_key=github_key,
+                base_url=_base_url
+            )
+            resp = client.chat.completions.create(
+                model=_model,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=1200,
+                temperature=0.1,
+            )
+            return resp.choices[0].message.content
+        except Exception as e:
+            log.debug("GitHub Models repair call failed: %s", e)
+
     groq_key = os.getenv("GROQ_API_KEY", "")
     if groq_key:
         try:

@@ -457,6 +457,15 @@ def main() -> int:
                         help="Validate from existing verified run directories (no re-run). Fast, safe, correct.")
     args = parser.parse_args()
 
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            # ES_CONTINUOUS (0x80000000) | ES_SYSTEM_REQUIRED (0x00000001)
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000 | 0x00000001)
+            print("System sleep prevention enabled.")
+        except Exception as e:
+            print(f"Warning: Could not enable sleep prevention: {e}")
+
     if args.design:
         designs_to_run = [(n, d) for n, d in DESIGNS if n == args.design]
         if not designs_to_run:
@@ -488,6 +497,16 @@ def main() -> int:
             dr = run_design_from_existing(name, description, VERIFIED_RUNS[name])
         else:
             dr = run_design(name, description)
+            # Cleanup newly created run directory to prevent disk exhaustion
+            if not reuse and dr.pipeline_result:
+                run_dir_str = dr.pipeline_result.get("run_dir")
+                if run_dir_str and Path(run_dir_str).exists():
+                    print(f"         Cleaning up run directory to save disk space: {run_dir_str}")
+                    try:
+                        import shutil
+                        shutil.rmtree(run_dir_str, ignore_errors=True)
+                    except Exception as e:
+                        print(f"         Cleanup warning: {e}")
         results.append(dr)
 
         # Show quick summary per design
@@ -502,6 +521,15 @@ def main() -> int:
         print()
 
     print_result_table(results)
+
+    # Restore sleep settings
+    if sys.platform == "win32":
+        try:
+            import ctypes
+            ctypes.windll.kernel32.SetThreadExecutionState(0x80000000)
+            print("System sleep settings restored.")
+        except Exception:
+            pass
 
     # Return exit code based on phase completion
     all_pass = all(dr.overall_pass for dr in results)

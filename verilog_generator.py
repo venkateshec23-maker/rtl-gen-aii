@@ -11,6 +11,7 @@ import platform
 from pathlib import Path
 from datetime import datetime
 from typing import Optional, Dict, Tuple
+from generation_fixes import _provider_health
 
 # Cross-platform path defaults
 if platform.system() == "Windows":
@@ -1530,9 +1531,18 @@ def generate_and_validate(
 
     # Try each provider in rotation
     for provider, model in providers_to_try:
+        from generation_fixes import _provider_health
+        if _provider_health.is_dead(provider):
+            print(f"Skipping dead provider {provider}: {_provider_health.skip_reason(provider)}")
+            continue
+
         print(f"\n[Trying provider: {provider} (model: {model})]")
         
         for attempt in range(1, max_retries + 1):
+            if _provider_health.is_dead(provider):
+                print(f"Provider {provider} is dead/unhealthy, breaking retry loop.")
+                break
+
             print(f"\nAttempt {attempt}/{max_retries} with {provider}...")
 
             validation = {}
@@ -1567,11 +1577,17 @@ def generate_and_validate(
                     err = str(e)
                     print(f"Generation failed: {err}")
                     last_error = e
+                    from generation_fixes import _provider_health
+                    _provider_health.record_failure(provider, err)
                     # Check for rate limit - try next provider immediately
                     if "rate" in err.lower() or "quota" in err.lower() or "429" in err:
                         print(f"Rate limit hit for {provider}, trying next provider...")
                         break  # Break out of retry loop, try next provider
                     continue  # Retry with same provider
+
+            if rtl:
+                from generation_fixes import sv_to_v2005
+                rtl = sv_to_v2005(rtl, module_name)
 
             rtl, tb, renamed_from = normalize_module_name(rtl, tb, module_name)
             if renamed_from:
@@ -1682,45 +1698,18 @@ def generate_and_validate(
             else:
                 print(f"[FAIL] Simulation failed:\n{sim_result['output'][-500:]}")
                 if attempt < max_retries:
-                    errs_to_fix = sim_result['output'].split("\n")[-20:]
-                    print(f"[REPAIR] Attempting logic repair...")
-
-                    # Step 1: Targeted simulation-failure fix via rtl_repair
+                    print(f"[REPAIR] Attempting logic/syntax smart repair...")
                     try:
-                        from rtl_repair import repair_from_simulation_log as _rfsl
-                        _fixed_rtl = _rfsl(
-                            rtl, sim_result.get("output", ""),
-                            description, module_name
+                        from generation_fixes import smart_repair
+                        rtl, tb = smart_repair(
+                            rtl_code    = rtl,
+                            tb_code     = tb,
+                            error_log   = sim_result.get("output", ""),
+                            description = description,
+                            module_name = module_name,
                         )
-                        if _fixed_rtl:
-                            print("[rtl_repair] Simulation logic fix applied")
-                            rtl = _fixed_rtl
-                            rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
-                            continue
-                    except Exception as _re_err:
-                        log.debug("rtl_repair sim-fix skipped: %s", _re_err)
-
-                    # Step 2: Full VCD-informed LLM repair
-                    vcd_path_opt = None
-                    if paths and "testbench" in paths:
-                        trace_vcd = Path(paths["testbench"]).parent / "trace.vcd"
-                        if trace_vcd.exists():
-                            import vcd_parser
-                            vcd_path_opt = vcd_parser.extract_failure_truth_table(
-                                str(trace_vcd), max_ticks=10
-                            )
-
-                    rtl, tb = repair_verilog(
-                        rtl,
-                        tb,
-                        module_name,
-                        errs_to_fix,
-                        provider,
-                        description=description,
-                        sim_output=sim_result.get("output", ""),
-                        vcd_context=vcd_path_opt
-                    )
-                    rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
+                    except Exception as _sr_err:
+                        log.debug("smart_repair non-blocking: %s", _sr_err)
                     continue
 
         print(f"Provider {provider} exhausted {max_retries} attempts")
