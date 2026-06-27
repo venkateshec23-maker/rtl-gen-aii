@@ -3,15 +3,19 @@
 # Providers: NVIDIA (DeepSeek-V3, primary), Groq (fallback), OpenCode.ai (local)
 # Output Verilog is guaranteed to pass full_flow.py pipeline
 
-import os
-import re
 import json
-import subprocess
+import logging
+import os
 import platform
-from pathlib import Path
+import re
+import subprocess
 from datetime import datetime
-from typing import Optional, Dict, Tuple
+from pathlib import Path
+from typing import Dict, Optional, Tuple
+
 from generation_fixes import _provider_health
+
+log = logging.getLogger(__name__)
 
 # Cross-platform path defaults
 if platform.system() == "Windows":
@@ -19,13 +23,14 @@ if platform.system() == "Windows":
 else:
     _DEFAULT_WORK = "/workspaces/rtl-gen-aii/openroad"
 
-WORK_DIR      = Path(os.getenv("OPENLANE_WORK", _DEFAULT_WORK))
-DESIGNS_DIR   = WORK_DIR / "designs"
+WORK_DIR = Path(os.getenv("OPENLANE_WORK", _DEFAULT_WORK))
+DESIGNS_DIR = WORK_DIR / "designs"
 TEMPLATES_DIR = WORK_DIR / "templates"
 
 # Load .env if present
 try:
     from dotenv import load_dotenv
+
     load_dotenv(Path(__file__).parent / ".env")
 except ImportError:
     pass
@@ -73,7 +78,7 @@ module MODULE_NAME_tb;
     // declare testbench signals (inputs to DUT become regs)
 
     wire output_name;  // outputs from DUT
-    
+
     integer pass_count = 0;
     integer fail_count = 0;
 
@@ -134,17 +139,19 @@ module MODULE_NAME_tb;
 endmodule
 ```
 
-FORBIDDEN PATTERNS (cause synthesis failure):
+FORBIDDEN PATTERNS (cause synthesis failure or X-propagation):
 - initial blocks with logic (only $dumpfile/$display allowed in testbench)
 - for loops inside always blocks (use generate or parameters instead)
 - delays (#) inside always @(posedge clk) blocks
 - automatic tasks with timing
 - non-constant case expressions
 - #0 delays (race condition)
+- casex or casez (treats X/Z bits as wildcards → X-propagation; use case + explicit priority if-else instead)
+- uninitialized regs driving outputs (all outputs must be assigned in reset branch)
 
 PORT DIRECTION RULES — CRITICAL:
   output reg  — for outputs driven by always block (FSM, sequential)
-  output wire — for combinational outputs only (assign statements)  
+  output wire — for combinational outputs only (assign statements)
   input       — for all inputs (wire is default)
   NEVER declare output as plain wire if driven by always block
 
@@ -179,6 +186,13 @@ ALWAYS REQUIRED:
 - <= for ALL sequential assignments in always @(posedge clk)
 - = for combinational logic only
 - `timescale directive at top of both files
+- reset branch MUST assign every output register to a known value (0 or initial state)
+
+X-PROPAGATION RULE (testbench):
+  After applying inputs and a clock edge, check for X/Z before comparing:
+  if (^output_name === 1'bx)
+      $display("FAIL: X/Z on output_name — missing reset or uninitialized reg");
+  else if (output_name === expected_value) ...
 
 CRITICAL RULES:
 1. Pure Verilog-2001 ONLY - NO SystemVerilog (no tasks, functions, class, property, sequence, etc)
@@ -191,6 +205,8 @@ CRITICAL RULES:
 8. Always generate clock: always #5 clk = ~clk;
 9. Response must have EXACTLY two code blocks marked ```rtl and ```testbench
 10. NO explanations, NO other text outside code blocks
+11. NEVER use casex or casez — use plain case with explicit priority if-else for don't-care handling
+12. EVERY output register must be assigned in the reset (reset_n = 0) branch
 
 RESPOND ONLY WITH THE TWO CODE BLOCKS.
 """
@@ -199,6 +215,7 @@ RESPOND ONLY WITH THE TWO CODE BLOCKS.
 # ============================================================
 # PROVIDER 6: LOCAL fine-tuned RTL model (Phase 4)
 # ============================================================
+
 
 def generate_verilog_local_model(
     description: str,
@@ -210,11 +227,13 @@ def generate_verilog_local_model(
     Falls back gracefully (raises) if model not available.
     """
     import os
+
     from dotenv import load_dotenv
+
     load_dotenv(override=True)
 
     model_path_str = os.getenv("LOCAL_MODEL_PATH", "")
-    enabled        = os.getenv("LOCAL_MODEL_ENABLED", "false").lower() == "true"
+    enabled = os.getenv("LOCAL_MODEL_ENABLED", "false").lower() == "true"
 
     if not enabled or not model_path_str:
         raise RuntimeError(
@@ -228,6 +247,7 @@ def generate_verilog_local_model(
 
     try:
         from model_trainer import generate_verilog_local
+
         rtl = generate_verilog_local(description, model_path)
     except ImportError as e:
         raise RuntimeError(f"model_trainer.py not found: {e}")
@@ -238,6 +258,7 @@ def generate_verilog_local_model(
     # The local model only produces RTL — generate testbench via universal_testbench
     try:
         from universal_testbench import generate_testbench
+
         tb = generate_testbench(rtl, description)
     except Exception:
         tb = ""
@@ -249,12 +270,13 @@ def generate_verilog_local_model(
 # PROVIDER 1: NVIDIA (DeepSeek-V3 — PRIMARY)
 # ============================================================
 
+
 def generate_verilog_nvidia(
     description: str,
     module_name: str,
     api_key: str = None,
     model: str = None,
-    base_url: str = None
+    base_url: str = None,
 ) -> Tuple[str, str]:
     """
     Generate Verilog using NVIDIA API (DeepSeek-V3.2 — OpenAI-compatible).
@@ -264,9 +286,11 @@ def generate_verilog_nvidia(
     """
     import httpx
 
-    _key      = api_key  or os.getenv("NVIDIA_API_KEY")
-    _model    = model    or os.getenv("NVIDIA_MODEL", "deepseek-ai/deepseek-v3")
-    _base_url = base_url or os.getenv("NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1")
+    _key = api_key or os.getenv("NVIDIA_API_KEY")
+    _model = model or os.getenv("NVIDIA_MODEL", "deepseek-ai/deepseek-v3")
+    _base_url = base_url or os.getenv(
+        "NVIDIA_BASE_URL", "https://integrate.api.nvidia.com/v1"
+    )
 
     if not _key:
         raise ValueError(
@@ -277,7 +301,7 @@ def generate_verilog_nvidia(
 
     payload = {
         "model": _model,
-        "max_tokens": 4000,
+        "max_tokens": 8000,
         "temperature": 0.3,
         "messages": [
             {"role": "system", "content": VERILOG_SYSTEM_PROMPT},
@@ -287,9 +311,9 @@ def generate_verilog_nvidia(
                     f"Design name: {module_name}\n\n"
                     f"Description: {description}\n\n"
                     f"Generate the RTL and testbench."
-                )
-            }
-        ]
+                ),
+            },
+        ],
     }
 
     try:
@@ -297,10 +321,10 @@ def generate_verilog_nvidia(
             f"{_base_url}/chat/completions",
             headers={
                 "Authorization": f"Bearer {_key}",
-                "Content-Type":  "application/json"
+                "Content-Type": "application/json",
             },
             json=payload,
-            timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=5.0)
+            timeout=httpx.Timeout(connect=10.0, read=120.0, write=30.0, pool=5.0),
         )
         response.raise_for_status()
 
@@ -312,7 +336,7 @@ def generate_verilog_nvidia(
             )
 
         result = response.json()
-        text   = result["choices"][0]["message"]["content"]
+        text = result["choices"][0]["message"]["content"]
         return parse_verilog_response(text)
 
     except httpx.HTTPStatusError as e:
@@ -322,9 +346,7 @@ def generate_verilog_nvidia(
                 "Get a new key at: https://build.nvidia.com/"
             )
         elif e.response.status_code == 429:
-            raise RuntimeError(
-                "NVIDIA API rate limit hit. Wait a moment and retry."
-            )
+            raise RuntimeError("NVIDIA API rate limit hit. Wait a moment and retry.")
         raise RuntimeError(f"NVIDIA API error {e.response.status_code}: {e}")
 
     except httpx.RequestError as e:
@@ -338,18 +360,19 @@ def generate_verilog_nvidia(
 # PROVIDER 1.5: GEMINI (1.5 Flash)
 # ============================================================
 
+
 def generate_verilog_gemini(
-    description: str,
-    module_name: str,
-    api_key: str = None
+    description: str, module_name: str, api_key: str = None
 ) -> Tuple[str, str]:
     """
     Generate Verilog using Google Gemini.
     Returns (rtl_code, testbench_code)
     """
     import os
-    from google import genai
+
     from dotenv import load_dotenv
+    from google import genai
+
     load_dotenv(override=True)
 
     _key = api_key or os.getenv("GEMINI_API_KEY")
@@ -360,6 +383,7 @@ def generate_verilog_gemini(
     prompt = f"Design name: {module_name}\n\nDescription: {description}"
     try:
         from rag_engine import build_rag_prompt
+
         prompt = build_rag_prompt(description, prompt)
     except Exception:
         pass
@@ -369,9 +393,8 @@ def generate_verilog_gemini(
         model="gemini-2.5-flash",
         contents=prompt,
         config=dict(
-            system_instruction=VERILOG_SYSTEM_PROMPT,
-            http_options=dict(timeout=60)
-        )
+            system_instruction=VERILOG_SYSTEM_PROMPT, http_options=dict(timeout=60)
+        ),
     )
     return parse_verilog_response(response.text)
 
@@ -380,18 +403,18 @@ def generate_verilog_gemini(
 # PROVIDER 2: GROQ (llama-3.3-70b — FALLBACK)
 # ============================================================
 
+
 def generate_verilog_groq(
-    description: str,
-    module_name: str,
-    api_key: str = None
+    description: str, module_name: str, api_key: str = None
 ) -> Tuple[str, str]:
     """
     Generate Verilog using Groq (llama-3.3-70b-versatile).
     Free tier: 100K tokens/day. Falls back to NVIDIA if rate-limited.
     Returns (rtl_code, testbench_code)
     """
-    from groq import Groq
     from dotenv import load_dotenv
+    from groq import Groq
+
     # Always re-read .env so Streamlit picks up key changes without restart
     load_dotenv(Path(__file__).parent / ".env", override=True)
 
@@ -411,17 +434,18 @@ def generate_verilog_groq(
     # RAG enhancement
     try:
         from rag_engine import build_rag_prompt
+
         prompt = build_rag_prompt(description, prompt)
     except Exception:
         pass
 
     chat = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        max_tokens=4000,
+        max_tokens=8000,
         messages=[
             {"role": "system", "content": VERILOG_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
-        ]
+            {"role": "user", "content": prompt},
+        ],
     )
 
     text = chat.choices[0].message.content
@@ -432,11 +456,12 @@ def generate_verilog_groq(
 # PROVIDER 2c: OPENROUTER (Free models)
 # ============================================================
 
+
 def generate_verilog_openrouter(
     description: str,
     module_name: str,
     api_key: str = None,
-    model: str = "meta-llama/llama-3.3-70b-instruct:free"
+    model: str = "meta-llama/llama-3.3-70b-instruct:free",
 ) -> Tuple[str, str]:
     """
     Generate Verilog using OpenRouter with free models.
@@ -448,9 +473,11 @@ def generate_verilog_openrouter(
       google/gemma-4-31b-it:free              (Google Gemma)
     Returns (rtl_code, testbench_code)
     """
-    import requests
     import os
+
+    import requests
     from dotenv import load_dotenv
+
     load_dotenv(Path(__file__).parent / ".env", override=True)
 
     _key = api_key or os.getenv("OPENROUTER_API_KEY", "")
@@ -466,24 +493,21 @@ def generate_verilog_openrouter(
             "Authorization": f"Bearer {_key}",
             "Content-Type": "application/json",
             "HTTP-Referer": "https://github.com/venkateshec23-maker/rtl-gen-aii",
-            "X-Title": "RTL-Gen AI"
+            "X-Title": "RTL-Gen AI",
         },
         json={
             "model": model,
             "messages": [
-                {
-                    "role": "system",
-                    "content": VERILOG_SYSTEM_PROMPT
-                },
+                {"role": "system", "content": VERILOG_SYSTEM_PROMPT},
                 {
                     "role": "user",
-                    "content": f"Design name: {module_name}\n\nDescription: {description}"
-                }
+                    "content": f"Design name: {module_name}\n\nDescription: {description}",
+                },
             ],
             "temperature": 0.3,
-            "max_tokens": 2000,
+            "max_tokens": 8000,
         },
-        timeout=60
+        timeout=120,
     )
 
     if response.status_code == 200:
@@ -492,8 +516,7 @@ def generate_verilog_openrouter(
         return parse_verilog_response(text)
     else:
         raise ValueError(
-            f"OpenRouter error {response.status_code}: "
-            f"{response.text[:200]}"
+            f"OpenRouter error {response.status_code}: {response.text[:200]}"
         )
 
 
@@ -501,11 +524,9 @@ def generate_verilog_openrouter(
 # PROVIDER 2b: GITHUB MODELS (OpenAI-compatible, Edu pack)
 # ============================================================
 
+
 def generate_verilog_github(
-    description: str,
-    module_name: str,
-    api_key: str = None,
-    model: str = None
+    description: str, module_name: str, api_key: str = None, model: str = None
 ) -> Tuple[str, str]:
     """
     Generate Verilog using GitHub Models (OpenAI-compatible endpoint).
@@ -514,27 +535,26 @@ def generate_verilog_github(
     """
     import openai
     from dotenv import load_dotenv
+
     load_dotenv(Path(__file__).parent / ".env", override=True)
-    
+
     _key = api_key or os.getenv("GITHUB_TOKEN")
     _model = model or os.getenv("GITHUB_MODEL", "gpt-4o")
     _base_url = os.getenv("GITHUB_BASE_URL", "https://models.inference.ai.azure.com")
-    
+
     if not _key:
         raise ValueError(
             "GITHUB_TOKEN not set. Add it to .env:\n"
             "GITHUB_TOKEN=ghp_xxxxxxxxxxxxxxxxxxxx\n"
             "Get your token at: https://github.com/settings/tokens"
         )
-    
-    client = openai.OpenAI(
-        api_key=_key,
-        base_url=_base_url
-    )
-    
+
+    client = openai.OpenAI(api_key=_key, base_url=_base_url)
+
     prompt = f"Design name: {module_name}\n\nDescription: {description}"
     try:
         from rag_engine import build_rag_prompt
+
         prompt = build_rag_prompt(description, prompt)
     except Exception:
         pass
@@ -543,12 +563,12 @@ def generate_verilog_github(
         model=_model,
         messages=[
             {"role": "system", "content": VERILOG_SYSTEM_PROMPT},
-            {"role": "user", "content": prompt}
+            {"role": "user", "content": prompt},
         ],
         temperature=0.3,
-        max_tokens=4000
+        max_tokens=8000,
     )
-    
+
     text = chat.choices[0].message.content
     return parse_verilog_response(text)
 
@@ -557,13 +577,15 @@ def generate_verilog_github(
 # PROVIDER 3: OPENCODE (ACP REST API — port 4096)
 # ============================================================
 
-ACP_BASE      = "http://127.0.0.1:4096"
-ACP_MODEL     = "opencode/big-pickle"    # best free model
-ACP_TIMEOUT   = 180                      # complex RTL needs time
+ACP_BASE = "http://127.0.0.1:4096"
+ACP_MODEL = "deepseek-v4-flash-free"  # best free model
+ACP_TIMEOUT = 180  # complex RTL needs time
+
 
 def _acp_is_running(base: str = ACP_BASE) -> bool:
     """Return True if the OpenCode ACP server is reachable."""
     import httpx
+
     try:
         r = httpx.get(f"{base}/session", timeout=3)
         return r.status_code == 200
@@ -571,32 +593,38 @@ def _acp_is_running(base: str = ACP_BASE) -> bool:
         return False
 
 
-def _acp_create_session(base: str = ACP_BASE, model: str = ACP_MODEL, title: str = "RTL-Gen AI Request") -> str:
+def _acp_create_session(
+    base: str = ACP_BASE, model: str = ACP_MODEL, title: str = "RTL-Gen AI Request"
+) -> str:
     """Create a new ACP session and return its ID."""
     import httpx
-    r = httpx.post(f"{base}/session", json={"modelID": model, "title": title}, timeout=10)
+
+    r = httpx.post(
+        f"{base}/session", json={"modelID": model, "title": title}, timeout=10
+    )
     r.raise_for_status()
     return r.json()["id"]
 
 
-def _acp_send_message(session_id: str, prompt: str,
-                      base: str = ACP_BASE, model: str = ACP_MODEL) -> str:
+def _acp_send_message(
+    session_id: str, prompt: str, base: str = ACP_BASE, model: str = ACP_MODEL
+) -> str:
     """
     Send one message to an ACP session and return assistant's reply.
     ACP POST blocks until complete — then GET session messages for the text.
     Note: role is inside msg['info']['role'], not msg['role'].
     """
-    import httpx, time as _t
+    import time as _t
+
+    import httpx
 
     payload = {
-        "parts":   [{"type": "text", "text": prompt}],
+        "parts": [{"type": "text", "text": prompt}],
         "modelID": model,
     }
     # POST triggers generation (synchronous — blocks until done)
     r = httpx.post(
-        f"{base}/session/{session_id}/message",
-        json=payload,
-        timeout=ACP_TIMEOUT
+        f"{base}/session/{session_id}/message", json=payload, timeout=ACP_TIMEOUT
     )
     r.raise_for_status()
 
@@ -630,7 +658,7 @@ def generate_verilog_opencode(
     description: str,
     module_name: str,
     acp_base: str = ACP_BASE,
-    model: str    = ACP_MODEL,
+    model: str = ACP_MODEL,
 ) -> Tuple[str, str]:
     """
     Generate Verilog using the local OpenCode ACP server.
@@ -638,8 +666,9 @@ def generate_verilog_opencode(
     Model: opencode/big-pickle (no rate limits, no API key needed)
     Returns (rtl_code, testbench_code)
     """
-    import httpx
     import subprocess as _sp
+
+    import httpx
 
     # Auto-start ACP server if not running
     if not _acp_is_running(acp_base):
@@ -647,10 +676,12 @@ def generate_verilog_opencode(
         is_windows = platform.system() == "Windows"
         _sp.Popen(
             ["opencode", "acp", "--port", "4096", "--hostname", "127.0.0.1"],
-            stdout=_sp.DEVNULL, stderr=_sp.DEVNULL,
-            shell=is_windows
+            stdout=_sp.DEVNULL,
+            stderr=_sp.DEVNULL,
+            shell=is_windows,
         )
         import time as _t
+
         _t.sleep(4)
         if not _acp_is_running(acp_base):
             raise ConnectionError(
@@ -669,6 +700,7 @@ def generate_verilog_opencode(
     )
     try:
         from rag_engine import build_rag_prompt
+
         prompt = build_rag_prompt(description, prompt)
     except Exception:
         pass
@@ -676,25 +708,25 @@ def generate_verilog_opencode(
     sid = None
     rtl_code, tb_code = None, None
     try:
-        sid  = _acp_create_session(acp_base, model, title=f"RTL-Gen: {module_name}")
+        sid = _acp_create_session(acp_base, model, title=f"RTL-Gen: {module_name}")
         text = _acp_send_message(sid, prompt, acp_base, model)
         rtl_code, tb_code = parse_verilog_response(text)
-        
+
         # If model got truncated and only returned RTL without Testbench, prompt it to continue
         if rtl_code and not tb_code:
             print("OpenCode provided RTL but no testbench. Requesting testbench...")
             tb_prompt = "Perfect. Now write the complete testbench for this design in a ```testbench\n...\n``` block. Make sure it prints ALL_TESTS_PASSED or TESTS_FAILED."
             tb_text = _acp_send_message(sid, tb_prompt, acp_base, model)
-                
+
             temp_rtl, temp_tb = parse_verilog_response(tb_text)
-            
+
             # Since tb_text is JUST the testbench, the parser might put it in temp_rtl if it doesn't recognize it.
             # So if temp_tb is empty but temp_rtl isn't, we assume temp_rtl is actually the testbench.
             if not temp_tb and temp_rtl:
                 tb_code = temp_rtl
             else:
                 tb_code = temp_tb
-            
+
     except httpx.RequestError as e:
         raise ConnectionError(
             f"OpenCode ACP not reachable at {acp_base}.\n"
@@ -722,6 +754,7 @@ def generate_verilog_opencode(
 # TOOL DETECTION — Cadence / Vivado / Icarus awareness
 # ============================================================
 
+
 def detect_sim_tool() -> str:
     """
     Auto-detect available simulation tool.
@@ -731,8 +764,17 @@ def detect_sim_tool() -> str:
     # 1. Docker with OpenLane (preferred — controlled environment)
     try:
         result = subprocess.run(
-            ["docker", "image", "ls", "efabless/openlane:latest", "--format", "{{.Repository}}"],
-            capture_output=True, text=True, timeout=5
+            [
+                "docker",
+                "image",
+                "ls",
+                "efabless/openlane:latest",
+                "--format",
+                "{{.Repository}}",
+            ],
+            capture_output=True,
+            text=True,
+            timeout=5,
         )
         if "efabless" in result.stdout:
             return "docker"
@@ -773,11 +815,7 @@ def detect_sim_tool() -> str:
 
 
 def simulate_with_tool(
-    module_name: str,
-    rtl_path: str,
-    tb_path: str,
-    tool: str = None,
-    timeout: int = 60
+    module_name: str, rtl_path: str, tb_path: str, tool: str = None, timeout: int = 60
 ) -> Dict:
     """
     Simulate Verilog using the best available tool.
@@ -797,11 +835,11 @@ def simulate_with_tool(
         return {
             "success": True,
             "output": "No simulation tool found (Docker/Icarus/Cadence/Vivado). "
-                      "Skipping simulation — syntax was already validated.",
+            "Skipping simulation — syntax was already validated.",
             "returncode": 0,
             "pass_count": 0,
             "fail_count": 0,
-            "tool": "none"
+            "tool": "none",
         }
 
 
@@ -809,15 +847,10 @@ def _build_sim_result(output: str, returncode: int, tool: str) -> Dict:
     """Normalize simulator outputs into a common result schema."""
     lines = output.splitlines()
     pass_count = len([l for l in lines if l.strip().startswith("PASS")])
-    fail_count = len([
-        l for l in lines
-        if l.strip().startswith("FAIL") and "0 FAIL" not in l
-    ])
-    success = (
-        "ALL_TESTS_PASSED" in output and
-        fail_count == 0 and
-        returncode == 0
+    fail_count = len(
+        [l for l in lines if l.strip().startswith("FAIL") and "0 FAIL" not in l]
     )
+    success = "ALL_TESTS_PASSED" in output and fail_count == 0 and returncode == 0
     return {
         "success": success,
         "output": output,
@@ -831,20 +864,22 @@ def _build_sim_result(output: str, returncode: int, tool: str) -> Dict:
 def _simulate_docker(module_name: str, timeout: int) -> Dict:
     """Simulate inside efabless/openlane Docker container."""
     rtl_path = f"/work/designs/{module_name}/{module_name}.v"
-    tb_path  = f"/work/designs/{module_name}/{module_name}_tb.v"
+    tb_path = f"/work/designs/{module_name}/{module_name}_tb.v"
     cmd = [
-        "docker", "run", "--rm",
-        "-v", f"{WORK_DIR}:/work",
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{WORK_DIR}:/work",
         "efabless/openlane:latest",
-        "bash", "-c",
+        "bash",
+        "-c",
         f"rm -rf /work/results 2>/dev/null; mkdir -p /work/results && "
         f"iverilog -o /tmp/quick_sim {rtl_path} {tb_path} 2>&1 && "
-        f"vvp /tmp/quick_sim 2>&1"
+        f"vvp /tmp/quick_sim 2>&1",
     ]
     try:
-        result = subprocess.run(
-            cmd, capture_output=True, text=True, timeout=timeout
-        )
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
         output = result.stdout + result.stderr
         return _build_sim_result(output, result.returncode, "docker")
     except (FileNotFoundError, OSError):
@@ -859,17 +894,16 @@ def _simulate_icarus(rtl_path: str, tb_path: str, timeout: int) -> Dict:
     try:
         compile_r = subprocess.run(
             ["iverilog", "-o", str(out_bin), rtl_path, tb_path],
-            capture_output=True, text=True, timeout=30
+            capture_output=True,
+            text=True,
+            timeout=30,
         )
         if compile_r.returncode != 0:
             return _build_sim_result(
-                compile_r.stdout + compile_r.stderr,
-                compile_r.returncode,
-                "icarus"
+                compile_r.stdout + compile_r.stderr, compile_r.returncode, "icarus"
             )
         run_r = subprocess.run(
-            ["vvp", str(out_bin)],
-            capture_output=True, text=True, timeout=timeout
+            ["vvp", str(out_bin)], capture_output=True, text=True, timeout=timeout
         )
         output = run_r.stdout + run_r.stderr
         return _build_sim_result(output, run_r.returncode, "icarus")
@@ -877,13 +911,17 @@ def _simulate_icarus(rtl_path: str, tb_path: str, timeout: int) -> Dict:
         return _build_sim_result("Timeout.", -1, "icarus")
 
 
-def _simulate_cadence(rtl_path: str, tb_path: str, module_name: str, timeout: int) -> Dict:
+def _simulate_cadence(
+    rtl_path: str, tb_path: str, module_name: str, timeout: int
+) -> Dict:
     """Simulate using Cadence Xcelium (xrun)."""
     try:
         result = subprocess.run(
             ["xrun", "-access", "+rwc", rtl_path, tb_path, "-top", f"{module_name}_tb"],
-            capture_output=True, text=True, timeout=timeout,
-            cwd=str(Path(rtl_path).parent)
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(Path(rtl_path).parent),
         )
         output = result.stdout + result.stderr
         return _build_sim_result(output, result.returncode, "cadence")
@@ -891,29 +929,42 @@ def _simulate_cadence(rtl_path: str, tb_path: str, module_name: str, timeout: in
         return _build_sim_result("Timeout.", -1, "cadence")
 
 
-def _simulate_vivado(rtl_path: str, tb_path: str, module_name: str, timeout: int) -> Dict:
+def _simulate_vivado(
+    rtl_path: str, tb_path: str, module_name: str, timeout: int
+) -> Dict:
     """Simulate using Xilinx Vivado (xvlog + xelab + xsim)."""
     work_dir = Path(rtl_path).parent
     try:
         # Compile
         for src in [rtl_path, tb_path]:
             r = subprocess.run(
-                ["xvlog", src], capture_output=True, text=True,
-                timeout=30, cwd=str(work_dir)
+                ["xvlog", src],
+                capture_output=True,
+                text=True,
+                timeout=30,
+                cwd=str(work_dir),
             )
             if r.returncode != 0:
                 return _build_sim_result(r.stdout + r.stderr, r.returncode, "vivado")
         # Elaborate
         elab = subprocess.run(
             ["xelab", f"{module_name}_tb", "-s", "sim_snapshot"],
-            capture_output=True, text=True, timeout=30, cwd=str(work_dir)
+            capture_output=True,
+            text=True,
+            timeout=30,
+            cwd=str(work_dir),
         )
         if elab.returncode != 0:
-            return _build_sim_result(elab.stdout + elab.stderr, elab.returncode, "vivado")
+            return _build_sim_result(
+                elab.stdout + elab.stderr, elab.returncode, "vivado"
+            )
         # Simulate
         run_r = subprocess.run(
             ["xsim", "sim_snapshot", "-R"],
-            capture_output=True, text=True, timeout=timeout, cwd=str(work_dir)
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(work_dir),
         )
         output = run_r.stdout + run_r.stderr
         return _build_sim_result(output, run_r.returncode, "vivado")
@@ -925,6 +976,7 @@ def _simulate_vivado(rtl_path: str, tb_path: str, module_name: str, timeout: int
 # RESPONSE PARSER
 # ============================================================
 
+
 def parse_verilog_response(response: str) -> Tuple[str, str]:
     """
     Extract RTL and testbench from LLM response.
@@ -934,24 +986,24 @@ def parse_verilog_response(response: str) -> Tuple[str, str]:
     response = response.replace("\r\n", "\n").replace("\r", "\n")
 
     # If response is truncated (opened ``` but never closed), close it
-    open_count  = response.count("```")
+    open_count = response.count("```")
     if open_count % 2 != 0:
         # Odd number of backtick-triples means one block is unclosed
         response = response + "\nendmodule\n```"
 
     # Try ```rtl ... ``` format (allow optional whitespace after fence marker)
-    rtl_match = re.search(r'```rtl\s*\n(.*?)```', response, re.DOTALL)
-    tb_match   = re.search(r'```testbench\s*\n(.*?)```', response, re.DOTALL)
+    rtl_match = re.search(r"```rtl\s*\n(.*?)```", response, re.DOTALL)
+    tb_match = re.search(r"```testbench\s*\n(.*?)```", response, re.DOTALL)
 
     if rtl_match:
         rtl_text = rtl_match.group(1)
-        tb_text  = tb_match.group(1) if tb_match else ""
+        tb_text = tb_match.group(1) if tb_match else ""
     else:
         # Fall back to ```verilog blocks
-        verilog_blocks = re.findall(r'```verilog\s*\n(.*?)```', response, re.DOTALL)
+        verilog_blocks = re.findall(r"```verilog\s*\n(.*?)```", response, re.DOTALL)
         if len(verilog_blocks) >= 2:
             rtl_text = verilog_blocks[0]
-            tb_text  = verilog_blocks[1]
+            tb_text = verilog_blocks[1]
         elif len(verilog_blocks) == 1:
             block = verilog_blocks[0]
             if "_tb" in block or "testbench" in block.lower():
@@ -960,17 +1012,15 @@ def parse_verilog_response(response: str) -> Tuple[str, str]:
                 rtl_text, tb_text = block, ""
         else:
             # Last resort — any code blocks
-            all_blocks = re.findall(r'```[a-z]*\s*\n(.*?)```', response, re.DOTALL)
+            all_blocks = re.findall(r"```[a-z]*\s*\n(.*?)```", response, re.DOTALL)
             rtl_text = all_blocks[0] if all_blocks else ""
-            tb_text  = all_blocks[1] if len(all_blocks) > 1 else ""
+            tb_text = all_blocks[1] if len(all_blocks) > 1 else ""
 
     return rtl_text.strip(), tb_text.strip()
 
 
 def normalize_module_name(
-    rtl_code: str,
-    testbench_code: str,
-    module_name: str
+    rtl_code: str, testbench_code: str, module_name: str
 ) -> Tuple[str, str, str]:
     """
     Ensure generated RTL/testbench use the requested module name.
@@ -979,7 +1029,7 @@ def normalize_module_name(
     if not rtl_code:
         return rtl_code, testbench_code, ""
 
-    match = re.search(r'\bmodule\s+([A-Za-z_]\w*)', rtl_code)
+    match = re.search(r"\bmodule\s+([A-Za-z_]\w*)", rtl_code)
     if not match:
         return rtl_code, testbench_code, ""
 
@@ -988,18 +1038,14 @@ def normalize_module_name(
         return rtl_code, testbench_code, ""
 
     rtl_fixed = re.sub(
-        rf'\bmodule\s+{re.escape(original_name)}\b',
+        rf"\bmodule\s+{re.escape(original_name)}\b",
         f"module {module_name}",
         rtl_code,
-        count=1
+        count=1,
     )
     tb_fixed = testbench_code
     if tb_fixed:
-        tb_fixed = re.sub(
-            rf'\b{re.escape(original_name)}\b',
-            module_name,
-            tb_fixed
-        )
+        tb_fixed = re.sub(rf"\b{re.escape(original_name)}\b", module_name, tb_fixed)
 
     return rtl_fixed, tb_fixed, original_name
 
@@ -1008,16 +1054,15 @@ def normalize_module_name(
 # SYNTAX VALIDATION
 # ============================================================
 
+
 def validate_verilog_syntax(
-    rtl_code: str,
-    testbench_code: str,
-    module_name: str
+    rtl_code: str, testbench_code: str, module_name: str
 ) -> Dict:
     """
     Validate generated Verilog before running full pipeline.
     Catches common LLM mistakes early.
     """
-    errors   = []
+    errors = []
     warnings = []
 
     if not rtl_code:
@@ -1025,16 +1070,31 @@ def validate_verilog_syntax(
     else:
         if f"module {module_name}" not in rtl_code:
             errors.append(f"Module name mismatch — expected 'module {module_name}'")
-        if "clk" not in rtl_code:
-            errors.append("No clock port found")
+        # Only require clock if the module appears to be sequential (has reg declarations or always blocks)
+        has_reg = bool(re.search(r"\breg\b", rtl_code))
+        has_always = bool(re.search(r"\balways\b", rtl_code))
+        if has_reg and has_always:
+            if not re.search(r"\b(clk|clock|sys_clk|clk_i|pclk|aclk|hclk)\b", rtl_code):
+                errors.append(
+                    "Sequential module has no recognizable clock port (expected clk, clock, sys_clk, clk_i, etc.)"
+                )
         if "reset_n" not in rtl_code:
             warnings.append("No active-low reset — consider adding reset_n port")
-        if "posedge clk" not in rtl_code:
-            errors.append("No synchronous logic — add always @(posedge clk)")
+        if (
+            has_reg
+            and has_always
+            and "posedge clk" not in rtl_code
+            and "posedge clock" not in rtl_code
+        ):
+            errors.append(
+                "Sequential logic detected (reg + always) but no posedge clock found — add clock or use always @(*) for combinational"
+            )
         if "<=" not in rtl_code:
             warnings.append("No non-blocking assignments — use <= in always blocks")
-        if re.search(r'#\d+', rtl_code) and "timescale" not in rtl_code:
-            errors.append("Delay (#N) found in RTL — remove delays from synthesizable code")
+        if re.search(r"#\d+", rtl_code) and "timescale" not in rtl_code:
+            errors.append(
+                "Delay (#N) found in RTL — remove delays from synthesizable code"
+            )
         if "initial" in rtl_code and "testbench" not in rtl_code.lower():
             warnings.append("initial block in RTL — not synthesizable, remove it")
 
@@ -1048,16 +1108,13 @@ def validate_verilog_syntax(
         if "dumpfile" not in testbench_code:
             warnings.append("No VCD dump — add $dumpfile for waveform viewing")
 
-    return {
-        "valid":    len(errors) == 0,
-        "errors":   errors,
-        "warnings": warnings
-    }
+    return {"valid": len(errors) == 0, "errors": errors, "warnings": warnings}
 
 
 # ============================================================
 # FILE SAVE
 # ============================================================
+
 
 def save_design(module_name: str, rtl_code: str, testbench_code: str) -> Dict:
     """Save generated Verilog files to the pipeline directory."""
@@ -1065,15 +1122,15 @@ def save_design(module_name: str, rtl_code: str, testbench_code: str) -> Dict:
     design_dir.mkdir(parents=True, exist_ok=True)
 
     rtl_path = design_dir / f"{module_name}.v"
-    tb_path  = design_dir / f"{module_name}_tb.v"
+    tb_path = design_dir / f"{module_name}_tb.v"
 
     rtl_path.write_text(rtl_code, encoding="utf-8")
     tb_path.write_text(testbench_code, encoding="utf-8")
 
     return {
-        "rtl":        str(rtl_path),
-        "testbench":  str(tb_path),
-        "design_dir": str(design_dir)
+        "rtl": str(rtl_path),
+        "testbench": str(tb_path),
+        "design_dir": str(design_dir),
     }
 
 
@@ -1087,11 +1144,8 @@ def simulate_in_docker(module_name: str, timeout: int = 60) -> Dict:
 # VERILOG REPAIR UTILITIES
 # ============================================================
 
-def auto_fix_testbench(
-    testbench_code: str,
-    module_name: str,
-    rtl_code: str
-) -> str:
+
+def auto_fix_testbench(testbench_code: str, module_name: str, rtl_code: str) -> str:
     """
     Automatically patch common testbench issues without LLM call.
     Fixes the most common local-model mistakes in one pass.
@@ -1107,27 +1161,23 @@ def auto_fix_testbench(
 
     # Fix 2: Broken clock — replace 'initial forever #N' with always block
     fixed = re.sub(
-        r'initial\s+forever\s+#\d+\s+clk\s*=\s*~clk\s*;',
-        'initial clk = 0;\nalways #5 clk = ~clk;',
-        fixed
+        r"initial\s+forever\s+#\d+\s+clk\s*=\s*~clk\s*;",
+        "initial clk = 0;\nalways #5 clk = ~clk;",
+        fixed,
     )
 
     # Fix 3: Missing VCD dump — inject after first 'initial begin'
     if "dumpfile" not in fixed:
         fixed = re.sub(
-            r'(initial\s+begin\s*\n)',
+            r"(initial\s+begin\s*\n)",
             r'\1    $dumpfile("trace.vcd");\n'
-            r'    $dumpvars(0, ' + module_name + r'_tb);\n',
+            r"    $dumpvars(0, " + module_name + r"_tb);\n",
             fixed,
-            count=1
+            count=1,
         )
 
     # Fix 4: Wrong dumpfile path — force to trace.vcd to run cleanly anywhere
-    fixed = re.sub(
-        r'\$dumpfile\("([^"]+)"\)',
-        '$dumpfile("trace.vcd")',
-        fixed
-    )
+    fixed = re.sub(r'\$dumpfile\("([^"]+)"\)', '$dumpfile("trace.vcd")', fixed)
 
     # Fix 6: Missing reset_n drive when RTL uses it
     if "reset_n" not in fixed and "reset_n" in rtl_code:
@@ -1138,18 +1188,16 @@ def auto_fix_testbench(
             "    #1 reset_n = 1;\n"
         )
         fixed = re.sub(
-            r'(initial\s+begin\s*\n\s*\$dumpfile[^\n]+\n\s*\$dumpvars[^\n]+\n)',
-            r'\1' + reset_seq,
+            r"(initial\s+begin\s*\n\s*\$dumpfile[^\n]+\n\s*\$dumpvars[^\n]+\n)",
+            r"\1" + reset_seq,
             fixed,
-            count=1
+            count=1,
         )
 
     return fixed
 
 
-def validate_testbench_has_real_checks(
-    testbench_code: str
-) -> dict:
+def validate_testbench_has_real_checks(testbench_code: str) -> dict:
     """
     Detects lying testbenches — ones that print
     ALL_TESTS_PASSED without actually checking outputs.
@@ -1167,10 +1215,9 @@ def validate_testbench_has_real_checks(
     warnings = []
 
     # Check 1: Has comparison operators
-    has_comparison = bool(re.search(
-        r'!==|===|!=\s*(?!1\'b)|==\s*(?!1\'b)',
-        testbench_code
-    ))
+    has_comparison = bool(
+        re.search(r"!==|===|!=\s*(?!1\'b)|==\s*(?!1\'b)", testbench_code)
+    )
     if not has_comparison:
         issues.append(
             "NO_COMPARISONS: Testbench has no !== or === "
@@ -1178,11 +1225,9 @@ def validate_testbench_has_real_checks(
         )
 
     # Check 2: Has FAIL display path
-    has_fail_display = bool(re.search(
-        r'\$display\s*\(\s*"[^"]*FAIL[^"]*"',
-        testbench_code,
-        re.IGNORECASE
-    ))
+    has_fail_display = bool(
+        re.search(r'\$display\s*\(\s*"[^"]*FAIL[^"]*"', testbench_code, re.IGNORECASE)
+    )
     if not has_fail_display:
         issues.append(
             "NO_FAIL_PATH: Testbench never prints FAIL. "
@@ -1192,22 +1237,15 @@ def validate_testbench_has_real_checks(
     # Check 3: ALL_TESTS_PASSED inside conditional
     # Bad: $display("ALL_TESTS_PASSED");
     # Good: if (fail_count == 0) $display("ALL_TESTS_PASSED")
-    atp_match = re.search(
-        r'\$display\s*\([^)]*ALL_TESTS_PASSED[^)]*\)',
-        testbench_code
-    )
+    atp_match = re.search(r"\$display\s*\([^)]*ALL_TESTS_PASSED[^)]*\)", testbench_code)
     if atp_match:
         # Check what is before it — should be if/conditional
         pos = atp_match.start()
-        context_before = testbench_code[
-            max(0, pos-100):pos
-        ].strip()
+        context_before = testbench_code[max(0, pos - 100) : pos].strip()
         # Look for if statement in nearby context
-        has_conditional = bool(re.search(
-            r'\bif\b.*(?:fail|count|error)',
-            context_before,
-            re.IGNORECASE
-        ))
+        has_conditional = bool(
+            re.search(r"\bif\b.*(?:fail|count|error)", context_before, re.IGNORECASE)
+        )
         if not has_conditional:
             issues.append(
                 "UNCONDITIONAL_PASS: ALL_TESTS_PASSED is "
@@ -1216,11 +1254,11 @@ def validate_testbench_has_real_checks(
             )
 
     # Check 4: Has fail counter or flag
-    has_fail_counter = bool(re.search(
-        r'fail_count|fail_flag|error_count|num_fail',
-        testbench_code,
-        re.IGNORECASE
-    ))
+    has_fail_counter = bool(
+        re.search(
+            r"fail_count|fail_flag|error_count|num_fail", testbench_code, re.IGNORECASE
+        )
+    )
     if not has_fail_counter:
         warnings.append(
             "NO_FAIL_COUNTER: Recommend adding integer "
@@ -1228,34 +1266,30 @@ def validate_testbench_has_real_checks(
         )
 
     # Check 5: Samples AFTER clock edge
-    has_clock_sample = bool(re.search(
-        r'@\s*\(\s*posedge\s+clk\s*\)\s*;\s*#\d*',
-        testbench_code
-    ))
+    has_clock_sample = bool(
+        re.search(r"@\s*\(\s*posedge\s+clk\s*\)\s*;\s*#\d*", testbench_code)
+    )
     if not has_clock_sample:
         warnings.append(
-            "NO_CLOCK_SAMPLE: Should sample outputs "
-            "after @(posedge clk); #1;"
+            "NO_CLOCK_SAMPLE: Should sample outputs after @(posedge clk); #1;"
         )
 
     is_lying = len(issues) > 0
 
     return {
         "is_lying": is_lying,
-        "issues":   issues,
+        "issues": issues,
         "warnings": warnings,
-        "verdict":  (
+        "verdict": (
             "TESTBENCH_LYING — will produce false PASS"
-            if is_lying else
-            "TESTBENCH_HONEST — has real checks"
-        )
+            if is_lying
+            else "TESTBENCH_HONEST — has real checks"
+        ),
     }
 
 
 def inject_real_checks_into_testbench(
-    testbench_code: str,
-    module_name: str,
-    rtl_code: str
+    testbench_code: str, module_name: str, rtl_code: str
 ) -> str:
     """
     Injects a proper fail counter and conditional
@@ -1269,16 +1303,15 @@ def inject_real_checks_into_testbench(
     # Step 1: Add fail_count and pass_count declarations after module declaration
     if "fail_count" not in fixed or "pass_count" not in fixed:
         fixed = re.sub(
-            r'(module\s+\w+_tb\s*\(\s*\)\s*;)',
-            r'\1\n\n    integer pass_count = 0;\n    integer fail_count = 0;',
-            fixed
+            r"(module\s+\w+_tb\s*\(\s*\)\s*;)",
+            r"\1\n\n    integer pass_count = 0;\n    integer fail_count = 0;",
+            fixed,
         )
 
     # Step 2: Find unconditional ALL_TESTS_PASSED
     # and wrap it in proper conditional
     unconditional_atp = re.search(
-        r'(\s+)(\$display\s*\(\s*"ALL_TESTS_PASSED[^"]*"\s*\)\s*;)',
-        fixed
+        r'(\s+)(\$display\s*\(\s*"ALL_TESTS_PASSED[^"]*"\s*\)\s*;)', fixed
     )
     if unconditional_atp:
         indent = unconditional_atp.group(1)
@@ -1290,14 +1323,11 @@ def inject_real_checks_into_testbench(
             f'"RESULTS: %0d PASS / %0d FAIL",'
             f" pass_count, fail_count);\n"
             f"{indent}if (fail_count == 0)\n"
-            f"{indent}    $display(\"ALL_TESTS_PASSED\");\n"
+            f'{indent}    $display("ALL_TESTS_PASSED");\n'
             f"{indent}else\n"
-            f"{indent}    $display(\"TESTS_FAILED\");"
+            f'{indent}    $display("TESTS_FAILED");'
         )
-        fixed = fixed.replace(
-            unconditional_atp.group(0),
-            "\n" + new_block + "\n"
-        )
+        fixed = fixed.replace(unconditional_atp.group(0), "\n" + new_block + "\n")
 
     return fixed
 
@@ -1305,14 +1335,16 @@ def inject_real_checks_into_testbench(
 def repair_with_groq(prompt: str, module_name: str) -> Tuple[str, str]:
     """Repair Verilog using Groq cloud if primary LLM fails."""
     import os
-    from groq import Groq
+
     from dotenv import load_dotenv
+    from groq import Groq
+
     load_dotenv(override=True)
     client = Groq(api_key=os.getenv("GROQ_API_KEY"))
     chat = client.chat.completions.create(
         model="llama-3.3-70b-versatile",
-        max_tokens=4000,
-        messages=[{"role": "user", "content": prompt}]
+        max_tokens=8000,
+        messages=[{"role": "user", "content": prompt}],
     )
     return parse_verilog_response(chat.choices[0].message.content)
 
@@ -1320,8 +1352,10 @@ def repair_with_groq(prompt: str, module_name: str) -> Tuple[str, str]:
 def repair_with_gemini(prompt: str, module_name: str) -> Tuple[str, str]:
     """Repair Verilog using Gemini API."""
     import os
+
     import google.generativeai as genai
     from dotenv import load_dotenv
+
     load_dotenv(override=True)
     _key = os.getenv("GEMINI_API_KEY")
     genai.configure(api_key=_key)
@@ -1330,24 +1364,139 @@ def repair_with_gemini(prompt: str, module_name: str) -> Tuple[str, str]:
     return parse_verilog_response(response.text)
 
 
+def _is_complex_design(description: str) -> bool:
+    """Check if description matches a complex design that needs enhanced prompting."""
+    desc_lower = description.lower()
+    complex_keywords = [
+        "risc-v", "riscv", "rv32", "rv64",
+        "cpu", "processor", "core",
+        "pipeline", "pipelined", "5-stage", "five stage",
+        "hazard", "forwarding", "branch prediction",
+        "cache", "mmu", "tlb",
+        "soc", "system on chip",
+        "superscalar", "out of order",
+        "fetch", "decode", "execute", "write back",
+    ]
+    return any(kw in desc_lower for kw in complex_keywords)
+
+
+def _build_enhanced_description(description: str, module_name: str) -> str:
+    """
+    For complex designs, wrap the description with architectural guidance
+    so the LLM generates a complete, detailed implementation.
+    """
+    base = f"Design name: {module_name}\n\nDescription: {description}\n\n"
+    enhanced = (
+        "IMPORTANT - This is a COMPLEX pipelined design. Follow these architectural requirements:\n"
+        "- Implement ALL pipeline stages explicitly (fetch, decode, execute, memory, writeback)\n"
+        "- Include pipeline registers between every stage (IF/ID, ID/EX, EX/MEM, MEM/WB)\n"
+        "- Each pipeline register must hold: control signals, data, and destination register address\n"
+        "- Include hazard detection logic for RAW data hazards (insert stalls when needed)\n"
+        "- Include data forwarding/bypass paths (EX→EX, MEM→EX, WB→EX) to minimize stalls\n"
+        "- Include a register file with dual read ports and one write port\n"
+        "- Include a program counter (PC) with: normal increment (+4), branch target, and stall/hold\n"
+        "- For load instructions: insert one stall cycle after load before dependent use\n"
+        "- Include branch comparator in execute stage, compute branch target in decode stage\n"
+        "- For branch mispredictions: flush IF/ID and ID/EX pipeline registers\n"
+        "- Write-back stage writes ALU result or loaded data to register file\n"
+        "- Use 32-bit data width for all pipeline signals and registers unless specified otherwise\n"
+        "- Every pipeline register must have clock enable (stall) and clear (flush) inputs\n"
+        "- Output reg for ALL pipeline registers, output reg for register file\n"
+        "- This RTL must be complete, synthesizable Verilog-2001 — no stubs, no placeholders\n"
+        "- Generate realistic, working RTL — not a simplified or skeleton version\n"
+        "\nGenerate the complete RTL and testbench."
+    )
+    return base + enhanced
+
+
+def _check_spec_compliance(description: str, rtl_code: str, module_name: str) -> Tuple[bool, str]:
+    """
+    Validate that generated RTL matches the complexity of the description.
+    Catches cases where complex descriptions (RISC-V CPU, pipeline) produce
+    primitive stubs (8-bit adder, counter).
+
+    Returns (True, "") if OK, (False, reason) if spec violation detected.
+    """
+    desc_lower = description.lower()
+    rtl_lower = rtl_code.lower()
+
+    # Check 1: Pipeline/cpu descriptions must have pipeline stages
+    if any(w in desc_lower for w in ["pipeline", "5-stage", "five stage", "fetch", "decode", "execute"]):
+        stage_count = sum(1 for s in ["if_id", "id_ex", "ex_mem", "mem_wb", "fetch", "decode", "execute", "writeback", "write_back"] if s in rtl_lower)
+        if stage_count < 2:
+            return False, f"Pipeline description but only {stage_count} pipeline stage signals found (expected >= 2)"
+
+    # Check 2: RISC-V descriptions must have RV-specific constructs
+    if any(w in desc_lower for w in ["risc-v", "riscv", "rv32", "rv64"]):
+        rv_indicators = sum(1 for s in ["register file", "reg_file", "rf", "x0", "zero register", "pc", "program counter", "alu", "hazard", "forwarding"] if s in rtl_lower)
+        if rv_indicators < 2:
+            return False, f"RISC-V description but only {rv_indicators} RV-specific constructs found (expected >= 2)"
+
+    # Check 3: Complex multi-module descriptions must have more than one always block
+    if _is_complex_design(description):
+        always_count = rtl_code.count("always @")
+        if always_count <= 1:
+            reg_count = rtl_code.count("reg ")
+            if reg_count <= 5:
+                return False, f"Complex design only has {always_count} always blocks and {reg_count} regs — likely a stub"
+
+    # Check 4: Module must not be a known primitive template when complex requested
+    primitive_indicators = [
+        r"\bcount\s*<=\s*count\s*\+\s*1",  # counter
+        r"\bsum\s*<=\s*\{1'b0,\s*a}\s*\+\s*\{1'b0,\s*b}",  # adder template
+    ]
+    if _is_complex_design(description):
+        for pattern in primitive_indicators:
+            import re
+            if re.search(pattern, rtl_lower):
+                return False, f"Complex description matched primitive template pattern: {pattern[:40]}"
+
+    return True, ""
+
+
 def find_matching_template(description: str, module_name: str) -> Optional[str]:
     """
     Check if request matches a proven template.
     Returns template file path or None.
     """
     keywords = {
-        "counter.v":    ["counter", "count", "increment", "up counter", "down counter"],
-        "adder.v":      ["adder", "add", "sum", "arithmetic unit"],
-        "shift_reg.v":  ["shift", "serial", "sipo", "piso", "shift register"],
-        "mux.v":        ["multiplex", "mux", "selector", "select"],
-        "decoder.v":    ["decoder", "decode", "one-hot"],
-        "encoder.v":    ["encoder", "priority encoder", "encode"],
-        "spi_master.v": ["spi", "serial peripheral", "spi master", "mosi", "miso", "sclk"],
+        "counter.v": ["counter", "count", "increment", "up counter", "down counter"],
+        "adder.v": ["adder", "add", "sum", "arithmetic unit"],
+        "shift_reg.v": ["shift", "serial", "sipo", "piso", "shift register"],
+        "mux.v": ["multiplex", "mux", "selector", "select"],
+        "decoder.v": ["decoder", "decode", "one-hot"],
+        "encoder.v": ["encoder", "priority encoder", "encode"],
+        "spi_master.v": [
+            "spi",
+            "serial peripheral",
+            "spi master",
+            "mosi",
+            "miso",
+            "sclk",
+        ],
         "i2c_master.v": ["i2c", "inter-integrated", "i2c master", "iic", "scl sda"],
-        "uart_tx.v":    ["uart", "serial transmit", "uart_tx", "rs232", "baud"],
-        "fsm.v":        ["fsm", "state machine", "finite state", "controller"],
+        "uart_tx.v": ["uart", "serial transmit", "uart_tx", "rs232", "baud"],
+        "fsm.v": ["fsm", "state machine", "finite state", "controller"],
+        # Complex designs - no single file template, use LLM with enhanced prompt
+        "riscv_cpu": [
+            "risc-v", "riscv", "rv32", "rv64",
+            "5-stage pipeline", "five stage pipeline",
+            "pipelined cpu", "pipelined processor",
+        ],
     }
     desc_lower = description.lower()
+
+    # Complex-design guard: skip template matching for designs with
+    # complexity score >= 60 (RISC-V, pipeline, CPU, SoC, etc.)
+    # These descriptions should go through LLM generation or hierarchy builder,
+    # never silently fall back to a primitive template (adder, counter, etc.)
+    try:
+        from generation_fixes import estimate_design_complexity
+        if estimate_design_complexity(description) >= 60:
+            return None
+    except Exception:
+        pass
+
     for template_file, words in keywords.items():
         if any(w in desc_lower for w in words):
             template_path = TEMPLATES_DIR / template_file
@@ -1364,7 +1513,7 @@ def repair_verilog(
     llm_provider: str = "groq",
     description: str = "",
     sim_output: str = "",
-    vcd_context: str = None
+    vcd_context: str = None,
 ) -> Tuple[str, str]:
     """
     Send broken Verilog back to LLM with specific error list and VCD trace context.
@@ -1375,13 +1524,21 @@ def repair_verilog(
     error_list = "\n".join(f"- {e}" for e in errors)
 
     # Extract specific failure lines from simulation output
-    fail_lines = [
-        l for l in sim_output.split("\n")
-        if l.strip().startswith("FAIL") or "error" in l.lower() or "Error" in l
-    ] if sim_output else []
+    fail_lines = (
+        [
+            l
+            for l in sim_output.split("\n")
+            if l.strip().startswith("FAIL") or "error" in l.lower() or "Error" in l
+        ]
+        if sim_output
+        else []
+    )
 
-    fail_context = "\n".join(fail_lines[:10]) if fail_lines else \
-                   "Simulation did not complete or no FAIL messages found"
+    fail_context = (
+        "\n".join(fail_lines[:10])
+        if fail_lines
+        else "Simulation did not complete or no FAIL messages found"
+    )
 
     repair_prompt = f"""
 DESIGN: {module_name}
@@ -1434,7 +1591,9 @@ SIMULATION FAILURE TRACE (Last known truth-table states before failure):
 ```
 """
 
-    repair_prompt = repair_prompt + "\nMaintain functionality. Pure Verilog-2001 only.\n"
+    repair_prompt = (
+        repair_prompt + "\nMaintain functionality. Pure Verilog-2001 only.\n"
+    )
 
     try:
         if llm_provider == "gemini":
@@ -1452,36 +1611,45 @@ SIMULATION FAILURE TRACE (Last known truth-table states before failure):
         return rtl_code, testbench_code
 
 
-
 def generate_and_validate(
-    description:       str,
-    module_name:       str,
-    llm_provider:      str = "openrouter",
-    openrouter_model:  Optional[str] = None,
-    max_retries:       int = 3
+    description: str,
+    module_name: str,
+    llm_provider: str = "openrouter",
+    openrouter_model: Optional[str] = None,
+    max_retries: int = 3,
 ) -> Dict:
     """
     Generate Verilog + validate + simulate.
     Provider priority with rotation: requested provider first, then alternatives.
-    
+
     Returns complete result dict with status READY_FOR_PIPELINE or GENERATION_FAILED.
     """
-    print(f"\n{'='*60}")
+    print(f"\n{'=' * 60}")
     print(f"Generating Verilog for: {module_name}")
     print(f"Provider: {llm_provider}")
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
+
+    # Sanitize module name: only alphanumeric + underscore allowed
+    safe_name = re.sub(r'[^a-zA-Z0-9_]', '_', module_name)
+    safe_name = re.sub(r'_+', '_', safe_name).strip('_')
+    if safe_name != module_name:
+        print(f"[SANITIZE] Module name '{module_name}' contains invalid characters")
+        print(f"          Using '{safe_name}' instead")
+        module_name = safe_name or f"design_{int(time.time())}"
 
     providers_to_try = []
-    req_model = openrouter_model or os.getenv("OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free")
-    
+    req_model = openrouter_model or os.getenv(
+        "OPENROUTER_MODEL", "meta-llama/llama-3.3-70b-instruct:free"
+    )
+
     if llm_provider == "openrouter":
         model_list = [
-            "meta-llama/llama-3.3-70b-instruct:free",   # best quality free
-            "openai/gpt-oss-120b:free",                  # large GPT-class
-            "openai/gpt-oss-20b:free",                   # fast fallback
-            "nvidia/nemotron-3-ultra-550b-a55b:free",    # very large
-            "google/gemma-4-31b-it:free",                # Google Gemma
-            "nousresearch/hermes-3-llama-3.1-405b:free", # large hermes
+            "meta-llama/llama-3.3-70b-instruct:free",  # best quality free
+            "openai/gpt-oss-120b:free",  # large GPT-class
+            "openai/gpt-oss-20b:free",  # fast fallback
+            "nvidia/nemotron-3-ultra-550b-a55b:free",  # very large
+            "google/gemma-4-31b-it:free",  # Google Gemma
+            "nousresearch/hermes-3-llama-3.1-405b:free",  # large hermes
         ]
         providers_to_try = [("openrouter", req_model)]
         for m in model_list:
@@ -1493,25 +1661,36 @@ def generate_and_validate(
         ]
     else:
         all_p = [
-            ("groq",       None),
+            ("nvidia", None),
+            ("groq", None),
             ("openrouter", req_model),
-            ("gemini",     None),
-            ("github",     None),
-            ("local",      None),
-            ("opencode",   None),
+            ("gemini", None),
+            ("github", None),
+            ("local", None),
+            ("opencode", None),
         ]
         requested = [(p, m) for p, m in all_p if p == llm_provider]
         if requested:
-            providers_to_try = requested + [(p, m) for p, m in all_p if p != llm_provider]
+            providers_to_try = requested + [
+                (p, m) for p, m in all_p if p != llm_provider
+            ]
         else:
             providers_to_try = [("groq", None)] + all_p
 
-    
     last_error = None
 
     # Detect available sim tool once
     sim_tool = detect_sim_tool()
     print(f"Simulation tool: {sim_tool}")
+
+    # ---- Complex design detection ----
+    complex_design = _is_complex_design(description)
+    effective_description = (
+        _build_enhanced_description(description, module_name)
+        if complex_design else description
+    )
+    if complex_design:
+        print(f"[COMPLEX] Enhanced prompt with architectural guidance")
 
     # ---- Check for matching template first ----
     template_path = find_matching_template(description, module_name)
@@ -1519,10 +1698,13 @@ def generate_and_validate(
         print(f"[TEMPLATE] Using proven template: {Path(template_path).name}")
         template_content = Path(template_path).read_text()
         import re as _re
-        match = _re.search(r'module\s+(\w+)', template_content)
+
+        match = _re.search(r"module\s+(\w+)", template_content)
         if match:
             orig_name = match.group(1)
-            rtl = _re.sub(rf'\bmodule\s+{orig_name}\b', f'module {module_name}', template_content)
+            rtl = _re.sub(
+                rf"\bmodule\s+{orig_name}\b", f"module {module_name}", template_content
+            )
         else:
             rtl = template_content
     else:
@@ -1532,12 +1714,15 @@ def generate_and_validate(
     # Try each provider in rotation
     for provider, model in providers_to_try:
         from generation_fixes import _provider_health
+
         if _provider_health.is_dead(provider):
-            print(f"Skipping dead provider {provider}: {_provider_health.skip_reason(provider)}")
+            print(
+                f"Skipping dead provider {provider}: {_provider_health.skip_reason(provider)}"
+            )
             continue
 
         print(f"\n[Trying provider: {provider} (model: {model})]")
-        
+
         for attempt in range(1, max_retries + 1):
             if _provider_health.is_dead(provider):
                 print(f"Provider {provider} is dead/unhealthy, breaking retry loop.")
@@ -1551,26 +1736,29 @@ def generate_and_validate(
                 "is_lying": False,
                 "issues": [],
                 "warnings": [],
-                "verdict": "NOT_CHECKED"
+                "verdict": "NOT_CHECKED",
             }
 
             # ---- Generate ----
             if not rtl or not tb:
                 try:
+                    desc_to_use = effective_description
                     if provider == "openrouter":
-                        rtl, tb = generate_verilog_openrouter(description, module_name, model=model)
+                        rtl, tb = generate_verilog_openrouter(
+                            desc_to_use, module_name, model=model
+                        )
                     elif provider == "github":
-                        rtl, tb = generate_verilog_github(description, module_name)
+                        rtl, tb = generate_verilog_github(desc_to_use, module_name)
                     elif provider == "groq":
-                        rtl, tb = generate_verilog_groq(description, module_name)
+                        rtl, tb = generate_verilog_groq(desc_to_use, module_name)
                     elif provider == "gemini":
-                        rtl, tb = generate_verilog_gemini(description, module_name)
+                        rtl, tb = generate_verilog_gemini(desc_to_use, module_name)
                     elif provider == "nvidia":
-                        rtl, tb = generate_verilog_nvidia(description, module_name)
+                        rtl, tb = generate_verilog_nvidia(desc_to_use, module_name)
                     elif provider == "opencode":
-                        rtl, tb = generate_verilog_opencode(description, module_name)
+                        rtl, tb = generate_verilog_opencode(desc_to_use, module_name)
                     elif provider == "local":
-                        rtl, tb = generate_verilog_local_model(description, module_name)
+                        rtl, tb = generate_verilog_local_model(desc_to_use, module_name)
                     else:
                         raise ValueError(f"Unknown provider '{provider}'")
                 except Exception as e:
@@ -1578,6 +1766,7 @@ def generate_and_validate(
                     print(f"Generation failed: {err}")
                     last_error = e
                     from generation_fixes import _provider_health
+
                     _provider_health.record_failure(provider, err)
                     # Check for rate limit - try next provider immediately
                     if "rate" in err.lower() or "quota" in err.lower() or "429" in err:
@@ -1587,11 +1776,33 @@ def generate_and_validate(
 
             if rtl:
                 from generation_fixes import sv_to_v2005
+
                 rtl = sv_to_v2005(rtl, module_name)
+            if tb:
+                from generation_fixes import sv_to_v2005
+
+                tb = sv_to_v2005(tb, f"{module_name}_tb")
 
             rtl, tb, renamed_from = normalize_module_name(rtl, tb, module_name)
             if renamed_from:
-                print(f"Normalized module name from '{renamed_from}' to '{module_name}'")
+                print(
+                    f"Normalized module name from '{renamed_from}' to '{module_name}'"
+                )
+
+            # ---- Spec-compliance check (complex designs only) ----
+            if complex_design:
+                from generation_fixes import estimate_design_complexity
+                spec_ok, spec_reason = _check_spec_compliance(
+                    description, rtl, module_name
+                )
+                if not spec_ok:
+                    print(f"[SPEC-COMPLIANCE] FAIL: {spec_reason}")
+                    # Mark as failed so next attempt/retry gets a fresh generation
+                    last_error = RuntimeError(f"Spec-compliance: {spec_reason}")
+                    rtl, tb = "", ""  # force re-generation on next attempt
+                    continue
+                else:
+                    print(f"[SPEC-COMPLIANCE] PASS")
 
             # ---- Validate ----
             validation = validate_verilog_syntax(rtl, tb, module_name)
@@ -1599,52 +1810,74 @@ def generate_and_validate(
             if validation["errors"]:
                 print(f"Validation errors: {validation['errors']}")
 
-                # Step 1: Rule-based auto-fix (fastest, no LLM)
-                tb_autofixed = auto_fix_testbench(tb, module_name, rtl)
-                auto_val = validate_verilog_syntax(rtl, tb_autofixed, module_name)
+                # Step 1: RuleBasedRepairEngine (deterministic, zero LLM)
+                from rule_based_repair import RuleBasedRepairEngine as _RBE
 
-                if not auto_val["errors"]:
-                    print("Auto-fix resolved all validation errors")
-                    tb = tb_autofixed
+                _rbe = _RBE()
+                rtl, tb, _applied = _rbe.apply(rtl, tb, validation["errors"], module_name)
+                auto_val = validate_verilog_syntax(rtl, tb, module_name)
+
+                if _applied and not auto_val["errors"]:
+                    print("Rule repair resolved ALL validation errors")
+                    print("Skipping LLM repair.")
                     validation = auto_val
-                elif attempt < max_retries:
-                    # Step 2: rtl_repair targeted compile-error fix (cheap LLM call)
-                    try:
-                        from rtl_repair import repair_rtl_errors as _rre
-                        _err_log = "\n".join(auto_val["errors"])
-                        _fixed_rtl = _rre(rtl, _err_log, description, module_name)
-                        if _fixed_rtl:
-                            print("[rtl_repair] Compile-error fix applied")
-                            rtl = _fixed_rtl
-                            rtl, tb_autofixed, _ = normalize_module_name(
-                                rtl, tb_autofixed, module_name
-                            )
-                            auto_val = validate_verilog_syntax(
-                                rtl, tb_autofixed, module_name
-                            )
-                            if not auto_val["errors"]:
-                                print("[rtl_repair] RTL now compiles cleanly")
-                                tb = tb_autofixed
-                                validation = auto_val
-                    except Exception as _re_err:
-                        log.debug("rtl_repair skipped: %s", _re_err)
-
-                    if auto_val["errors"]:
-                        # Step 3: Full LLM repair (expensive, use last)
-                        print("Attempting LLM repair...")
-                        rtl, tb = repair_verilog(
-                            rtl, tb_autofixed, module_name,
-                            auto_val["errors"], provider,
-                            description=description,
-                            sim_output=""
-                        )
-                        rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
-                        validation = validate_verilog_syntax(rtl, tb, module_name)
-                        if validation["errors"]:
-                            print(f"Still failing after repair: {validation['errors']}")
-                            continue
                 else:
-                    continue
+                    if _applied and auto_val["errors"]:
+                        print(
+                            f"Rule repair applied but {len(auto_val['errors'])} "
+                            f"error(s) remain"
+                        )
+
+                    # Step 2: auto_fix_testbench (existing rule-based TB fixes)
+                    tb_autofixed = auto_fix_testbench(tb, module_name, rtl)
+                    auto_val = validate_verilog_syntax(rtl, tb_autofixed, module_name)
+
+                    if not auto_val["errors"]:
+                        print("Auto-fix resolved all remaining validation errors")
+                        tb = tb_autofixed
+                        validation = auto_val
+                    elif attempt < max_retries:
+                        # Step 3: rtl_repair targeted compile-error fix (cheap LLM call)
+                        try:
+                            from rtl_repair import repair_rtl_errors as _rre
+
+                            _err_log = "\n".join(auto_val["errors"])
+                            _fixed_rtl = _rre(rtl, _err_log, description, module_name)
+                            if _fixed_rtl:
+                                print("[rtl_repair] Compile-error fix applied")
+                                rtl = _fixed_rtl
+                                rtl, tb_autofixed, _ = normalize_module_name(
+                                    rtl, tb_autofixed, module_name
+                                )
+                                auto_val = validate_verilog_syntax(
+                                    rtl, tb_autofixed, module_name
+                                )
+                                if not auto_val["errors"]:
+                                    print("[rtl_repair] RTL now compiles cleanly")
+                                    tb = tb_autofixed
+                                    validation = auto_val
+                        except Exception as _re_err:
+                            log.debug("rtl_repair skipped: %s", _re_err)
+
+                        if auto_val["errors"]:
+                            # Step 4: Full LLM repair (expensive, use last)
+                            print("Attempting LLM repair...")
+                            rtl, tb = repair_verilog(
+                                rtl,
+                                tb_autofixed,
+                                module_name,
+                                auto_val["errors"],
+                                provider,
+                                description=description,
+                                sim_output="",
+                            )
+                            rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
+                            validation = validate_verilog_syntax(rtl, tb, module_name)
+                            if validation["errors"]:
+                                print(f"Still failing after repair: {validation['errors']}")
+                                continue
+                    else:
+                        continue
 
             # ---- Honesty Gate ----
             lying_check = validate_testbench_has_real_checks(tb)
@@ -1657,10 +1890,13 @@ def generate_and_validate(
                 if validation["errors"]:
                     if attempt < max_retries:
                         rtl, tb = repair_verilog(
-                            rtl, tb, module_name,
-                            validation["errors"], provider,
+                            rtl,
+                            tb,
+                            module_name,
+                            validation["errors"],
+                            provider,
                             description=description,
-                            sim_output=""
+                            sim_output="",
                         )
                         rtl, tb, _ = normalize_module_name(rtl, tb, module_name)
                     continue
@@ -1673,40 +1909,107 @@ def generate_and_validate(
             # ---- Simulate ----
             print(f"Running simulation with {sim_tool}...")
             sim_result = simulate_with_tool(
-                module_name,
-                paths["rtl"],
-                paths["testbench"],
-                tool=sim_tool
+                module_name, paths["rtl"], paths["testbench"], tool=sim_tool
             )
 
+            # ---- Enhanced simulation parsing (per-vector detail) ----
+            from verification_pipeline import _build_sim_result_enhanced
+            enhanced_sim = _build_sim_result_enhanced(
+                sim_result.get("output", ""),
+                sim_result.get("returncode", -1),
+                sim_result.get("tool", sim_tool),
+            )
+            sim_result["vectors"] = enhanced_sim.get("vectors", [])
+            sim_result["golden_compare"] = None
+
+            # ---- Golden reference comparison ----
+            try:
+                from golden_reference import (
+                    classify_design_for_golden,
+                    has_golden_model,
+                    compare_with_golden,
+                )
+                _gd_type = classify_design_for_golden(description, module_name)
+                if _gd_type and has_golden_model(_gd_type):
+                    _gc = compare_with_golden(
+                        sim_result.get("output", ""), _gd_type
+                    )
+                    sim_result["golden_compare"] = _gc
+                    if _gc.get("match") and _gc["total"] > 0:
+                        print(f"[GOLDEN] All {_gc['total']} tests match golden reference")
+                    elif _gc.get("failed", 0) > 0:
+                        print(f"[GOLDEN] {_gc['failed']}/{_gc['total']} tests FAIL golden reference")
+            except Exception as _gc_err:
+                log.debug("golden_compare non-blocking: %s", _gc_err)
+
+            # ---- Verification pipeline report ----
+            verification_report = None
             if sim_result["success"]:
-                print(f"[SUCCESS] Simulation PASSED (provider: {provider}, tool: {sim_result['tool']})")
+                try:
+                    from verification_pipeline import run_verification_pipeline
+                    verification_report = run_verification_pipeline(
+                        rtl, tb, module_name, description,
+                        skip_formal=True, skip_qor=True, skip_openlane=True,
+                    )
+                    if verification_report.status == "PASS":
+                        print(f"[VERIFY] Pipeline: all {len(verification_report.stages)} stages passed")
+                    else:
+                        print(f"[VERIFY] Pipeline: {verification_report.status} — {verification_report.final_verdict[:120]}")
+                except Exception as _vp_err:
+                    log.debug("verification_pipeline non-blocking: %s", _vp_err)
+
+            if sim_result["success"]:
+                print(
+                    f"[SUCCESS] Simulation PASSED (provider: {provider}, tool: {sim_result['tool']})"
+                )
 
                 return {
-                    "status":      "READY_FOR_PIPELINE",
+                    "status": "READY_FOR_PIPELINE",
                     "module_name": module_name,
-                    "rtl":         rtl,
-                    "testbench":   tb,
-                    "paths":       paths,
-                    "validation":  validation,
-                    "simulation":  sim_result,
+                    "rtl": rtl,
+                    "testbench": tb,
+                    "paths": paths,
+                    "validation": validation,
+                    "simulation": sim_result,
+                    "verification_report": verification_report.to_dict() if verification_report else None,
                     "testbench_honest": not lying_check.get("is_lying", False),
-                    "provider":    provider,
-                    "attempts":    attempt,
-                    "error":       None
+                    "provider": provider,
+                    "attempts": attempt,
+                    "error": None,
+                    "complex_design": complex_design,
                 }
             else:
                 print(f"[FAIL] Simulation failed:\n{sim_result['output'][-500:]}")
                 if attempt < max_retries:
+                    # Try testbench-only repair first (wrong expected values)
+                    from generation_fixes import _is_tb_expected_values_wrong, _repair_tb_expected_values
+                    if _is_tb_expected_values_wrong(sim_result.get("output", "")):
+                        print(f"[REPAIR] Wrong expected values — repairing testbench only, preserving RTL...")
+                        new_tb = _repair_tb_expected_values(
+                            tb, rtl, sim_result.get("output", ""), description, module_name
+                        )
+                        if new_tb:
+                            from generation_fixes import sv_to_v2005
+                            new_tb = sv_to_v2005(new_tb, f"{module_name}_tb")
+                            rtl, new_tb, _ = normalize_module_name(rtl, new_tb, module_name)
+                            val = validate_verilog_syntax(rtl, new_tb, module_name)
+                            if not val["errors"]:
+                                print("[REPAIR] Testbench-only repair produced valid testbench")
+                                tb = new_tb
+                                continue
+                            else:
+                                print(f"[REPAIR] Testbench-only repair had syntax issues: {val['errors'][:2]}")
+
                     print(f"[REPAIR] Attempting logic/syntax smart repair...")
                     try:
                         from generation_fixes import smart_repair
+
                         rtl, tb = smart_repair(
-                            rtl_code    = rtl,
-                            tb_code     = tb,
-                            error_log   = sim_result.get("output", ""),
-                            description = description,
-                            module_name = module_name,
+                            rtl_code=rtl,
+                            tb_code=tb,
+                            error_log=sim_result.get("output", ""),
+                            description=description,
+                            module_name=module_name,
                         )
                     except Exception as _sr_err:
                         log.debug("smart_repair non-blocking: %s", _sr_err)
@@ -1720,15 +2023,17 @@ def generate_and_validate(
 
     # All providers failed
     return {
-        "status":      "GENERATION_FAILED",
+        "status": "GENERATION_FAILED",
         "module_name": module_name,
-        "rtl":         rtl,
-        "testbench":   tb,
-        "validation":  validation,
-        "simulation":  sim_result,
+        "rtl": rtl,
+        "testbench": tb,
+        "validation": validation,
+        "simulation": sim_result,
+        "verification_report": None,
         "testbench_honest": not lying_check.get("is_lying", True),
-        "attempts":    max_retries * len(providers_to_try),
-        "error":       f"All providers failed. Last error: {last_error}"
+        "attempts": max_retries * len(providers_to_try),
+        "error": f"All providers failed. Last error: {last_error}",
+        "complex_design": complex_design,
     }
 
 
@@ -1746,10 +2051,10 @@ if __name__ == "__main__":
         ),
         module_name="up_counter_4bit",
         llm_provider="groq",
-        max_retries=3
+        max_retries=3,
     )
 
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")
     print("RESULT:", result["status"])
     print("Attempts:", result["attempts"])
     print("Sim tool:", result.get("simulation", {}).get("tool", "?"))
@@ -1757,8 +2062,10 @@ if __name__ == "__main__":
         print("[PASS] Design ready for RTL-to-GDSII pipeline")
         print("Run full pipeline with:")
         print(f"  from full_flow import RTLtoGDSIIFlow")
-        print(f"  flow = RTLtoGDSIIFlow('{result['module_name']}', '{result['paths']['rtl']}')")
+        print(
+            f"  flow = RTLtoGDSIIFlow('{result['module_name']}', '{result['paths']['rtl']}')"
+        )
         print(f"  flow.run_full_flow()")
     else:
         print("[FAIL] Error:", result.get("error"))
-    print(f"{'='*60}")
+    print(f"{'=' * 60}")

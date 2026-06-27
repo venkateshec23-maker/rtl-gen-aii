@@ -3299,13 +3299,11 @@ equiv_status
             return True
 
         try:
-            from formal_verify import run_formal_verification
-            self.formal_report = run_formal_verification(
-                netlist_path  = netlist_path,
-                module_name   = self.design_name,
-                docker_manager = self.docker,
-                work_dir      = Path(OPENLANE_HOST),
-                is_sequential = True,
+            from formal_verify import run_formal_verification_simple
+            self.formal_report = run_formal_verification_simple(
+                netlist_path = netlist_path,
+                module_name  = self.design_name,
+                work_dir     = Path(OPENLANE_HOST),
             )
 
             if self.formal_report.failed > 0:

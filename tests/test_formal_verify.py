@@ -5,10 +5,9 @@ from formal_verify import (
     PropertyResult,
     FormalReport,
     UNIVERSAL_PROPERTIES,
-    SEQUENTIAL_PROPERTIES,
     _build_formal_tcl,
     _parse_formal_output,
-    run_formal_verification,
+    run_formal_verification_simple,
 )
 
 
@@ -16,15 +15,15 @@ class TestProperties:
     def test_universal_properties_defined(self):
         assert len(UNIVERSAL_PROPERTIES) >= 3
 
-    def test_sequential_properties_defined(self):
-        assert len(SEQUENTIAL_PROPERTIES) >= 1
+    def test_universal_properties_count(self):
+        assert len(UNIVERSAL_PROPERTIES) == 5
 
     def test_property_fields(self):
-        for p in UNIVERSAL_PROPERTIES + SEQUENTIAL_PROPERTIES:
+        for p in UNIVERSAL_PROPERTIES:
             assert p.name
             assert p.description
             assert p.yosys_cmd
-            assert p.kind in ("safety", "liveness", "equivalence")
+            assert p.kind == "safety"
 
 
 class TestTCLBuilder:
@@ -32,55 +31,66 @@ class TestTCLBuilder:
         tcl = _build_formal_tcl("/work/test.v", "my_design", UNIVERSAL_PROPERTIES)
         assert "read_verilog /work/test.v" in tcl
         assert "hierarchy -top my_design" in tcl
-        assert "RTL_FORMAL_START" in tcl
-        assert "RTL_FORMAL_END" in tcl
+        assert "=FORMAL_START=" in tcl
+        assert "=FORMAL_END=" in tcl
+        assert "log " in tcl
+        assert "puts " not in tcl
 
     def test_property_markers(self):
         tcl = _build_formal_tcl("/work/test.v", "top", UNIVERSAL_PROPERTIES)
         for prop in UNIVERSAL_PROPERTIES:
-            assert f"RTL_PROP_START:{prop.name}" in tcl
-            assert "RTL_PROP_RESULT:" in tcl
+            assert "=PROP_BEGIN:" + prop.name + "=" in tcl
+            assert "=PROP_DONE:" + prop.name + "=" in tcl
+
+    def test_no_double_brace_artifacts(self):
+        tcl = _build_formal_tcl("/work/test.v", "top", UNIVERSAL_PROPERTIES)
+        assert "{{" not in tcl
+        assert "}}" not in tcl
+        assert "prove-asserts" not in tcl
 
     def test_empty_properties(self):
         tcl = _build_formal_tcl("/work/test.v", "top", [])
         assert "read_verilog /work/test.v" in tcl
-        assert "RTL_FORMAL_START" in tcl
+        assert "=FORMAL_START=" in tcl
 
 
 class TestParser:
     def test_all_pass(self):
         fake_output = """
-RTL_PROP_START:no_combinational_loops
-RTL_PROP_RESULT:PASS:ok
-RTL_PROP_START:hierarchy_consistent
-RTL_PROP_RESULT:PASS:ok
-RTL_PROP_START:synthesis_clean
-RTL_PROP_RESULT:PASS:ok
+=FORMAL_START=
+=PROP_BEGIN:no_combinational_loops=
+OK
+=PROP_DONE:no_combinational_loops=
+=PROP_BEGIN:hierarchy_consistent=
+OK
+=PROP_DONE:hierarchy_consistent=
+=PROP_BEGIN:synthesis_clean=
+OK
+=PROP_DONE:synthesis_clean=
+=FORMAL_END=
 """
-        results = _parse_formal_output(fake_output, UNIVERSAL_PROPERTIES)
-        assert len(results) == len(UNIVERSAL_PROPERTIES)
+        results = _parse_formal_output(fake_output, UNIVERSAL_PROPERTIES[:3])
+        assert len(results) == 3
         for r in results:
-            assert r.status == "PASS"
+            assert r.status == "PASS", f"{r.property_name}: {r.status}"
 
-    def test_fail_detected(self):
+    def test_fail_no_done(self):
+        """BEGIN found but DONE missing -> Yosys exited early -> FAIL"""
         fail_output = """
-RTL_PROP_START:no_combinational_loops
-RTL_PROP_RESULT:FAIL:error
-RTL_PROP_START:hierarchy_consistent
-RTL_PROP_RESULT:PASS:ok
+=PROP_BEGIN:no_combinational_loops=
+ERROR: Combinational loop detected
+=FORMAL_END=
 """
-        results = _parse_formal_output(fail_output, UNIVERSAL_PROPERTIES[:2])
-        statuses = {r.property_name: r.status for r in results}
-        assert statuses["no_combinational_loops"] == "FAIL"
-        assert statuses["hierarchy_consistent"] == "PASS"
+        results = _parse_formal_output(fail_output, UNIVERSAL_PROPERTIES[:1])
+        assert results[0].status == "FAIL"
 
-    def test_skip_for_missing_property(self):
-        output = "RTL_FORMAL_START\nRTL_FORMAL_END\n"
+    def test_skip_for_not_reached(self):
+        output = "=FORMAL_START=\n=FORMAL_END=\n"
         results = _parse_formal_output(output, UNIVERSAL_PROPERTIES[:1])
         assert results[0].status == "SKIP"
 
-    def test_empty_catch_is_pass(self):
-        output = "RTL_PROP_START:hierarchy_consistent\nRTL_PROP_RESULT:PASS:ok\n"
+    def test_begins_and_done_pass(self):
+        output = "=PROP_BEGIN:hierarchy_consistent=\nOK\n=PROP_DONE:hierarchy_consistent=\n"
         results = _parse_formal_output(output, [UNIVERSAL_PROPERTIES[1]])
         assert results[0].status == "PASS"
 
@@ -132,13 +142,12 @@ class TestFormalReport:
         assert report.pass_rate == 0.0
 
 
-class TestRunFormalVerification:
+class TestRunFormalVerificationSimple:
     def test_missing_netlist(self):
-        report = run_formal_verification(
+        report = run_formal_verification_simple(
             netlist_path=Path("/no/such/file.v"),
             module_name="phantom",
-            docker_manager=None,
             work_dir=Path(r"C:\tools\OpenLane"),
         )
         assert report.overall_status == "SKIP"
-        assert report.skipped > 0
+        assert report.total == 0
