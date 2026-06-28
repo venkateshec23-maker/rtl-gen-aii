@@ -3,26 +3,27 @@ Synthesis Engine for RTL-Gen AI
 Integrates with Yosys for RTL-to-netlist synthesis
 """
 
+import json
+import logging
 import os
 import re
 import subprocess
 import tempfile
-import json
-from pathlib import Path
 from datetime import datetime
-from typing import Dict, List, Optional, Any, Tuple
-import logging
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+
 class SynthesisEngine:
     """RTL to gate-level synthesis using Yosys"""
-    
-    def __init__(self, output_dir='outputs/synthesis', tech_library='asic'):
+
+    def __init__(self, output_dir="outputs/synthesis", tech_library="asic"):
         """
         Initialize synthesis engine
-        
+
         Args:
             output_dir: Directory for synthesis outputs
             tech_library: Target technology ('asic', 'fpga', or custom path)
@@ -30,31 +31,42 @@ class SynthesisEngine:
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.tech_library = tech_library
-        
+
         # Technology libraries
         self.tech_libraries = {
-            'asic': {
-                'name': 'asic_cells',
-                'gates': ['AND', 'OR', 'NAND', 'NOR', 'XOR', 'XNOR', 'BUF', 'INV', 'DFF', 'MUX'],
-                'area_unit': 'um²',
-                'power_unit': 'uW/MHz'
+            "asic": {
+                "name": "asic_cells",
+                "gates": [
+                    "AND",
+                    "OR",
+                    "NAND",
+                    "NOR",
+                    "XOR",
+                    "XNOR",
+                    "BUF",
+                    "INV",
+                    "DFF",
+                    "MUX",
+                ],
+                "area_unit": "um²",
+                "power_unit": "uW/MHz",
             },
-            'fpga': {
-                'name': 'fpga_cells',
-                'gates': ['LUT', 'FF', 'DSP', 'BRAM', 'IO'],
-                'area_unit': 'LUTs',
-                'power_unit': 'mW'
-            }
+            "fpga": {
+                "name": "fpga_cells",
+                "gates": ["LUT", "FF", "DSP", "BRAM", "IO"],
+                "area_unit": "LUTs",
+                "power_unit": "mW",
+            },
         }
-        
+
     def synthesize(self, rtl_code: str, top_module: str = None) -> Dict[str, Any]:
         """
         Synthesize RTL code to gate-level netlist
-        
+
         Args:
             rtl_code: Verilog RTL code
             top_module: Name of top module (auto-detected if None)
-            
+
         Returns:
             Dictionary with synthesis results
         """
@@ -62,70 +74,80 @@ class SynthesisEngine:
             # Step 1: Auto-detect top module if not specified
             if not top_module:
                 top_module = self._detect_top_module(rtl_code)
-            
+
             # Step 2: Create working directory
-            work_dir = self.output_dir / f"{top_module}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            work_dir = (
+                self.output_dir
+                / f"{top_module}_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+            )
             work_dir.mkdir(exist_ok=True)
-            
+
             # Step 3: Save RTL to file
             rtl_file = work_dir / f"{top_module}.v"
-            with open(rtl_file, 'w') as f:
+            with open(rtl_file, "w") as f:
                 f.write(rtl_code)
-            
+
             # Step 4: Generate Yosys script
             script_file = work_dir / "synthesize.ys"
             self._generate_yosys_script(script_file, rtl_file, top_module, work_dir)
-            
+
             # Step 5: Run Yosys
             success, output = self._run_yosys(script_file, work_dir)
-            
+
             if not success:
                 # Try mock synthesis if Yosys not available
                 return self._mock_synthesis(rtl_code, top_module, work_dir)
-            
+
             # Step 6: Parse synthesis reports
             stats = self._parse_synthesis_stats(work_dir / "synthesis_stats.txt")
             netlist = self._read_netlist(work_dir / f"{top_module}_netlist.v")
-            
+
             # Step 7: Generate JSON report
             report = self._generate_json_report(stats, top_module, work_dir)
-            
+
             return {
-                'success': True,
-                'top_module': top_module,
-                'netlist': netlist,
-                'stats': stats,
-                'report_file': str(report),
-                'work_dir': str(work_dir),
-                'synthesis_time': datetime.now().isoformat(),
-                'tech_library': self.tech_library,
-                'simulator': 'yosys' if success else 'mock'
+                "success": True,
+                "top_module": top_module,
+                "netlist": netlist,
+                "stats": stats,
+                "report_file": str(report),
+                "work_dir": str(work_dir),
+                "synthesis_time": datetime.now().isoformat(),
+                "tech_library": self.tech_library,
+                "simulator": "yosys" if success else "mock",
             }
-            
+
         except Exception as e:
             logger.error(f"Synthesis failed: {e}")
             return {
-                'success': False,
-                'error': str(e),
-                'top_module': top_module,
-                'netlist': None,
-                'stats': None
+                "success": False,
+                "error": str(e),
+                "top_module": top_module,
+                "netlist": None,
+                "stats": None,
             }
-    
+
     def _detect_top_module(self, rtl_code: str) -> str:
         """Detect top module name from RTL code"""
         # Look for module declaration
-        match = re.search(r'module\s+(\w+)\s*\(', rtl_code)
+        match = re.search(r"module\s+(\w+)\s*\(", rtl_code)
         if match:
             return match.group(1)
-        return 'top_module'  # Default
-    
-    def _generate_yosys_script(self, script_file: Path, rtl_file: Path, 
-                               top_module: str, work_dir: Path):
+        return "top_module"  # Default
+
+    def _generate_yosys_script(
+        self, script_file: Path, rtl_file: Path, top_module: str, work_dir: Path
+    ):
         """Generate Yosys synthesis script"""
-        
+        # Allow the caller to override the default Yosys cell library path via
+        # YOSYS_CELLS_LIB env-var.  The built-in default is correct for most
+        # Linux/macOS Yosys package installations.
+        asic_cells_lib = os.environ.get(
+            "YOSYS_CELLS_LIB", "/usr/local/share/yosys/asic_cells.lib"
+        )
+
         script = f"""# Yosys synthesis script for {top_module}
-# Generated by RTL-Gen AI at {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+# Generated by RTL-Gen AI at {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 
 # Read design
 read_verilog {rtl_file}
@@ -142,8 +164,8 @@ techmap; opt
 # For ASIC synthesis
 if {{ {self.tech_library} == "asic" }}
     # Map to standard cells
-    dfflibmap -liberty /usr/local/share/yosys/asic_cells.lib
-    abc -liberty /usr/local/share/yosys/asic_cells.lib
+    dfflibmap -liberty {asic_cells_lib}
+    abc -liberty {asic_cells_lib}
 else
     # For FPGA synthesis
     synth -top {top_module}
@@ -161,313 +183,316 @@ write_json {work_dir}/synthesis_report.json
 # Show final design
 show -prefix {work_dir / top_module}_final -format dot
 """
-        
-        with open(script_file, 'w') as f:
+
+        with open(script_file, "w") as f:
             f.write(script)
-    
+
     def _run_yosys(self, script_file: Path, work_dir: Path) -> Tuple[bool, str]:
         """Run Yosys synthesis"""
         try:
             # Check if yosys is installed
-            subprocess.run(['yosys', '-V'], capture_output=True, check=True)
-            
+            subprocess.run(["yosys", "-V"], capture_output=True, check=True)
+
             # Run synthesis
             result = subprocess.run(
-                ['yosys', '-s', str(script_file)],
+                ["yosys", "-s", str(script_file)],
                 cwd=work_dir,
                 capture_output=True,
                 text=True,
-                timeout=60  # 60 second timeout
+                timeout=60,  # 60 second timeout
             )
-            
+
             # Save output
-            with open(work_dir / 'yosys_output.log', 'w') as f:
+            with open(work_dir / "yosys_output.log", "w") as f:
                 f.write(result.stdout)
                 if result.stderr:
                     f.write("\n--- STDERR ---\n")
                     f.write(result.stderr)
-            
+
             return result.returncode == 0, result.stdout
-            
+
         except (subprocess.SubprocessError, FileNotFoundError) as e:
             logger.warning(f"Yosys not available: {e}")
             return False, str(e)
         except subprocess.TimeoutExpired:
             logger.warning("Yosys timeout - synthesis took too long")
             return False, "Timeout"
-    
-    def _mock_synthesis(self, rtl_code: str, top_module: str, work_dir: Path) -> Dict[str, Any]:
+
+    def _mock_synthesis(
+        self, rtl_code: str, top_module: str, work_dir: Path
+    ) -> Dict[str, Any]:
         """Generate mock synthesis results when Yosys not available"""
         logger.info("Using mock synthesis (Yosys not available)")
-        
+
         # Analyze RTL complexity
         complexity = self._analyze_complexity(rtl_code)
-        
+
         # Generate mock netlist
         netlist = self._generate_mock_netlist(rtl_code, top_module)
         netlist_file = work_dir / f"{top_module}_netlist.v"
-        with open(netlist_file, 'w') as f:
+        with open(netlist_file, "w") as f:
             f.write(netlist)
-        
+
         # Generate mock stats
         stats = {
-            'cells': self._estimate_cells(complexity),
-            'area': self._estimate_area(complexity),
-            'power': self._estimate_power(complexity),
-            'frequency': self._estimate_frequency(complexity),
-            'flip_flops': complexity['ff_count'],
-            'gates': complexity['gate_count'],
-            'inputs': complexity['input_count'],
-            'outputs': complexity['output_count'],
-            'wires': complexity['wire_count'],
-            'always_blocks': complexity['always_count'],
-            'mock': True
+            "cells": self._estimate_cells(complexity),
+            "area": self._estimate_area(complexity),
+            "power": self._estimate_power(complexity),
+            "frequency": self._estimate_frequency(complexity),
+            "flip_flops": complexity["ff_count"],
+            "gates": complexity["gate_count"],
+            "inputs": complexity["input_count"],
+            "outputs": complexity["output_count"],
+            "wires": complexity["wire_count"],
+            "always_blocks": complexity["always_count"],
+            "mock": True,
         }
-        
+
         # Save stats
-        stats_file = work_dir / 'synthesis_stats.txt'
-        with open(stats_file, 'w') as f:
+        stats_file = work_dir / "synthesis_stats.txt"
+        with open(stats_file, "w") as f:
             for key, value in stats.items():
-                if key != 'cells':
+                if key != "cells":
                     f.write(f"{key}: {value}\n")
                 else:
                     f.write(f"cells:\n")
                     for cell, count in value.items():
                         f.write(f"  {cell}: {count}\n")
-        
+
         # Generate JSON report
         report = self._generate_json_report(stats, top_module, work_dir)
-        
+
         return {
-            'success': True,
-            'top_module': top_module,
-            'netlist': netlist,
-            'stats': stats,
-            'report_file': str(report),
-            'work_dir': str(work_dir),
-            'synthesis_time': datetime.now().isoformat(),
-            'tech_library': self.tech_library,
-            'simulator': 'mock'
+            "success": True,
+            "top_module": top_module,
+            "netlist": netlist,
+            "stats": stats,
+            "report_file": str(report),
+            "work_dir": str(work_dir),
+            "synthesis_time": datetime.now().isoformat(),
+            "tech_library": self.tech_library,
+            "simulator": "mock",
         }
-    
+
     def _analyze_complexity(self, rtl_code: str) -> Dict[str, int]:
         """Analyze RTL complexity metrics"""
         complexity = {
-            'line_count': len(rtl_code.split('\n')),
-            'char_count': len(rtl_code),
-            'module_count': len(re.findall(r'module\s+\w+', rtl_code)),
-            'input_count': len(re.findall(r'input\s+', rtl_code)),
-            'output_count': len(re.findall(r'output\s+', rtl_code)),
-            'wire_count': len(re.findall(r'wire\s+', rtl_code)),
-            'reg_count': len(re.findall(r'reg\s+', rtl_code)),
-            'always_count': len(re.findall(r'always\s+@', rtl_code)),
-            'assign_count': len(re.findall(r'assign\s+', rtl_code)),
-            'gate_count': 0,
-            'ff_count': 0
+            "line_count": len(rtl_code.split("\n")),
+            "char_count": len(rtl_code),
+            "module_count": len(re.findall(r"module\s+\w+", rtl_code)),
+            "input_count": len(re.findall(r"input\s+", rtl_code)),
+            "output_count": len(re.findall(r"output\s+", rtl_code)),
+            "wire_count": len(re.findall(r"wire\s+", rtl_code)),
+            "reg_count": len(re.findall(r"reg\s+", rtl_code)),
+            "always_count": len(re.findall(r"always\s+@", rtl_code)),
+            "assign_count": len(re.findall(r"assign\s+", rtl_code)),
+            "gate_count": 0,
+            "ff_count": 0,
         }
-        
+
         # Estimate gate count based on operations
-        operations = re.findall(r'[+\-*/&|^~]', rtl_code)
-        complexity['gate_count'] = len(operations) * 2
-        
+        operations = re.findall(r"[+\-*/&|^~]", rtl_code)
+        complexity["gate_count"] = len(operations) * 2
+
         # Estimate flip-flops from always blocks
-        for always in re.findall(r'always\s+@\(.*?posedge.*?\)\s*(.*?)(?=always|endmodule)', 
-                                 rtl_code, re.DOTALL):
-            assignments = re.findall(r'<=\s*\w+', always)
-            complexity['ff_count'] += len(assignments)
-        
+        for always in re.findall(
+            r"always\s+@\(.*?posedge.*?\)\s*(.*?)(?=always|endmodule)",
+            rtl_code,
+            re.DOTALL,
+        ):
+            assignments = re.findall(r"<=\s*\w+", always)
+            complexity["ff_count"] += len(assignments)
+
         return complexity
-    
+
     def _estimate_cells(self, complexity: Dict[str, int]) -> Dict[str, int]:
         """Estimate cell counts"""
-        tech = self.tech_libraries.get(self.tech_library, self.tech_libraries['asic'])
-        
+        tech = self.tech_libraries.get(self.tech_library, self.tech_libraries["asic"])
+
         cells = {}
-        if 'asic' in self.tech_library:
+        if "asic" in self.tech_library:
             cells = {
-                'AND': max(1, complexity['gate_count'] // 4),
-                'OR': max(1, complexity['gate_count'] // 4),
-                'NAND': max(1, complexity['gate_count'] // 4),
-                'NOR': max(1, complexity['gate_count'] // 4),
-                'DFF': complexity['ff_count'] or max(1, complexity['always_count']),
-                'INV': max(1, complexity['wire_count'] // 10),
-                'BUF': max(1, complexity['wire_count'] // 20)
+                "AND": max(1, complexity["gate_count"] // 4),
+                "OR": max(1, complexity["gate_count"] // 4),
+                "NAND": max(1, complexity["gate_count"] // 4),
+                "NOR": max(1, complexity["gate_count"] // 4),
+                "DFF": complexity["ff_count"] or max(1, complexity["always_count"]),
+                "INV": max(1, complexity["wire_count"] // 10),
+                "BUF": max(1, complexity["wire_count"] // 20),
             }
         else:  # FPGA
             cells = {
-                'LUT': complexity['gate_count'] + complexity['assign_count'],
-                'FF': complexity['ff_count'] or max(1, complexity['always_count']),
-                'IO': complexity['input_count'] + complexity['output_count']
+                "LUT": complexity["gate_count"] + complexity["assign_count"],
+                "FF": complexity["ff_count"] or max(1, complexity["always_count"]),
+                "IO": complexity["input_count"] + complexity["output_count"],
             }
-        
+
         return cells
-    
+
     def _estimate_area(self, complexity: Dict[str, int]) -> float:
         """Estimate area in appropriate units"""
-        base_area = complexity['gate_count'] * 10 + complexity['ff_count'] * 50
-        
-        if 'fpga' in self.tech_library:
+        base_area = complexity["gate_count"] * 10 + complexity["ff_count"] * 50
+
+        if "fpga" in self.tech_library:
             return float(base_area)  # LUTs
         else:
             return float(base_area) * 0.5  # um²
-    
+
     def _estimate_power(self, complexity: Dict[str, int]) -> float:
         """Estimate power in appropriate units"""
-        base_power = complexity['gate_count'] * 0.1 + complexity['ff_count'] * 0.5
-        
-        if 'fpga' in self.tech_library:
+        base_power = complexity["gate_count"] * 0.1 + complexity["ff_count"] * 0.5
+
+        if "fpga" in self.tech_library:
             return float(base_power) * 0.01  # mW
         else:
             return float(base_power) * 0.001  # uW/MHz
-    
+
     def _estimate_frequency(self, complexity: Dict[str, int]) -> float:
         """Estimate maximum frequency in MHz"""
         # Simple critical path estimation
-        depth = complexity['always_count'] + complexity['assign_count']
+        depth = complexity["always_count"] + complexity["assign_count"]
         return max(100.0, 1000.0 / max(1, depth))
-    
+
     def _generate_mock_netlist(self, rtl_code: str, top_module: str) -> str:
         """Generate mock gate-level netlist"""
         complexity = self._analyze_complexity(rtl_code)
-        
+
         netlist = f"""// Gate-level netlist for {top_module}
 // Generated by RTL-Gen AI Synthesis (Mock Mode)
-// Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+// Date: {datetime.now().strftime("%Y-%m-%d %H:%M:%S")}
 // Technology: {self.tech_library}
 
 module {top_module}_netlist (
 """
-        
+
         # Add ports
         ports = []
-        for i in range(complexity['input_count']):
+        for i in range(complexity["input_count"]):
             ports.append(f"    input  wire in_{i}")
-        for i in range(complexity['output_count']):
+        for i in range(complexity["output_count"]):
             ports.append(f"    output wire out_{i}")
-        
+
         if ports:
-            netlist += ',\n'.join(ports) + "\n);\n\n"
+            netlist += ",\n".join(ports) + "\n);\n\n"
         else:
             netlist += ");\n\n"
-        
+
         # Add internal wires
         netlist += f"    // Internal signals\n"
-        for i in range(complexity['wire_count']):
+        for i in range(complexity["wire_count"]):
             netlist += f"    wire n{i};\n"
-        
+
         netlist += "\n    // Gate-level implementation\n"
-        
+
         # Add mock gates
         cells = self._estimate_cells(complexity)
         gate_idx = 0
-        
+
         for gate_type, count in cells.items():
             for i in range(min(count, 5)):  # Limit to 5 per type for readability
-                if 'DFF' in gate_type:
-                    netlist += f"    dff dff_{gate_idx} (.clk(clk), .d(n{gate_idx}), .q(n{gate_idx+1}));\n"
-                elif 'LUT' in gate_type:
-                    netlist += f"    lut{gate_idx} lut_{gate_idx} (.a({{in_{gate_idx%max(1, complexity['input_count'])}, in_{(gate_idx+1)%max(1, complexity['input_count'])}}}), .y(n{gate_idx}));\n"
+                if "DFF" in gate_type:
+                    netlist += f"    dff dff_{gate_idx} (.clk(clk), .d(n{gate_idx}), .q(n{gate_idx + 1}));\n"
+                elif "LUT" in gate_type:
+                    netlist += f"    lut{gate_idx} lut_{gate_idx} (.a({{in_{gate_idx % max(1, complexity['input_count'])}, in_{(gate_idx + 1) % max(1, complexity['input_count'])}}}), .y(n{gate_idx}));\n"
                 else:
-                    netlist += f"    {gate_type.lower()} gate_{gate_idx} (.a(in_{gate_idx%max(1, complexity['input_count'])}), .b(in_{(gate_idx+1)%max(1, complexity['input_count'])}), .y(n{gate_idx}));\n"
+                    netlist += f"    {gate_type.lower()} gate_{gate_idx} (.a(in_{gate_idx % max(1, complexity['input_count'])}), .b(in_{(gate_idx + 1) % max(1, complexity['input_count'])}), .y(n{gate_idx}));\n"
                 gate_idx += 1
-        
+
         netlist += "\n    // Output assignments\n"
-        for i in range(complexity['output_count']):
+        for i in range(complexity["output_count"]):
             netlist += f"    assign out_{i} = n{i % max(1, gate_idx)};\n"
-        
+
         netlist += "\nendmodule\n"
-        
+
         return netlist
-    
+
     def _parse_synthesis_stats(self, stats_file: Path) -> Dict[str, Any]:
         """Parse Yosys statistics file"""
-        stats = {
-            'cells': {},
-            'area': 0,
-            'power': 0,
-            'frequency': 100.0
-        }
-        
+        stats = {"cells": {}, "area": 0, "power": 0, "frequency": 100.0}
+
         if not stats_file.exists():
             return stats
-        
+
         try:
-            with open(stats_file, 'r') as f:
+            with open(stats_file, "r") as f:
                 content = f.read()
-                
+
                 # Parse cell counts
-                cell_pattern = r'Number of cells:\s+(\d+)'
+                cell_pattern = r"Number of cells:\s+(\d+)"
                 cell_match = re.search(cell_pattern, content)
                 if cell_match:
-                    stats['total_cells'] = int(cell_match.group(1))
-                
+                    stats["total_cells"] = int(cell_match.group(1))
+
                 # Parse individual cell types
-                for line in content.split('\n'):
-                    if ':' in line and 'cells' in line:
-                        parts = line.split(':')
+                for line in content.split("\n"):
+                    if ":" in line and "cells" in line:
+                        parts = line.split(":")
                         if len(parts) == 2:
                             cell_type = parts[0].strip()
                             try:
                                 count = int(parts[1].strip())
-                                stats['cells'][cell_type] = count
+                                stats["cells"][cell_type] = count
                             except ValueError:
                                 pass
         except Exception as e:
             logger.warning(f"Failed to parse stats: {e}")
-        
+
         return stats
-    
+
     def _read_netlist(self, netlist_file: Path) -> Optional[str]:
         """Read generated netlist file"""
         if netlist_file.exists():
-            with open(netlist_file, 'r') as f:
+            with open(netlist_file, "r") as f:
                 return f.read()
         return None
-    
-    def _generate_json_report(self, stats: Dict[str, Any], top_module: str, 
-                             work_dir: Path) -> Path:
+
+    def _generate_json_report(
+        self, stats: Dict[str, Any], top_module: str, work_dir: Path
+    ) -> Path:
         """Generate JSON synthesis report"""
         report_file = work_dir / f"{top_module}_synthesis_report.json"
-        
-        tech = self.tech_libraries.get(self.tech_library, self.tech_libraries['asic'])
-        
+
+        tech = self.tech_libraries.get(self.tech_library, self.tech_libraries["asic"])
+
         report = {
-            'top_module': top_module,
-            'synthesis_date': datetime.now().isoformat(),
-            'technology': {
-                'library': self.tech_library,
-                'gates': tech['gates'],
-                'area_unit': tech['area_unit'],
-                'power_unit': tech['power_unit']
+            "top_module": top_module,
+            "synthesis_date": datetime.now().isoformat(),
+            "technology": {
+                "library": self.tech_library,
+                "gates": tech["gates"],
+                "area_unit": tech["area_unit"],
+                "power_unit": tech["power_unit"],
             },
-            'statistics': stats,
-            'files': {
-                'netlist': f"{top_module}_netlist.v",
-                'stats': 'synthesis_stats.txt',
-                'work_dir': str(work_dir)
-            }
+            "statistics": stats,
+            "files": {
+                "netlist": f"{top_module}_netlist.v",
+                "stats": "synthesis_stats.txt",
+                "work_dir": str(work_dir),
+            },
         }
-        
-        with open(report_file, 'w') as f:
+
+        with open(report_file, "w") as f:
             json.dump(report, f, indent=2)
-        
+
         return report_file
-    
-    def generate_dot_graph(self, rtl_code: str, top_module: str = None) -> Optional[str]:
+
+    def generate_dot_graph(
+        self, rtl_code: str, top_module: str = None
+    ) -> Optional[str]:
         """Generate DOT graph of design structure"""
         if not top_module:
             top_module = self._detect_top_module(rtl_code)
-        
+
         work_dir = self.output_dir / f"graph_{top_module}"
         work_dir.mkdir(exist_ok=True)
-        
+
         rtl_file = work_dir / f"{top_module}.v"
-        with open(rtl_file, 'w') as f:
+        with open(rtl_file, "w") as f:
             f.write(rtl_code)
-        
+
         # Generate DOT file
         dot_file = work_dir / f"{top_module}.dot"
-        
+
         try:
             # Try to use yosys for graph generation
             script = f"""
@@ -477,92 +502,108 @@ proc; opt
 show -format dot -prefix {work_dir / top_module}
 """
             script_file = work_dir / "graph.ys"
-            with open(script_file, 'w') as f:
+            with open(script_file, "w") as f:
                 f.write(script)
-            
-            subprocess.run(['yosys', '-s', str(script_file)], 
-                          capture_output=True, timeout=30)
-            
+
+            subprocess.run(
+                ["yosys", "-s", str(script_file)], capture_output=True, timeout=30
+            )
+
             if dot_file.exists():
                 return dot_file.read_text()
-                
+
         except:
             pass
-        
+
         # Generate mock DOT if yosys fails
         complexity = self._analyze_complexity(rtl_code)
         return self._generate_mock_dot(top_module, complexity, work_dir)
-    
-    def _generate_mock_dot(self, top_module: str, complexity: Dict[str, int], 
-                          work_dir: Path) -> str:
+
+    def _generate_mock_dot(
+        self, top_module: str, complexity: Dict[str, int], work_dir: Path
+    ) -> str:
         """Generate mock DOT graph"""
         dot = f"""digraph {top_module} {{
     rankdir=LR;
     splines=ortho;
-    
+
     // Input nodes
     node [shape=box, style=filled, color=lightblue];
 """
-        
+
         # Inputs
-        for i in range(complexity['input_count']):
+        for i in range(complexity["input_count"]):
             dot += f'    in{i} [label="in{i}"];\n'
-        
+
         # Gates
-        dot += '\n    // Gates\n'
-        dot += '    node [shape=circle, style=filled, color=lightgreen];\n'
-        for i in range(min(5, complexity['gate_count'])):
+        dot += "\n    // Gates\n"
+        dot += "    node [shape=circle, style=filled, color=lightgreen];\n"
+        for i in range(min(5, complexity["gate_count"])):
             dot += f'    g{i} [label="G{i}"];\n'
-        
+
         # Flip-flops
-        dot += '\n    // Flip-flops\n'
-        dot += '    node [shape=box, style=filled, color=lightyellow];\n'
-        for i in range(min(3, complexity['ff_count'])):
+        dot += "\n    // Flip-flops\n"
+        dot += "    node [shape=box, style=filled, color=lightyellow];\n"
+        for i in range(min(3, complexity["ff_count"])):
             dot += f'    ff{i} [label="FF{i}"];\n'
-        
+
         # Outputs
-        dot += '\n    // Outputs\n'
-        dot += '    node [shape=box, style=filled, color=lightpink];\n'
-        for i in range(complexity['output_count']):
+        dot += "\n    // Outputs\n"
+        dot += "    node [shape=box, style=filled, color=lightpink];\n"
+        for i in range(complexity["output_count"]):
             dot += f'    out{i} [label="out{i}"];\n'
-        
+
         # Connections
-        dot += '\n    // Connections\n'
-        for i in range(min(5, complexity['gate_count'])):
-            if complexity['input_count'] > 0:
-                dot += f'    in{i%complexity["input_count"]} -> g{i};\n'
-            if i < complexity['ff_count']:
-                dot += f'    g{i} -> ff{i};\n'
-            if complexity['output_count'] > 0:
-                dot += f'    g{i} -> out{i%complexity["output_count"]};\n'
-        
-        dot += '}\n'
-        
+        dot += "\n    // Connections\n"
+        for i in range(min(5, complexity["gate_count"])):
+            if complexity["input_count"] > 0:
+                dot += f"    in{i % complexity['input_count']} -> g{i};\n"
+            if i < complexity["ff_count"]:
+                dot += f"    g{i} -> ff{i};\n"
+            if complexity["output_count"] > 0:
+                dot += f"    g{i} -> out{i % complexity['output_count']};\n"
+
+        dot += "}\n"
+
         dot_file = work_dir / f"{top_module}.dot"
-        with open(dot_file, 'w') as f:
+        with open(dot_file, "w") as f:
             f.write(dot)
-        
+
         return dot
-    
-    def compare_synthesis(self, rtl_codes: List[str], labels: List[str] = None) -> Dict[str, Any]:
+
+    def compare_synthesis(
+        self, rtl_codes: List[str], labels: List[str] = None
+    ) -> Dict[str, Any]:
         """Compare synthesis results for multiple designs"""
         if not labels:
             labels = [f"Design_{i}" for i in range(len(rtl_codes))]
-        
+
         results = {}
         for label, code in zip(labels, rtl_codes):
             results[label] = self.synthesize(code)
-        
+
         # Generate comparison report
         comparison = {
-            'designs': labels,
-            'area': {label: r.get('stats', {}).get('area', 0) for label, r in results.items()},
-            'power': {label: r.get('stats', {}).get('power', 0) for label, r in results.items()},
-            'frequency': {label: r.get('stats', {}).get('frequency', 0) for label, r in results.items()},
-            'cells': {label: r.get('stats', {}).get('cells', {}) for label, r in results.items()}
+            "designs": labels,
+            "area": {
+                label: r.get("stats", {}).get("area", 0) for label, r in results.items()
+            },
+            "power": {
+                label: r.get("stats", {}).get("power", 0)
+                for label, r in results.items()
+            },
+            "frequency": {
+                label: r.get("stats", {}).get("frequency", 0)
+                for label, r in results.items()
+            },
+            "cells": {
+                label: r.get("stats", {}).get("cells", {})
+                for label, r in results.items()
+            },
         }
-        
+
         return comparison
+
 
 # Standalone test
 if __name__ == "__main__":
@@ -578,22 +619,22 @@ module adder_8bit(
     assign {cout, sum} = a + b + cin;
 endmodule
 """
-    
+
     synth = SynthesisEngine()
     result = synth.synthesize(rtl)
-    
+
     print("Synthesis Results:")
     print(f"  Success: {result['success']}")
     print(f"  Top Module: {result['top_module']}")
     print(f"  Simulator: {result.get('simulator', 'unknown')}")
-    
-    if result.get('stats'):
+
+    if result.get("stats"):
         print("\nStatistics:")
-        for key, value in result['stats'].items():
-            if key != 'cells':
+        for key, value in result["stats"].items():
+            if key != "cells":
                 print(f"  {key}: {value}")
-        
-        if 'cells' in result['stats']:
+
+        if "cells" in result["stats"]:
             print("\nCell Counts:")
-            for cell, count in result['stats']['cells'].items():
+            for cell, count in result["stats"]["cells"].items():
                 print(f"  {cell}: {count}")

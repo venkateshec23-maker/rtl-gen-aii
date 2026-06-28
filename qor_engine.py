@@ -74,11 +74,12 @@ class QoRReport:
     utilization_pct:  Optional[float] = None
 
     # ── Routing ──────────────────────────────────────────────
-    total_nets:          Optional[int]   = None
-    unrouted_nets:       int             = 0
-    h_overflow_pct:      Optional[float] = None  # Horizontal congestion overflow
-    v_overflow_pct:      Optional[float] = None  # Vertical congestion overflow
-    max_density_pct:     Optional[float] = None  # Peak routing density
+    total_nets:            Optional[int]   = None
+    total_wire_length_um:  Optional[int]   = None  # Total wire length from routing.log
+    unrouted_nets:         int             = 0
+    h_overflow_pct:        Optional[float] = None  # Horizontal congestion overflow
+    v_overflow_pct:        Optional[float] = None  # Vertical congestion overflow
+    max_density_pct:       Optional[float] = None  # Peak routing density
 
     # ── Verification ─────────────────────────────────────────
     drc_violations: int  = 0
@@ -649,7 +650,8 @@ def build_qor_report(
         text = routing_log.read_text(errors="replace")
         m = re.search(r"Total wire length\s*=\s*([\d,]+)", text, re.IGNORECASE)
         if m:
-            pass
+            qor.total_wire_length_um = int(m.group(1).replace(",", ""))
+            log.info("Routing: total wire length = %d um", qor.total_wire_length_um)
         unrouted = re.search(r"(\d+)\s+unrouted", text, re.IGNORECASE)
         if unrouted:
             qor.unrouted_nets = int(unrouted.group(1))

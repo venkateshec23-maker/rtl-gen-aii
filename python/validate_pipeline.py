@@ -151,7 +151,7 @@ class ValidationReport:
     
     # Preflight results
     docker_check: StageResult = field(default_factory=lambda: StageResult(
-        stage=StageName.SYNTHESIS,  # Placeholder
+        stage=StageName.RTL_GENERATION,  # Docker is a pre-flight check (not synthesis-stage)
         level=ValidationLevel.PASS,
         message="Docker check not run",
     ))
@@ -476,68 +476,219 @@ class PipelineValidator:
     # ──────────────────────────────────────────────────────────────────────────
     
     def _validate_synthesis(self, rtl_path: str, top_module: str, output_dir: Optional[str]) -> StageResult:
-        """Validate Yosys synthesis stage."""
-        # TODO: Implement actual synthesis validation
+        """Validate Yosys synthesis stage — checks for synthesized netlist artifact."""
+        if not output_dir:
+            return StageResult(
+                stage=StageName.SYNTHESIS,
+                level=ValidationLevel.WARNING,
+                message="No output_dir specified — synthesis artifact check skipped",
+            )
+        out = Path(output_dir)
+        # Look for synthesized netlist: *_sky130.v or *_synth.v
+        netlists = list(out.rglob("*_sky130.v")) + list(out.rglob("*_synth.v"))
+        if not netlists:
+            return StageResult(
+                stage=StageName.SYNTHESIS,
+                level=ValidationLevel.WARNING,
+                message=f"Synthesis netlist (*_sky130.v / *_synth.v) not found in {output_dir}",
+            )
+        netlist = max(netlists, key=lambda p: p.stat().st_size)
         return StageResult(
             stage=StageName.SYNTHESIS,
             level=ValidationLevel.PASS,
-            message="Synthesis validation not yet implemented (placeholder)",
+            message=f"Synthesis netlist found: {netlist.name} ({netlist.stat().st_size:,} bytes)",
+            intermediate_files={"netlist": netlist},
         )
-    
+
     def _validate_floorplanning(self, rtl_path: str, top_module: str, output_dir: Optional[str]) -> StageResult:
-        """Validate floorplanning stage."""
+        """Validate floorplanning stage — checks for floorplan DEF artifact."""
+        if not output_dir:
+            return StageResult(
+                stage=StageName.FLOORPLANNING,
+                level=ValidationLevel.WARNING,
+                message="No output_dir specified — floorplanning artifact check skipped",
+            )
+        out = Path(output_dir)
+        defs = list(out.rglob("*.def"))
+        if not defs:
+            return StageResult(
+                stage=StageName.FLOORPLANNING,
+                level=ValidationLevel.WARNING,
+                message=f"No DEF files found in {output_dir} — floorplanning may not have run",
+            )
         return StageResult(
             stage=StageName.FLOORPLANNING,
             level=ValidationLevel.PASS,
-            message="Floorplanning validation not yet implemented",
+            message=f"Floorplan DEF found ({len(defs)} DEF file(s))",
         )
-    
+
     def _validate_placement(self, rtl_path: str, top_module: str, output_dir: Optional[str]) -> StageResult:
-        """Validate placement stage."""
+        """Validate placement stage — checks for placed DEF artifact."""
+        if not output_dir:
+            return StageResult(
+                stage=StageName.PLACEMENT,
+                level=ValidationLevel.WARNING,
+                message="No output_dir specified — placement artifact check skipped",
+            )
+        out = Path(output_dir)
+        placed = list(out.rglob("*placed*.def")) + list(out.rglob("cts.def"))
+        if not placed:
+            return StageResult(
+                stage=StageName.PLACEMENT,
+                level=ValidationLevel.WARNING,
+                message=f"No placed DEF found in {output_dir} — placement may not have run",
+            )
         return StageResult(
             stage=StageName.PLACEMENT,
             level=ValidationLevel.PASS,
-            message="Placement validation not yet implemented",
+            message=f"Placement DEF found: {placed[0].name}",
+            intermediate_files={"placed_def": placed[0]},
         )
-    
+
     def _validate_cts(self, rtl_path: str, top_module: str, output_dir: Optional[str]) -> StageResult:
-        """Validate clock tree synthesis stage."""
+        """Validate clock tree synthesis stage — checks for CTS DEF artifact."""
+        if not output_dir:
+            return StageResult(
+                stage=StageName.CTS,
+                level=ValidationLevel.WARNING,
+                message="No output_dir specified — CTS artifact check skipped",
+            )
+        out = Path(output_dir)
+        cts_defs = list(out.rglob("cts.def")) + list(out.rglob("*cts*.def"))
+        if not cts_defs:
+            return StageResult(
+                stage=StageName.CTS,
+                level=ValidationLevel.WARNING,
+                message=f"No CTS DEF found in {output_dir} — CTS may not have run",
+            )
         return StageResult(
             stage=StageName.CTS,
             level=ValidationLevel.PASS,
-            message="CTS validation not yet implemented",
+            message=f"CTS DEF found: {cts_defs[0].name}",
+            intermediate_files={"cts_def": cts_defs[0]},
         )
-    
+
     def _validate_global_routing(self, rtl_path: str, top_module: str, output_dir: Optional[str]) -> StageResult:
-        """Validate global routing stage."""
+        """Validate global routing stage — checks for post-GR DEF artifact."""
+        if not output_dir:
+            return StageResult(
+                stage=StageName.GLOBAL_ROUTING,
+                level=ValidationLevel.WARNING,
+                message="No output_dir specified — global routing artifact check skipped",
+            )
+        out = Path(output_dir)
+        gr_defs = list(out.rglob("*global*.def")) + list(out.rglob("*route*.def"))
+        if not gr_defs:
+            return StageResult(
+                stage=StageName.GLOBAL_ROUTING,
+                level=ValidationLevel.WARNING,
+                message=f"No global routing DEF found in {output_dir}",
+            )
         return StageResult(
             stage=StageName.GLOBAL_ROUTING,
             level=ValidationLevel.PASS,
-            message="Global routing validation not yet implemented",
+            message=f"Global routing DEF found: {gr_defs[0].name}",
         )
-    
+
     def _validate_detailed_routing(self, rtl_path: str, top_module: str, output_dir: Optional[str]) -> StageResult:
-        """Validate detailed routing stage."""
+        """Validate detailed routing stage — checks for routed.def artifact."""
+        if not output_dir:
+            return StageResult(
+                stage=StageName.DETAILED_ROUTING,
+                level=ValidationLevel.WARNING,
+                message="No output_dir specified — detailed routing artifact check skipped",
+            )
+        out = Path(output_dir)
+        routed = list(out.rglob("routed.def"))
+        if not routed:
+            return StageResult(
+                stage=StageName.DETAILED_ROUTING,
+                level=ValidationLevel.WARNING,
+                message=f"routed.def not found in {output_dir} — detailed routing may not have run",
+            )
+        routed_def = max(routed, key=lambda p: p.stat().st_size)
+        size = routed_def.stat().st_size
+        if size < 1000:
+            return StageResult(
+                stage=StageName.DETAILED_ROUTING,
+                level=ValidationLevel.WARNING,
+                message=f"routed.def found but suspiciously small ({size} bytes) — routing may have failed",
+            )
         return StageResult(
             stage=StageName.DETAILED_ROUTING,
             level=ValidationLevel.PASS,
-            message="Detailed routing validation not yet implemented",
+            message=f"routed.def found ({size:,} bytes)",
+            intermediate_files={"routed_def": routed_def},
         )
-    
+
     def _validate_gds_generation(self, rtl_path: str, top_module: str, output_dir: Optional[str]) -> StageResult:
-        """Validate GDS generation stage."""
+        """Validate GDS generation stage — checks for GDS file >50 KB."""
+        if not output_dir:
+            return StageResult(
+                stage=StageName.GDS_GENERATION,
+                level=ValidationLevel.WARNING,
+                message="No output_dir specified — GDS artifact check skipped",
+            )
+        out = Path(output_dir)
+        gds_files = list(out.rglob("*.gds"))
+        if not gds_files:
+            return StageResult(
+                stage=StageName.GDS_GENERATION,
+                level=ValidationLevel.WARNING,
+                message=f"No GDS file found in {output_dir}",
+            )
+        gds = max(gds_files, key=lambda p: p.stat().st_size)
+        size = gds.stat().st_size
+        if size < 50_000:
+            return StageResult(
+                stage=StageName.GDS_GENERATION,
+                level=ValidationLevel.ERROR,
+                message=f"GDS file found but too small ({size:,} bytes < 50 KB) — likely incomplete",
+            )
         return StageResult(
             stage=StageName.GDS_GENERATION,
             level=ValidationLevel.PASS,
-            message="GDS generation validation not yet implemented",
+            message=f"GDS file found: {gds.name} ({size / 1024:.1f} KB)",
+            intermediate_files={"gds": gds},
         )
-    
+
     def _validate_signoff(self, rtl_path: str, top_module: str, output_dir: Optional[str]) -> StageResult:
-        """Validate DRC/LVS signoff stage."""
+        """Validate DRC/LVS signoff stage — checks for DRC and LVS report artifacts."""
+        if not output_dir:
+            return StageResult(
+                stage=StageName.SIGNOFF,
+                level=ValidationLevel.WARNING,
+                message="No output_dir specified — signoff artifact check skipped",
+            )
+        out = Path(output_dir)
+        warnings = []
+
+        # Check DRC report
+        drc_reports = list(out.rglob("drc_report.txt")) + list(out.rglob("drc*.txt"))
+        if not drc_reports:
+            warnings.append("DRC report not found")
+
+        # Check LVS report
+        lvs_reports = (
+            list(out.rglob("lvs_report_final.txt")) +
+            list(out.rglob("lvs_report*.txt")) +
+            list(out.rglob("lvs*.txt"))
+        )
+        if not lvs_reports:
+            warnings.append("LVS report not found")
+
+        if warnings:
+            return StageResult(
+                stage=StageName.SIGNOFF,
+                level=ValidationLevel.WARNING,
+                message=f"Signoff incomplete: {'; '.join(warnings)}",
+                warnings=warnings,
+            )
         return StageResult(
             stage=StageName.SIGNOFF,
             level=ValidationLevel.PASS,
-            message="Signoff validation not yet implemented",
+            message=f"DRC + LVS reports present (DRC: {drc_reports[0].name}, LVS: {lvs_reports[0].name})",
+            intermediate_files={"drc": drc_reports[0], "lvs": lvs_reports[0]},
         )
     
     # ──────────────────────────────────────────────────────────────────────────

@@ -1,12 +1,16 @@
 module adder_8bit(
     input  clk,
+    input  reset_n,
     input  [7:0] a,
     input  [7:0] b,
     output reg [8:0] sum
 );
 
 always @(posedge clk) begin
-    sum <= a + b;
+    if (!reset_n)
+        sum <= 9'b0;
+    else
+        sum <= a + b;
 end
 
 endmodule

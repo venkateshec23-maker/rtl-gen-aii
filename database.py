@@ -148,6 +148,28 @@ def save_run(summary: Dict) -> bool:
         drc     = metrics.get("signoff", {}).get("drc", {})
         timing  = metrics.get("timing", {})
 
+        # ── Extract real power (mW → uW) and utilization ────────────────────
+        # Priority: summary["qor"] dict > summary["metrics"] > fallback 0.0
+        power_total_uw = None
+        utilization_pct = None
+        qor_data = summary.get("qor")
+        if isinstance(qor_data, dict):
+            total_mw = qor_data.get("total_mw")
+            if total_mw is not None:
+                power_total_uw = total_mw * 1000  # mW → uW
+            utilization_pct = qor_data.get("utilization_pct")
+        # Fallback: check flat summary keys set by full_flow.py
+        if power_total_uw is None:
+            total_mw = summary.get("total_mw") or metrics.get("total_power_mw")
+            if total_mw is not None:
+                power_total_uw = total_mw * 1000
+        if utilization_pct is None:
+            utilization_pct = (
+                summary.get("utilization_pct")
+                or metrics.get("utilization_pct")
+                or (metrics.get("congestion") or {}).get("utilization_pct")
+            )
+
         if not gds_size:
             gds_size = int(metrics.get("gds", {}).get("size_bytes", 0) or 0)
 
@@ -196,8 +218,8 @@ def save_run(summary: Dict) -> bool:
             gds_size,
             synth.get("total_cells", 0),
             synth.get("chip_area_um2", 0.0),
-            0.0, # placeholder for power
-            0.0, # placeholder for utilization
+            power_total_uw or 0.0,   # real power in uW (was hardcoded 0.0)
+            utilization_pct or 0.0,  # real utilization % (was hardcoded 0.0)
             lvs_status,
             timing_slack,
             int(drc.get("violations", 0) or 0)

@@ -556,9 +556,15 @@ exit
                                 nets.append(net_name)
             
             if not nets:
-                self.logger.warning(f"No nets extracted from {def_path} - guides will be empty")
-                nets = [f"net_{i}" for i in range(10)]  # Dummy nets
-            
+                self.logger.warning(
+                    f"No signal nets extracted from {def_path} — "
+                    "writing empty routing guides (routing will proceed with no guides)"
+                )
+                output_path.write_text(
+                    "# Route guides — no nets extracted from DEF\n", encoding="utf-8"
+                )
+                return
+
             # Generate guide lines (simple: all nets, all layers met2-met4)
             guide_lines = [
                 "# Route guides - auto-generated when global routing was skipped",

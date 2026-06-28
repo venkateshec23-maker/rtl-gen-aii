@@ -64,6 +64,9 @@ rtl-gen = "python.__main__:main"
 [tool.pytest.ini_options]
 minversion = "7.0"
 addopts = "--tb=short -v"
+filterwarnings = [
+    "ignore:DSE surrogate model is non-deterministic:UserWarning",
+]
 testpaths = [
     "tests",
 ]

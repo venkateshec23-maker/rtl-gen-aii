@@ -95,24 +95,53 @@ You are an RTL design expert. Given a hardware description, identify the distinc
 sub-modules that should be implemented as separate Verilog modules.
 
 For each sub-module, provide:
-- name: snake_case module name (e.g. "alu_8bit", "reg_file_8x8")
+- name: snake_case module name (e.g. "alu_8bit", "reg_file_8x8", "if_stage")
 - description: one-sentence description of what it does
 - module_type: one of [adder, alu, counter, reg_file, memory, fifo, uart_tx, uart_rx, spi_master, i2c_master, mux, decoder, encoder, comparator, pwm, crc, shift_reg, clk_div, fsm, custom]
-- bit_width: primary data bus width (4, 8, 16, 32)
+- bit_width: primary data bus width (4, 8, 16, 32, 64)
+
+For pipelined CPUs, decompose into: fetch_stage, decode_stage, execute_stage,
+memory_stage, writeback_stage, hazard_unit, and reg_file.
+For RISC-V specifically, use 32-bit width and include: if_stage (PC + IMEM),
+id_stage (decoder + regfile read), ex_stage (ALU + branch), mem_stage (load/store),
+wb_stage (writeback), hazard_unit (data forwarding + stall), reg_file_32x32.
 
 Return ONLY valid JSON. No explanation. No markdown. Example:
 [
-  {"name": "alu_8bit", "description": "8-bit ALU with add/sub/and/or/xor ops", "module_type": "alu", "bit_width": 8},
-  {"name": "reg_file_8x8", "description": "8-register file with 8-bit registers", "module_type": "reg_file", "bit_width": 8}
+  {"name": "fetch_stage", "description": "Instruction fetch stage with PC register", "module_type": "custom", "bit_width": 32},
+  {"name": "decode_stage", "description": "Instruction decode and register file read", "module_type": "custom", "bit_width": 32},
+  {"name": "execute_stage", "description": "ALU and branch condition evaluation", "module_type": "custom", "bit_width": 32},
+  {"name": "mem_stage", "description": "Data memory access", "module_type": "custom", "bit_width": 32},
+  {"name": "wb_stage", "description": "Write-back to register file", "module_type": "custom", "bit_width": 32}
 ]
 
 Hardware description: {description}"""
 
 _FALLBACK_DECOMPOSITION: Dict[str, List[Dict]] = {
     "cpu":      [
-        {"name": "alu_8bit",     "description": "8-bit ALU",           "module_type": "alu",       "bit_width": 8},
-        {"name": "reg_file_8x8", "description": "8×8 register file",   "module_type": "reg_file",  "bit_width": 8},
-        {"name": "counter_4bit", "description": "4-bit program counter","module_type": "counter",   "bit_width": 4},
+        {"name": "if_stage",        "description": "Instruction fetch stage with PC and instruction memory interface",          "module_type": "custom", "bit_width": 32},
+        {"name": "id_stage",        "description": "Instruction decode stage with register file read and immediate extension",  "module_type": "custom", "bit_width": 32},
+        {"name": "ex_stage",        "description": "Execute stage with ALU and branch condition evaluation",                    "module_type": "custom", "bit_width": 32},
+        {"name": "mem_stage",       "description": "Memory access stage for load/store operations",                             "module_type": "custom", "bit_width": 32},
+        {"name": "wb_stage",        "description": "Write-back stage writing results to register file",                         "module_type": "custom", "bit_width": 32},
+        {"name": "hazard_unit",     "description": "Hazard detection and forwarding unit for data/control hazards",             "module_type": "custom", "bit_width": 32},
+        {"name": "reg_file_32x32",  "description": "32x32-bit register file with dual read ports and write port",              "module_type": "reg_file", "bit_width": 32},
+    ],
+    "riscv":    [
+        {"name": "if_stage",        "description": "RISC-V instruction fetch stage with PC and instruction memory",             "module_type": "custom", "bit_width": 32},
+        {"name": "id_stage",        "description": "RISC-V instruction decode stage with register file read",                  "module_type": "custom", "bit_width": 32},
+        {"name": "ex_stage",        "description": "RISC-V execute stage with ALU and branch comparator",                      "module_type": "custom", "bit_width": 32},
+        {"name": "mem_stage",       "description": "RISC-V data memory access stage for loads/stores",                         "module_type": "custom", "bit_width": 32},
+        {"name": "wb_stage",        "description": "RISC-V write-back stage to register file",                                 "module_type": "custom", "bit_width": 32},
+        {"name": "hazard_unit",     "description": "RISC-V hazard detection and data forwarding unit",                         "module_type": "custom", "bit_width": 32},
+        {"name": "reg_file_32x32",  "description": "RISC-V 32x32-bit register file with dual read ports",                     "module_type": "reg_file", "bit_width": 32},
+    ],
+    "pipeline": [
+        {"name": "fetch_stage",     "description": "Pipeline fetch stage with PC and instruction memory",                      "module_type": "custom", "bit_width": 32},
+        {"name": "decode_stage",    "description": "Pipeline decode stage with register file and immediate extension",         "module_type": "custom", "bit_width": 32},
+        {"name": "execute_stage",   "description": "Pipeline execute stage with ALU",                                          "module_type": "custom", "bit_width": 32},
+        {"name": "memory_stage",    "description": "Pipeline memory stage for data access",                                    "module_type": "custom", "bit_width": 32},
+        {"name": "writeback_stage", "description": "Pipeline write-back stage",                                                "module_type": "custom", "bit_width": 32},
     ],
     "uart":     [
         {"name": "uart_tx",      "description": "UART transmitter",    "module_type": "uart_tx",   "bit_width": 8},

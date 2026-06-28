@@ -57,10 +57,11 @@ class PromptBuilder:
         user_prompt = user_template.format(
             description=parsed_input.get('original_description', ''),
             module_name=parsed_input.get('module_name', 'design_module'),
-            bit_width=parsed_input.get('module_parameters', {}).get('width', 8), # Adjusted generic mapping
+            bit_width=parsed_input.get('module_parameters', {}).get('width', 8),
             inputs=', '.join(parsed_input.get('inputs', ['in1', 'in2'])) if isinstance(parsed_input.get('inputs'), list) else parsed_input.get('inputs', 'a, b'),
             outputs=', '.join(parsed_input.get('outputs', ['out1'])) if isinstance(parsed_input.get('outputs'), list) else parsed_input.get('outputs', 'out'),
-            states='IDLE, ACTIVE, DONE' # Placeholder since existing InputProcessor might not extract states
+            # Use states from parsed_input when available; fall back to common default state names
+            states=', '.join(parsed_input.get('states', ['IDLE', 'ACTIVE', 'DONE']))
         )
         
         # Combine system and user prompts

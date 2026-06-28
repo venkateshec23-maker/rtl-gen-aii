@@ -73,11 +73,20 @@ always@(*)case(sel)2'd0:y=d0;2'd1:y=d1;2'd2:y=d2;default:y=d3;endcase endmodule"
 always@(*)begin out=8'b0;out[in]=1'b1;end endmodule"""},
 
   {"id":"encoder_8to3","keywords":["encoder","encode","8to3","8-to-3","priority"],
-   "desc":"8-to-3 priority encoder",
+   "desc":"8-to-3 priority encoder (safe priority if-else, no casex)",
    "verilog":"""module encoder_8to3(input[7:0]in,output reg[2:0]out,output valid);
-assign valid=|in;always@(*)casex(in)8'b1xxxxxxx:out=3'd7;8'b01xxxxxx:out=3'd6;
-8'b001xxxxx:out=3'd5;8'b0001xxxx:out=3'd4;8'b00001xxx:out=3'd3;
-8'b000001xx:out=3'd2;8'b0000001x:out=3'd1;default:out=3'd0;endcase endmodule"""},
+assign valid=|in;
+// Priority if-else is safer than casex (casex treats X bits as wildcards)
+always@(*)begin
+  out=3'd0;
+  if(in[7])out=3'd7;
+  else if(in[6])out=3'd6;
+  else if(in[5])out=3'd5;
+  else if(in[4])out=3'd4;
+  else if(in[3])out=3'd3;
+  else if(in[2])out=3'd2;
+  else if(in[1])out=3'd1;
+end endmodule"""},
 
   {"id":"comparator_8","keywords":["comparator","compare","equal","greater","less","magnitude"],
    "desc":"8-bit magnitude comparator",
@@ -88,7 +97,10 @@ assign eq=(a==b);assign gt=(a>b);assign lt=(a<b);endmodule"""},
    "desc":"8x8 register file with dual read ports",
    "verilog":"""module reg_file(input clk,input we,input[2:0]wa,ra1,ra2,
 input[7:0]wd,output[7:0]rd1,rd2);
-reg[7:0]mem[0:7];always@(posedge clk)if(we)mem[wa]<=wd;
+reg[7:0]mem[0:7];
+// Simulation-only init: prevents X on first read before write
+integer _ri;initial for(_ri=0;_ri<8;_ri=_ri+1)mem[_ri]=8'h00;
+always@(posedge clk)if(we)mem[wa]<=wd;
 assign rd1=mem[ra1];assign rd2=mem[ra2];endmodule"""},
 
   {"id":"fifo_8","keywords":["fifo","queue","buffer","first-in","first-out","push","pop"],
@@ -192,9 +204,15 @@ default:state<=0;endcase end endmodule"""},
 always@(posedge clk)if(!reset_n)product<=0;else product<=a*b;endmodule"""},
 
   {"id":"sram_256x8","keywords":["sram","memory","ram","256","storage","8bit","byte"],
-   "desc":"256x8-bit synchronous SRAM",
-   "verilog":"""module sram_256x8(input clk,input we,input[7:0]addr,din,output reg[7:0]dout);
-reg[7:0]mem[0:255];always@(posedge clk)begin if(we)mem[addr]<=din;dout<=mem[addr];end endmodule"""},
+   "desc":"256x8-bit synchronous SRAM with reset",
+   "verilog":"""module sram_256x8(input clk,input reset_n,input we,input[7:0]addr,din,output reg[7:0]dout);
+reg[7:0]mem[0:255];
+// Simulation-only init: prevents X on dout before first write
+integer _si;initial for(_si=0;_si<256;_si=_si+1)mem[_si]=8'h00;
+always@(posedge clk)begin
+  if(!reset_n)dout<=8'h00;
+  else begin if(we)mem[addr]<=din;dout<=mem[addr];end
+end endmodule"""},
 
   {"id":"parity_gen","keywords":["parity","even","odd","error","detection","bit"],
    "desc":"8-bit parity generator and checker",
@@ -214,10 +232,14 @@ reg[3:0]bin;always@(posedge clk)if(!reset_n)bin<=0;else bin<=bin+1;
 always@(*)gray={bin[3],bin[3]^bin[2],bin[2]^bin[1],bin[1]^bin[0]};endmodule"""},
 
   {"id":"debounce","keywords":["debounce","button","switch","mechanical","noise","filter"],
-   "desc":"Button debouncer with configurable delay",
-   "verilog":"""module debounce#(parameter DELAY=20000)(input clk,input btn_in,output reg btn_out);
-reg[14:0]cnt;reg sync0,sync1;always@(posedge clk)begin sync0<=btn_in;sync1<=sync0;end
-always@(posedge clk)if(sync1==btn_out)cnt<=0;
+   "desc":"Button debouncer with configurable delay and reset",
+   "verilog":"""module debounce#(parameter DELAY=20000)(input clk,input reset_n,input btn_in,output reg btn_out);
+reg[14:0]cnt;reg sync0,sync1;
+// Both always blocks reset all regs to prevent X at startup
+always@(posedge clk)if(!reset_n)begin sync0<=0;sync1<=0;end
+else begin sync0<=btn_in;sync1<=sync0;end
+always@(posedge clk)if(!reset_n)begin cnt<=0;btn_out<=0;end
+else if(sync1==btn_out)cnt<=0;
 else if(cnt==DELAY-1)begin btn_out<=sync1;cnt<=0;end else cnt<=cnt+1;endmodule"""},
 
   {"id":"sync_fifo","keywords":["synchronous","fifo","queue","buffer","sync","handshake"],

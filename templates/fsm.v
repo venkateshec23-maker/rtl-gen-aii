@@ -1,5 +1,10 @@
 // Simple FSM - 4-state Moore machine
 // IDLE -> START -> RUN -> DONE -> IDLE
+//
+// Design note: 1-block Moore style — outputs are registered outputs of the state register.
+// busy and complete are assigned in EVERY case arm (including default) to prevent latching.
+// If the state register somehow reaches an undefined state, default: recovers to IDLE
+// with known output values (busy=0, complete=0).
 module fsm (
     input       clk,
     input       reset_n,
@@ -17,29 +22,37 @@ module fsm (
     
     always @(posedge clk) begin
         if (!reset_n) begin
-            state <= IDLE;
-            busy <= 0;
+            state    <= IDLE;
+            busy     <= 0;
             complete <= 0;
         end else begin
             case (state)
                 IDLE: begin
-                    busy <= 0;
+                    busy     <= 0;
                     complete <= 0;
                     if (go) state <= START;
                 end
                 START: begin
-                    busy <= 1;
-                    state <= RUN;
+                    busy     <= 1;
+                    complete <= 0;
+                    state    <= RUN;
                 end
                 RUN: begin
+                    busy     <= 1;     // hold busy while running
+                    complete <= 0;
                     if (done_sig) state <= DONE;
                 end
                 DONE: begin
-                    busy <= 0;
+                    busy     <= 0;
                     complete <= 1;
-                    state <= IDLE;
+                    state    <= IDLE;
                 end
-                default: state <= IDLE;
+                default: begin
+                    // Unknown state: recover to IDLE with safe output values
+                    state    <= IDLE;
+                    busy     <= 0;
+                    complete <= 0;
+                end
             endcase
         end
     end

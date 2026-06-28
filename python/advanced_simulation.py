@@ -75,14 +75,20 @@ class TimingAnalyzer:
         self.clock_period = 10000  # ps (100 MHz)
     
     def analyze_timing(self, netlist_info: Dict[str, Any]) -> List[TimingPath]:
-        """Extract timing paths from synthesis results"""
-        # Placeholder for timing analysis
-        # In real implementation, parse SDF or timing reports
-        self.paths = [
-            TimingPath("path_1", "input_a", "output_q", 156, 9844, True),
-            TimingPath("path_2", "input_b", "output_q", 200, 9800, True),
-            TimingPath("path_3", "clk", "output_q", 500, 9500, True),
-        ]
+        """Extract timing paths from synthesis results.
+
+        NOTE: Real SDF/timing report parsing is not yet implemented.
+        Returns an empty list so callers know no real data is available.
+        Use qor_engine.parse_hold_slack() and qor_engine.run_power_analysis()
+        for real timing data parsed from OpenROAD/OpenSTA reports.
+        """
+        import logging
+        _log = logging.getLogger(__name__)
+        _log.warning(
+            "TimingAnalyzer.analyze_timing: SDF/timing report parsing not implemented. "
+            "Returning empty path list — do not use this for real timing analysis."
+        )
+        self.paths = []
         return self.paths
     
     def get_slack(self, path: TimingPath) -> float:

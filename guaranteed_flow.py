@@ -2073,9 +2073,10 @@ def classify_design(description: str, bits: int = 8, module_name: str = "") -> D
         for word in words:
             if word in combined:
                 return {
-                    "type":    template_type,
-                    "bits":    bits,
-                    "matched": True
+                    "type":           template_type,
+                    "bits":           bits,
+                    "matched":        True,
+                    "matched_keyword": word,
                 }
     
     # Module name Heuristics - if only module name given
@@ -2410,6 +2411,12 @@ def build_from_template(module_name: str, description: str) -> Tuple[str, str]:
     classified = classify_design(description, bits, module_name)
     template_type = classified["type"]
 
+    if template_type not in TEMPLATES_RTL:
+        log.warning(
+            "No RTL template for '%s' (matched by keyword '%s'). "
+            "Falling back to adder template — design will be a stub.",
+            template_type, classified.get("matched_keyword", "?"),
+        )
     rtl_template = TEMPLATES_RTL.get(template_type, TEMPLATES_RTL["adder"])
     rtl = safe_format(rtl_template, name=module_name, bits=bits, depth=depth)
     rtl = rtl.strip()
@@ -2740,6 +2747,31 @@ def generate_guaranteed_gds(
             )
             
             rtl = result.get("rtl", "")
+            is_complex = result.get("complex_design", False)
+            status = result.get("status", "")
+            # Check status, not just rtl — generate_and_validate() returns
+            # non-empty rtl even on failure (last attempt's output).
+            if (status == "GENERATION_FAILED" and is_complex) or (is_complex and not rtl):
+                log.warning(
+                    "Complex design '%s' — LLM generation failed, "
+                    "skipping template fallback to avoid stub.",
+                    description[:60],
+                )
+                return {
+                    "status": "COMPLEX_DESIGN_FAILED",
+                    "module_name": module_name,
+                    "message": (
+                        f"Design too complex for automatic generation: '{description[:120]}'. "
+                        f"The system attempted LLM generation across multiple providers "
+                        f"but could not produce valid RTL. Template fallback was skipped "
+                        f"because it would produce a primitive stub unrelated to your spec. "
+                        f"Suggestions: (1) Simplify your description to a single well-defined "
+                        f"block (e.g., 'ALU', 'register file', 'counter'). "
+                        f"(2) Provide the Verilog RTL directly as custom_rtl. "
+                        f"(3) Split your design into smaller sub-modules and generate each separately."
+                    ),
+                    "error": f"LLM generation failed for complex design",
+                }
             if not rtl:
                 log.warning("LLM failed to generate RTL")
                 raise Exception("LLM generation failed")
@@ -2774,82 +2806,46 @@ def generate_guaranteed_gds(
     except Exception as e:
         log.warning(f"Universal generation failed: {e}")
 
-    # ATTEMPT 3: Use proven template (skip validation)
-    log.info("Attempt 3: Using proven template")
-    try:
-        rtl, tb = build_from_template(module_name, description)
-        rtl_path.write_text(rtl, encoding="utf-8")
-        tb_path.write_text(tb, encoding="utf-8")
-
-        # Skip quick_simulate - templates are already proven
-        log.info("Template generated, running pipeline directly...")
-        result = run_pipeline("template")
-        if result:
-            return result
-    except Exception as e:
-        log.warning(f"Attempt 3 failed: {e}")
-
-    # ATTEMPT 4: Use simplest proven design (adder)
-    log.info("Attempt 4: Using simplest proven design (adder)")
-    try:
-        proven_rtl = TEMPLATES_RTL["adder"]
-        proven_tb = TEMPLATES_TB["adder"]
-        
-        classified = classify_design(description)
-        template_type = classified.get("type", "adder")
-        
-        safe_format = lambda t, **kw: t.format(**{k: v for k, v in kw.items() if '{' + k + '}' in t})
-        
-        rtl_content = TEMPLATES_RTL["adder"].format(name=module_name, bits=8)
-        tb_content = TEMPLATES_TB["adder"].format(name=module_name, bits=8)
-        tb_content = _inject_test_vectors(tb_content, "adder", 8)
-
-        rtl_path.write_text(rtl_content.strip(), encoding="utf-8")
-        tb_path.write_text(tb_content.strip(), encoding="utf-8")
-
-        if quick_simulate(module_name):
-            result = run_pipeline("adder_fallback")
+    # ATTEMPT 3: Use proven template ONLY if the classified type has a real template
+    # AND the keyword actually matched (not default "adder" for unknown descriptions)
+    _classified = classify_design(description)
+    _ttype = _classified.get("type", "")
+    _matched = _classified.get("matched", False)
+    if _matched and _ttype in TEMPLATES_RTL:
+        log.info("Attempt 3: Using proven template for '%s'", _ttype)
+        try:
+            rtl, tb = build_from_template(module_name, description)
+            rtl_path.write_text(rtl, encoding="utf-8")
+            tb_path.write_text(tb, encoding="utf-8")
+            log.info("Template generated, running pipeline directly...")
+            result = run_pipeline("template")
             if result:
-                result["message"] = (
-                    f"Could not generate '{description}'. "
-                    f"Returned 8-bit adder as safe fallback. "
-                    f"Simplify your description or use keywords: "
-                    f"counter, adder, alu, uart, spi, i2c, "
-                    f"comparator, fifo, memory, multiplier."
-                )
                 return result
-    except Exception as e:
-        log.warning(f"Attempt 4 failed: {e}")
+        except Exception as e:
+            log.warning(f"Attempt 3 failed: {e}")
+    else:
+        _kw = _classified.get("matched_keyword", "none")
+        if _matched:
+            log.warning(
+                "Keyword '%s' matched type '%s' but no RTL template exists. "
+                "Skipping template fallback to avoid stub.",
+                _kw, _ttype,
+            )
+        else:
+            log.warning(
+                "Description didn't match any known template type. "
+                "Skipping template fallback to avoid stub."
+            )
 
-    # FALLBACK: Return pre-proven adder_8bit GDS
-    log.warning("All attempts failed. Using pre-proven GDS fallback.")
-
-    for runs_dir in [WORK_DIR / "runs", WORK_DIR / "results"]:
-        if runs_dir.exists():
-            for gds in runs_dir.rglob("*.gds"):
-                if gds.stat().st_size > 50000:
-                    output_gds = WORK_DIR / "results" / f"{module_name}_fallback.gds"
-                    shutil.copy2(str(gds), str(output_gds))
-                    gds_kb = round(output_gds.stat().st_size/1024, 1)
-
-                    return {
-                        "status":        "FALLBACK",
-                        "gds_path":      str(output_gds),
-                        "gds_size_kb":   gds_kb,
-                        "method_used":   "pre_proven_fallback",
-                        "tapeout_ready": False,
-                        "module_name":   module_name,
-                        "steps":         {},
-                        "elapsed_sec":   0,
-                        "message": (
-                            f"Could not generate design-specific GDS. "
-                            f"Returning reference GDS ({gds_kb} KB). "
-                            f"Please review the design description and retry."
-                        )
-                    }
-
+    # No more fallback — return clear failure.
+    # An 8-bit adder or random pre-proven GDS would waste pipeline time,
+    # mislead the user, and pass validation gates as a false positive.
+    msg_detail = (
+        f"classified as type '{_ttype}' (keyword match)" if _matched
+        else f"no template match for description"
+    )
     return {
-        "status":        "FAILED",
+        "status":        "GENERATION_FAILED",
         "gds_path":      "",
         "gds_size_kb":   0,
         "method_used":   "none",
@@ -2857,7 +2853,17 @@ def generate_guaranteed_gds(
         "module_name":   module_name,
         "steps":         {},
         "elapsed_sec":   0,
-        "message": "Docker may not be running. Start Docker Desktop and retry."
+        "message": (
+            f"Could not generate '{description[:80]}'. "
+            f"Attempt 1 (custom RTL) and Attempt 2 (LLM generation) "
+            f"both failed; {msg_detail}. "
+            f"Template/addler fallback deliberately skipped — would "
+            f"produce a stub unrelated to your spec. "
+            f"Suggestions: (1) Simplify to a basic block "
+            f"(counter, adder, alu, uart, spi, i2c, fifo, memory). "
+            f"(2) Provide Verilog RTL as custom_rtl. "
+            f"(3) Split into smaller sub-modules."
+        ),
     }
 
 

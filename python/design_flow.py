@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 """
 Complete Design Flow Visualizer - 6 Essential Steps
 From RTL Simulation to Final Silicon Layout

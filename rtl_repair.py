@@ -36,14 +36,14 @@ MAX_ATTEMPTS = 3
 # ── Error classifier ──────────────────────────────────────────────────────────
 
 _ERROR_PATTERNS = {
-    "undefined_variable":  r"error: Unknown identifier `(\w+)'",
-    "port_mismatch":       r"error: port `(\w+)' of `(\w+)' unconnected",
-    "width_mismatch":      r"error: .*width mismatch.*",
-    "missing_module":      r"error: Unknown module type: `(\w+)'",
-    "syntax_error":        r"error: syntax error",
-    "undeclared_wire":     r"error: `(\w+)' not defined",
+    "undefined_variable": r"error: Unknown identifier `(\w+)'",
+    "port_mismatch": r"error: port `(\w+)' of `(\w+)' unconnected",
+    "width_mismatch": r"error: .*width mismatch.*",
+    "missing_module": r"error: Unknown module type: `(\w+)'",
+    "syntax_error": r"error: syntax error",
+    "undeclared_wire": r"error: `(\w+)' not defined",
     "missing_sensitivity": r"warning: .*always.*missing sensitivity",
-    "incomplete_case":     r"warning: Incomplete case statement",
+    "incomplete_case": r"warning: Incomplete case statement",
 }
 
 
@@ -82,7 +82,7 @@ COMPILER ERRORS:
 
 RULES:
 1. Fix every error listed above
-2. Keep the same module name and port interface
+2. Keep the IDENTICAL module name, port names, port directions, and port widths — do NOT rename any port
 3. Use Verilog 2005 syntax only (no SystemVerilog)
 4. Keep synchronous reset (active-low reset_n) and posedge clock
 5. Output ONLY the complete fixed module — no explanation, no markdown
@@ -91,18 +91,24 @@ Fixed module:"""
 
 
 def _build_repair_prompt(
-    rtl_code:    str,
-    error_log:   str,
+    rtl_code: str,
+    error_log: str,
     description: str,
-    attempt:     int,
+    attempt: int,
 ) -> str:
-    errors      = classify_errors(error_log)
+    errors = classify_errors(error_log)
     error_lines = error_log.strip().splitlines()
 
-    # Show at most 15 error lines to avoid token waste
-    error_summary = "\n".join(error_lines[:15])
-    if len(error_lines) > 15:
-        error_summary += f"\n... ({len(error_lines)-15} more lines)"
+    # Include first 20 lines + last 5 lines so root-cause errors are never truncated
+    if len(error_lines) <= 30:
+        error_summary = "\n".join(error_lines)
+    else:
+        head = error_lines[:20]
+        tail = error_lines[-5:]
+        omitted = len(error_lines) - 25
+        error_summary = (
+            "\n".join(head) + f"\n... ({omitted} lines omitted) ...\n" + "\n".join(tail)
+        )
 
     # Add structured error hints for known error types
     hints = []
@@ -133,13 +139,14 @@ def _build_repair_prompt(
         )
 
     return _REPAIR_PROMPT.format(
-        description   = description,
-        rtl_code      = rtl_code,
-        error_summary = error_summary,
+        description=description,
+        rtl_code=rtl_code,
+        error_summary=error_summary,
     )
 
 
 # ── LLM caller ────────────────────────────────────────────────────────────────
+
 
 def _call_llm_repair(prompt: str) -> Optional[str]:
     """
@@ -150,12 +157,12 @@ def _call_llm_repair(prompt: str) -> Optional[str]:
     if github_key:
         try:
             import openai
+
             _model = os.getenv("GITHUB_MODEL", "gpt-4o")
-            _base_url = os.getenv("GITHUB_BASE_URL", "https://models.inference.ai.azure.com")
-            client = openai.OpenAI(
-                api_key=github_key,
-                base_url=_base_url
+            _base_url = os.getenv(
+                "GITHUB_BASE_URL", "https://models.inference.ai.azure.com"
             )
+            client = openai.OpenAI(api_key=github_key, base_url=_base_url)
             resp = client.chat.completions.create(
                 model=_model,
                 messages=[{"role": "user", "content": prompt}],
@@ -170,17 +177,18 @@ def _call_llm_repair(prompt: str) -> Optional[str]:
     if groq_key:
         try:
             import requests
+
             resp = requests.post(
                 "https://api.groq.com/openai/v1/chat/completions",
                 headers={
                     "Authorization": f"Bearer {groq_key}",
-                    "Content-Type":  "application/json",
+                    "Content-Type": "application/json",
                 },
                 json={
-                    "model":       os.getenv("DEFAULT_MODEL", "llama-3.3-70b-versatile"),
-                    "messages":    [{"role": "user", "content": prompt}],
-                    "max_tokens":  1200,
-                    "temperature": 0.1,   # low temperature for repair tasks
+                    "model": os.getenv("DEFAULT_MODEL", "llama-3.3-70b-versatile"),
+                    "messages": [{"role": "user", "content": prompt}],
+                    "max_tokens": 1200,
+                    "temperature": 0.1,  # low temperature for repair tasks
                 },
                 timeout=25,
             )
@@ -193,10 +201,11 @@ def _call_llm_repair(prompt: str) -> Optional[str]:
     if gemini_key:
         try:
             import google.genai as genai
+
             client = genai.Client(api_key=gemini_key)
-            resp   = client.models.generate_content(
-                model    = "gemini-2.0-flash",
-                contents = prompt,
+            resp = client.models.generate_content(
+                model="gemini-2.0-flash",
+                contents=prompt,
             )
             return resp.text
         except Exception as e:
@@ -207,6 +216,7 @@ def _call_llm_repair(prompt: str) -> Optional[str]:
 
 # ── Verilog extractor ─────────────────────────────────────────────────────────
 
+
 def _extract_verilog(text: str, module_name: str) -> Optional[str]:
     """Extract module...endmodule block from LLM response."""
     if not text:
@@ -216,7 +226,8 @@ def _extract_verilog(text: str, module_name: str) -> Optional[str]:
     # Try exact module name first
     m = re.search(
         rf"(module\s+{re.escape(module_name)}\s*[\(#].*?endmodule)",
-        text, re.DOTALL,
+        text,
+        re.DOTALL,
     )
     if m:
         return m.group(1).strip()
@@ -224,13 +235,17 @@ def _extract_verilog(text: str, module_name: str) -> Optional[str]:
     m = re.search(r"(module\s+\w+.*?endmodule)", text, re.DOTALL)
     if m:
         code = m.group(1).strip()
-        # Correct module name if LLM renamed it
-        code = re.sub(r"^module\s+\w+", f"module {module_name}", code)
+        # Correct module name if LLM renamed it — use MULTILINE so ^ matches
+        # the first `module` keyword even if there are leading blank lines
+        code = re.sub(
+            r"^module\s+\w+", f"module {module_name}", code, count=1, flags=re.MULTILINE
+        )
         return code
     return text.strip() if "module " in text else None
 
 
 # ── Syntax validator ──────────────────────────────────────────────────────────
+
 
 def validate_syntax(rtl_code: str, module_name: str) -> Tuple[bool, str]:
     """
@@ -246,7 +261,9 @@ def validate_syntax(rtl_code: str, module_name: str) -> Tuple[bool, str]:
         try:
             result = subprocess.run(
                 ["iverilog", "-tnull", str(vf)],
-                capture_output=True, text=True, timeout=10,
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             return result.returncode == 0, (result.stderr + result.stdout)
         except FileNotFoundError:
@@ -254,39 +271,47 @@ def validate_syntax(rtl_code: str, module_name: str) -> Tuple[bool, str]:
 
         # ── Try Docker ──
         try:
-            work_dir = Path(r"C:\tools\OpenLane")
+            work_dir = Path(os.getenv("OPENLANE_WORK", r"C:\tools\OpenLane"))
             if work_dir.exists():
                 check_v = (
-                    work_dir / "designs" / module_name
-                    / f"{module_name}_repair_check.v"
+                    work_dir / "designs" / module_name / f"{module_name}_repair_check.v"
                 )
                 check_v.parent.mkdir(parents=True, exist_ok=True)
                 check_v.write_text(rtl_code, encoding="utf-8")
 
                 result = subprocess.run(
                     [
-                        "docker", "run", "--rm",
-                        "-v", f"{work_dir}:/work",
+                        "docker",
+                        "run",
+                        "--rm",
+                        "-v",
+                        f"{work_dir}:/work",
                         "efabless/openlane:latest",
-                        "iverilog", "-tnull",
+                        "iverilog",
+                        "-tnull",
                         f"/work/designs/{module_name}/{module_name}_repair_check.v",
                     ],
-                    capture_output=True, text=True, timeout=30,
+                    capture_output=True,
+                    text=True,
+                    timeout=30,
                 )
                 check_v.unlink(missing_ok=True)
                 return result.returncode == 0, (result.stderr + result.stdout)
         except Exception:
             pass
 
-    # No validator available — assume syntax is OK
-    return True, ""
+    # No validator available — return a distinct sentinel so callers can distinguish
+    # "validated clean" from "could not validate".
+    log.debug("validate_syntax: no iverilog/Docker available — validation skipped")
+    return True, "__VALIDATION_SKIPPED__"
 
 
 # ── Main repair function ──────────────────────────────────────────────────────
 
+
 def repair_rtl_errors(
-    rtl_code:    str,
-    error_log:   str,
+    rtl_code: str,
+    error_log: str,
     description: str,
     module_name: Optional[str] = None,
 ) -> Optional[str]:
@@ -312,20 +337,28 @@ def repair_rtl_errors(
 
     errors = classify_errors(error_log)
     if not errors:
-        log.debug("Repair: no parseable errors in log — skipping")
-        return None
+        # No structured errors parsed, but non-empty log — treat as generic error
+        # so the LLM still receives the raw output rather than silently aborting.
+        if error_log.strip():
+            log.debug("Repair: no structured errors parsed; forwarding raw log to LLM")
+            errors = [
+                {"kind": "generic", "line": line}
+                for line in error_log.strip().splitlines()[:5]
+                if line.strip()
+            ]
+        else:
+            log.debug("Repair: empty error log — nothing to repair")
+            return None
 
     log.info("Repair: attempting to fix %d error(s) in %s", len(errors), module_name)
 
-    current_rtl    = rtl_code
+    current_rtl = rtl_code
     current_errors = error_log
 
     for attempt in range(1, MAX_ATTEMPTS + 1):
         log.info("Repair attempt %d/%d for %s", attempt, MAX_ATTEMPTS, module_name)
 
-        prompt = _build_repair_prompt(
-            current_rtl, current_errors, description, attempt
-        )
+        prompt = _build_repair_prompt(current_rtl, current_errors, description, attempt)
 
         response = _call_llm_repair(prompt)
         if not response:
@@ -344,7 +377,8 @@ def repair_rtl_errors(
         if ok:
             log.info(
                 "Repair: SUCCESS on attempt %d — %s now compiles cleanly",
-                attempt, module_name,
+                attempt,
+                module_name,
             )
             return fixed_rtl
 
@@ -354,28 +388,33 @@ def repair_rtl_errors(
         if new_error_count < old_error_count:
             log.info(
                 "Repair: partial fix (errors %d → %d), continuing",
-                old_error_count, new_error_count,
+                old_error_count,
+                new_error_count,
             )
-            current_rtl    = fixed_rtl
-            current_errors = new_errors
-            errors         = classify_errors(new_errors)
         else:
             log.warning(
-                "Repair: attempt %d did not reduce errors (%d → %d)",
-                attempt, old_error_count, new_error_count,
+                "Repair: attempt %d did not reduce errors (%d → %d); "
+                "advancing state anyway so next attempt sees latest output",
+                attempt,
+                old_error_count,
+                new_error_count,
             )
+        # Always advance to the latest RTL and errors regardless of improvement.
+        # This prevents the next attempt from replaying the same failed input.
+        current_rtl = fixed_rtl
+        current_errors = new_errors
+        errors = classify_errors(new_errors)
 
-    log.warning(
-        "Repair: all %d attempts failed for %s", MAX_ATTEMPTS, module_name
-    )
+    log.warning("Repair: all %d attempts failed for %s", MAX_ATTEMPTS, module_name)
     return None
 
 
 # ── Simulation-failure repair ─────────────────────────────────────────────────
 
+
 def repair_from_simulation_log(
-    rtl_code:    str,
-    sim_log:     str,
+    rtl_code: str,
+    sim_log: str,
     description: str,
     module_name: Optional[str] = None,
 ) -> Optional[str]:
@@ -391,7 +430,8 @@ def repair_from_simulation_log(
         return None
 
     fail_lines = [
-        l for l in sim_log.splitlines()
+        l
+        for l in sim_log.splitlines()
         if "FAIL" in l.upper() and "results:" not in l.lower()
     ]
     if not fail_lines:
@@ -419,7 +459,20 @@ def repair_from_simulation_log(
         return None
 
     fixed = _extract_verilog(response, module_name)
-    if fixed and fixed != rtl_code:
+    if not fixed:
+        return None
+
+    # Validate the repaired code actually compiles before returning it
+    ok, err = validate_syntax(fixed, module_name)
+    if not ok and "__VALIDATION_SKIPPED__" not in err:
+        log.warning(
+            "repair_from_simulation_log: LLM fix does not compile: %s", err[:200]
+        )
+        # Return it anyway — it may still be an improvement; caller will re-check
+    else:
+        log.info("repair_from_simulation_log: syntax check passed")
+
+    if fixed != rtl_code:
         log.info("Simulation repair: generated fix for %s", module_name)
         return fixed
 
@@ -430,6 +483,7 @@ def repair_from_simulation_log(
 
 if __name__ == "__main__":
     import sys
+
     logging.basicConfig(level=logging.WARNING)
 
     print("=" * 60)
@@ -454,11 +508,7 @@ if __name__ == "__main__":
 
     # ── Test 2: repair prompt builder ──
     total += 1
-    fake_rtl = (
-        "module adder(input a, b, output sum);\n"
-        "assign sum = a + b;\n"
-        "endmodule"
-    )
+    fake_rtl = "module adder(input a, b, output sum);\nassign sum = a + b;\nendmodule"
     prompt = _build_repair_prompt(fake_rtl, fake_errors, "8-bit adder", attempt=1)
     assert "ORIGINAL DESIGN SPECIFICATION" in prompt
     assert "COMPILER ERRORS" in prompt
@@ -517,9 +567,7 @@ endmodule
         fake_adder, sim_log, "8-bit adder", "adder_8bit"
     )
     assert result is None or "module adder_8bit" in result
-    print(
-        f"[PASS] Simulation repair: {'fixed' if result else 'skipped (no API key)'}"
-    )
+    print(f"[PASS] Simulation repair: {'fixed' if result else 'skipped (no API key)'}")
     passed += 1
 
     # ── Test 6: no repair when no errors ──

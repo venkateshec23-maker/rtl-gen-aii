@@ -4,12 +4,12 @@ Real hardware pipeline for custom RTL designs on SKY130A 130nm
 Professional Cadence-style UI
 """
 
+import logging
 import os
 import sys
-import logging
 
 # --- Structured JSON logging (opt-in: set JSON_LOGS=1) ---
-_log_fmt = '%(asctime)s [%(levelname)s] %(message)s'
+_log_fmt = "%(asctime)s [%(levelname)s] %(message)s"
 if os.getenv("JSON_LOGS", "0") == "1":
     _log_fmt = '{"time":"%(asctime)s","level":"%(levelname)s","logger":"%(name)s","msg":"%(message)s"}'
 logging.basicConfig(
@@ -26,15 +26,20 @@ if _sentry_dsn:
     try:
         import sentry_sdk
         from sentry_sdk.integrations.logging import LoggingIntegration
+
         sentry_sdk.init(
             dsn=_sentry_dsn,
             traces_sample_rate=0.1,
             profiles_sample_rate=0.1,
-            integrations=[LoggingIntegration(level=logging.INFO, event_level=logging.ERROR)],
+            integrations=[
+                LoggingIntegration(level=logging.INFO, event_level=logging.ERROR)
+            ],
         )
         log.info("Sentry error tracking enabled")
     except ImportError:
-        log.warning("SENTRY_DSN set but sentry-sdk not installed; pip install sentry-sdk")
+        log.warning(
+            "SENTRY_DSN set but sentry-sdk not installed; pip install sentry-sdk"
+        )
     except Exception as exc:
         log.warning("Sentry init failed: %s", exc)
 
@@ -45,36 +50,37 @@ st.set_page_config(
     page_title="RTL-Gen AI | Physical Design",
     page_icon="🔲",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
-import json
-import subprocess
-import re
 import base64
-from pathlib import Path
+import json
+import re
+import subprocess
 from datetime import datetime
+from pathlib import Path
 
-_CLOUD_MODE = os.getenv("STREAMLIT_CLOUD", "0") == "1" or \
-              not os.path.exists(r"C:\tools\OpenLane")
+_CLOUD_MODE = os.getenv("STREAMLIT_CLOUD", "0") == "1" or not os.path.exists(
+    r"C:\tools\OpenLane"
+)
 from design_db import DesignDB
+from dse_engine import (
+    DSEPoint,
+    DSEResult,
+    generate_pareto_frontier,
+    render_pareto_chart,
+    run_design_space_exploration,
+)
 from eco_manager import (
     apply_eco,
     compare_eco_results,
-    find_setup_violations,
     find_hold_violations,
+    find_setup_violations,
     generate_eco_recommendations,
 )
-from dse_engine import (
-    run_design_space_exploration,
-    generate_pareto_frontier,
-    render_pareto_chart,
-    DSEPoint,
-    DSEResult,
-)
 from full_flow import (
-    RTLtoGDSIIFlow,
-    RealMetricsParser,
     OPENLANE_HOST,
+    RealMetricsParser,
+    RTLtoGDSIIFlow,
     analyze_lvs_report,
 )
 
@@ -83,6 +89,7 @@ log = logging.getLogger(__name__)
 # Task Queue for Parallel Runs
 try:
     from python.task_queue import DesignQueue
+
     if "queue" not in st.session_state:
         st.session_state["queue"] = DesignQueue(max_parallel=3)
 except ImportError:
@@ -91,12 +98,8 @@ except ImportError:
 # Database layer (PostgreSQL + JSON fallback)
 DB_INIT_ERROR = None
 try:
-    from database import (
-        save_run,
-        get_all_runs,
-        init_database,
-        DB_AVAILABLE
-    )
+    from database import DB_AVAILABLE, get_all_runs, init_database, save_run
+
     init_database()
 except ImportError as e:
     DB_AVAILABLE = False
@@ -126,10 +129,12 @@ def get_design_history(limit: int = 20):
         return []
     return get_all_runs()[:limit]
 
+
 # Visualization module (GDS, waveform, schematic)
 VIZ_IMPORT_ERROR = None
 try:
-    from visualizer import make_gds_figure, make_waveform_figure, make_schematic_figure
+    from visualizer import make_gds_figure, make_schematic_figure, make_waveform_figure
+
     VIZ_AVAILABLE = True
 except ImportError as e:
     VIZ_AVAILABLE = False
@@ -186,10 +191,7 @@ def format_pipeline_error(summary: dict, description: str) -> str:
         ),
     }
 
-    msg = messages.get(
-        first_fail,
-        f"Step '{first_fail}' failed."
-    )
+    msg = messages.get(first_fail, f"Step '{first_fail}' failed.")
 
     return (
         f"Failed at: {first_fail}\n\n"
@@ -202,7 +204,8 @@ def format_pipeline_error(summary: dict, description: str) -> str:
 
 
 def apply_cadence_theme():
-    st.markdown("""
+    st.markdown(
+        """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700;900&display=swap');
 
@@ -519,7 +522,9 @@ def apply_cadence_theme():
         letter-spacing: 3px;
     }
     </style>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_top_bar():
@@ -527,7 +532,7 @@ def render_top_bar():
     gds_kb = 0
     gds_files = list(RESULTS.glob("*.gds")) if RESULTS.exists() else []
     if gds_files:
-        gds_kb = round(gds_files[0].stat().st_size/1024, 1)
+        gds_kb = round(gds_files[0].stat().st_size / 1024, 1)
 
     lvs_ok = False
     lvs_path = RESULTS / "lvs_report_final.txt"
@@ -537,15 +542,17 @@ def render_top_bar():
     timing_ok = False
     sta_path = RESULTS / "sta_final.txt"
     if sta_path.exists():
-        m = re.search(r'([\d.]+)\s+slack\s+\(MET\)',
-                     sta_path.read_text(errors="ignore"))
+        m = re.search(
+            r"([\d.]+)\s+slack\s+\(MET\)", sta_path.read_text(errors="ignore")
+        )
         timing_ok = bool(m)
 
     all_ok = gds_kb > 50 and lvs_ok and timing_ok
     status = "TAPE-OUT READY" if all_ok else "IN PROGRESS"
     status_color = "#00ff9d" if all_ok else "#ffd700"
 
-    st.markdown(f"""
+    st.markdown(
+        f"""
     <div style="
         background:#1c2128;
         border-bottom:1px solid #30363d;
@@ -565,18 +572,21 @@ def render_top_bar():
         <span style="padding-right:24px;">
             GDS: <span style="color:#00d4ff">{gds_kb} KB</span>
             &nbsp;|&nbsp;
-            LVS: <span style="color:{'#00ff9d' if lvs_ok else '#ff3333'}">
-                {'MATCHED' if lvs_ok else 'UNMATCHED'}
+            LVS: <span style="color:{"#00ff9d" if lvs_ok else "#ff3333"}">
+                {"MATCHED" if lvs_ok else "UNMATCHED"}
             </span>
             &nbsp;|&nbsp;
             Status: <span style="color:{status_color}">{status}</span>
         </span>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
 
 def render_sidebar_header():
-    st.sidebar.markdown("""
+    st.sidebar.markdown(
+        """
     <div style="
         text-align:center;
         padding:20px 10px 16px;
@@ -614,7 +624,9 @@ def render_sidebar_header():
             SKY130A · 130nm · OPEN SOURCE
         </div>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
 
 # set_page_config was moved to top of file (immediately after imports)
@@ -629,17 +641,21 @@ render_top_bar()
 render_sidebar_header()
 
 import os
-IS_CLOUD     = os.getenv("CODESPACE_NAME") is not None
-WORK_DIR     = Path("/workspaces/rtl-gen-ai/openroad") if IS_CLOUD else Path(r"C:\tools\OpenLane")
-PDK_DIR      = Path("/workspaces/rtl-gen-ai/pdk")       if IS_CLOUD else Path(r"C:\pdk")
-RESULTS_DIR  = WORK_DIR / "results"
-DESIGNS_DIR  = WORK_DIR / "designs" / "adder_8bit"
+
+IS_CLOUD = os.getenv("CODESPACE_NAME") is not None
+WORK_DIR = (
+    Path("/workspaces/rtl-gen-ai/openroad") if IS_CLOUD else Path(r"C:\tools\OpenLane")
+)
+PDK_DIR = Path("/workspaces/rtl-gen-ai/pdk") if IS_CLOUD else Path(r"C:\pdk")
+RESULTS_DIR = WORK_DIR / "results"
+DESIGNS_DIR = WORK_DIR / "designs" / "adder_8bit"
 DOCKER_IMAGE = "efabless/openlane:latest"
 
 
 # ============================================================
 # HELPER FUNCTIONS
 # ============================================================
+
 
 def read_file_safe(path, default="File not found"):
     try:
@@ -673,10 +689,7 @@ def get_active_results_dir() -> Path:
         try:
             runs = json.loads(runs_index.read_text(errors="ignore"))
             if runs:
-                latest = sorted(
-                    runs,
-                    key=lambda x: x.get("timestamp", "")
-                )[-1]
+                latest = sorted(runs, key=lambda x: x.get("timestamp", ""))[-1]
                 latest_dir = Path(latest.get("results_dir", ""))
                 if latest_dir.exists():
                     return latest_dir
@@ -689,12 +702,13 @@ def get_active_results_dir() -> Path:
 def parse_synthesis_cells(results_dir: Path = None):
     """Parse real cell types from synthesized netlist"""
     from collections import Counter
+
     results_dir = results_dir or get_active_results_dir()
     netlist = next(results_dir.glob("*_sky130.v"), results_dir / "adder_8bit_sky130.v")
     if not netlist.exists():
         return {}, 0
     content = netlist.read_text(errors="ignore")
-    cells = re.findall(r'sky130_fd_sc_hd__(\w+)', content)
+    cells = re.findall(r"sky130_fd_sc_hd__(\w+)", content)
     counts = Counter(cells)
     return dict(counts.most_common(15)), sum(counts.values())
 
@@ -707,9 +721,11 @@ def parse_lvs_stats(results_dir: Path = None):
         return {}
     content = lvs.read_text(errors="ignore")
     analysis = analyze_lvs_report(content)
-    dev_match = re.search(r'Number of devices:\s+(\d+)', content)
-    net_match = re.search(r'Number of nets:\s+(\d+)', content)
-    matched = analysis.get("has_match", False) and not analysis.get("has_mismatch", False)
+    dev_match = re.search(r"Number of devices:\s+(\d+)", content)
+    net_match = re.search(r"Number of nets:\s+(\d+)", content)
+    matched = analysis.get("has_match", False) and not analysis.get(
+        "has_mismatch", False
+    )
     if analysis.get("has_pin_ambiguity_warning"):
         matched = True
 
@@ -729,11 +745,10 @@ def parse_timing_stats(results_dir: Path = None):
     if not sta.exists():
         return {}
     content = sta.read_text(errors="ignore")
-    wns = re.search(r'wns\s+([-\d.]+)', content)
-    slack = re.search(r'slack\s+\(MET\)\s+([\d.]+)', content)
-    slack2 = re.search(r'([\d.]+)\s+slack\s+\(MET\)', content)
-    slack3 = re.search(r'^\s+([\d.]+)\s+slack\s+\(MET\)',
-                       content, re.MULTILINE)
+    wns = re.search(r"wns\s+([-\d.]+)", content)
+    slack = re.search(r"slack\s+\(MET\)\s+([\d.]+)", content)
+    slack2 = re.search(r"([\d.]+)\s+slack\s+\(MET\)", content)
+    slack3 = re.search(r"^\s+([\d.]+)\s+slack\s+\(MET\)", content, re.MULTILINE)
     slack_val = None
     for m in [slack, slack2, slack3]:
         if m:
@@ -742,7 +757,7 @@ def parse_timing_stats(results_dir: Path = None):
     return {
         "wns": float(wns.group(1)) if wns else 0,
         "slack": slack_val or 0,
-        "met": "MET" in content
+        "met": "MET" in content,
     }
 
 
@@ -751,12 +766,12 @@ def parse_def_stats(def_file):
     if not Path(def_file).exists():
         return {}
     content = Path(def_file).read_text(errors="ignore")
-    comps = re.search(r'COMPONENTS\s+(\d+)', content)
-    nets  = re.search(r'NETS\s+(\d+)', content)
+    comps = re.search(r"COMPONENTS\s+(\d+)", content)
+    nets = re.search(r"NETS\s+(\d+)", content)
     return {
         "components": int(comps.group(1)) if comps else 0,
         "nets": int(nets.group(1)) if nets else 0,
-        "size_kb": file_kb(def_file)
+        "size_kb": file_kb(def_file),
     }
 
 
@@ -764,10 +779,12 @@ def parse_def_stats(def_file):
 # PAGE: HOME / OVERVIEW
 # ============================================================
 
+
 def show_home():
     results_dir = get_active_results_dir()
 
-    st.markdown("""
+    st.markdown(
+        """
     <div style="background:linear-gradient(135deg,#0a0a1a,#0a1a0a);
          border:1px solid #00ff9d;border-radius:12px;padding:30px;
          margin-bottom:20px">
@@ -778,31 +795,38 @@ def show_home():
             Natural Language → Real GDSII Silicon — SKY130A 130nm
         </p>
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     # Quick status
     gds_file = next(results_dir.glob("*.gds"), results_dir / "adder_8bit.gds")
-    gds_real   = file_exists_real(gds_file, 50000)
-    lvs_data   = parse_lvs_stats(results_dir)
-    timing     = parse_timing_stats(results_dir)
+    gds_real = file_exists_real(gds_file, 50000)
+    lvs_data = parse_lvs_stats(results_dir)
+    timing = parse_timing_stats(results_dir)
     cell_types, total_cells = parse_synthesis_cells(results_dir)
 
     col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
-        st.metric("GDS Size",
-                  f"{file_kb(gds_file)} KB",
-                  delta="Real layout" if gds_real else "Missing")
+        st.metric(
+            "GDS Size",
+            f"{file_kb(gds_file)} KB",
+            delta="Real layout" if gds_real else "Missing",
+        )
     with col2:
-        st.metric("Std Cells", total_cells,
-                  delta="Sky130A mapped")
+        st.metric("Std Cells", total_cells, delta="Sky130A mapped")
     with col3:
-        st.metric("LVS",
-                  "MATCHED" if lvs_data.get("matched") else "FAIL",
-                  delta=f"{lvs_data.get('transistors',0)} transistors")
+        st.metric(
+            "LVS",
+            "MATCHED" if lvs_data.get("matched") else "FAIL",
+            delta=f"{lvs_data.get('transistors', 0)} transistors",
+        )
     with col4:
-        st.metric("Timing Slack",
-                  f"{timing.get('slack',0)} ns",
-                  delta="MET" if timing.get("met") else "VIOLATED")
+        st.metric(
+            "Timing Slack",
+            f"{timing.get('slack', 0)} ns",
+            delta="MET" if timing.get("met") else "VIOLATED",
+        )
     with col5:
         st.metric("DRC", "0 violations", delta="Clean")
 
@@ -819,30 +843,29 @@ def show_home():
     with col_btn1:
         if st.button("Run adder_8bit Full Flow", type="primary"):
             if _CLOUD_MODE:
-                st.warning("Pipeline execution requires Docker (not available on Streamlit Cloud). Run locally for full EDA pipeline.")
+                st.warning(
+                    "Pipeline execution requires Docker (not available on Streamlit Cloud). Run locally for full EDA pipeline."
+                )
             else:
                 with st.spinner("Running RTL to GDSII — ~90 seconds..."):
                     flow = RTLtoGDSIIFlow(
-                    design_name  = "adder_8bit",
-                    verilog_file = str(
-                        DESIGNS_DIR / "adder_8bit.v"
-                    ),
-                    work_dir     = str(WORK_DIR),
-                    pdk_dir      = str(PDK_DIR),
-                    clock_period = 10.0
-                )
+                        design_name="adder_8bit",
+                        verilog_file=str(DESIGNS_DIR / "adder_8bit.v"),
+                        work_dir=str(WORK_DIR),
+                        pdk_dir=str(PDK_DIR),
+                        clock_period=10.0,
+                    )
                 summary = flow.run_full_flow()
                 st.session_state["active_results_dir"] = summary.get(
                     "results_dir", str(results_dir)
                 )
                 if summary["tapeout_ready"]:
-                    st.success(
-                        f"✅ TAPE-OUT READY in "
-                        f"{summary['elapsed_sec']}s"
-                    )
+                    st.success(f"✅ TAPE-OUT READY in {summary['elapsed_sec']}s")
                     # Persist to DB
                     if DB_AVAILABLE:
-                        parser = RealMetricsParser(summary.get("results_dir", str(results_dir)))
+                        parser = RealMetricsParser(
+                            summary.get("results_dir", str(results_dir))
+                        )
                         save_run_metrics("adder_8bit", parser.get_all_metrics())
                 else:
                     st.error("❌ Flow incomplete — check logs")
@@ -851,17 +874,19 @@ def show_home():
     with col_btn2:
         if st.button("Run counter_4bit Full Flow"):
             if _CLOUD_MODE:
-                st.warning("Pipeline execution requires Docker (not available on Streamlit Cloud).")
+                st.warning(
+                    "Pipeline execution requires Docker (not available on Streamlit Cloud)."
+                )
             else:
                 with st.spinner("Running counter_4bit — ~90 seconds..."):
                     flow = RTLtoGDSIIFlow(
-                        design_name  = "counter_4bit",
-                        verilog_file = str(
+                        design_name="counter_4bit",
+                        verilog_file=str(
                             WORK_DIR / "designs/counter_4bit/counter_4bit.v"
                         ),
-                        work_dir     = str(WORK_DIR),
-                        pdk_dir      = str(PDK_DIR),
-                        clock_period = 10.0
+                        work_dir=str(WORK_DIR),
+                        pdk_dir=str(PDK_DIR),
+                        clock_period=10.0,
                     )
                     summary = flow.run_full_flow()
                     st.session_state["active_results_dir"] = summary.get(
@@ -869,8 +894,7 @@ def show_home():
                     )
                     if summary["tapeout_ready"]:
                         st.success(
-                            f"counter_4bit TAPE-OUT READY in "
-                            f"{summary['elapsed_sec']}s"
+                            f"counter_4bit TAPE-OUT READY in {summary['elapsed_sec']}s"
                         )
                     else:
                         st.error("Flow incomplete")
@@ -881,6 +905,7 @@ def show_home():
 # PAGE: RTL SOURCE & SIMULATION
 # ============================================================
 
+
 def show_simulation():
     results_dir = get_active_results_dir()
     st.header("Step 1 — RTL Source & Simulation")
@@ -888,7 +913,7 @@ def show_simulation():
     # Resolve design name from active results_dir
     netlist_files = list(results_dir.glob("*_sky130.v"))
     if netlist_files:
-        design_name = netlist_files[0].name.rsplit('_sky130.v', 1)[0]
+        design_name = netlist_files[0].name.rsplit("_sky130.v", 1)[0]
     else:
         gds_files = list(results_dir.glob("*.gds"))
         if gds_files:
@@ -901,7 +926,7 @@ def show_simulation():
     tb_path = design_dir / f"{design_name}_tb.v"
 
     # Fallback to search recursively in the workspace
-    workspace_dir = Path(r"C:\Users\venka\Documents\rtl-gen-aii")
+    workspace_dir = Path(os.getenv("RTL_WORKSPACE", str(Path(__file__).parent)))
     if not rtl_path.exists():
         rtl_candidates = list(workspace_dir.glob(f"**/{design_name}.v"))
         if rtl_candidates:
@@ -911,11 +936,9 @@ def show_simulation():
         if tb_candidates:
             tb_path = tb_candidates[0]
 
-    tab1, tab2, tab3 = st.tabs([
-        "📄 RTL Source Code",
-        "📊 Simulation Results",
-        "〰️ Waveforms"
-    ])
+    tab1, tab2, tab3 = st.tabs(
+        ["📄 RTL Source Code", "📊 Simulation Results", "〰️ Waveforms"]
+    )
 
     with tab1:
         st.subheader(f"{design_name}.v — Design Under Test")
@@ -936,9 +959,7 @@ def show_simulation():
     with tab2:
         st.subheader("Simulation Results — iverilog + vvp")
 
-        sim_log = read_file_safe(
-            results_dir / "simulation.log", ""
-        )
+        sim_log = read_file_safe(results_dir / "simulation.log", "")
         vcd_size = file_kb(results_dir / "trace.vcd")
 
         if sim_log:
@@ -950,14 +971,10 @@ def show_simulation():
 
             col1, col2, col3 = st.columns(3)
             with col1:
-                passes = len(re.findall(
-                    r'^PASS', sim_log, re.MULTILINE
-                ))
+                passes = len(re.findall(r"^PASS", sim_log, re.MULTILINE))
                 st.metric("Tests Passed", passes)
             with col2:
-                fails = len(re.findall(
-                    r'^FAIL', sim_log, re.MULTILINE
-                ))
+                fails = len(re.findall(r"^FAIL", sim_log, re.MULTILINE))
                 st.metric("Tests Failed", fails)
             with col3:
                 st.metric("VCD Size", f"{vcd_size} KB")
@@ -970,7 +987,7 @@ def show_simulation():
                     "Input A": [5, 100, 255, 128, 0, 255],
                     "Input B": [3, 50, 1, 128, 0, 255],
                     "Expected": [8, 150, 256, 256, 0, 510],
-                    "Result": ["✅ PASS"] * 6
+                    "Result": ["✅ PASS"] * 6,
                 }
                 st.table(test_data)
             else:
@@ -978,7 +995,9 @@ def show_simulation():
                 log_lines = sim_log.split("\n")
                 test_vectors = []
                 for line in log_lines:
-                    if any(w in line.upper() for w in ["PASS", "FAIL", "ERROR", "TEST"]):
+                    if any(
+                        w in line.upper() for w in ["PASS", "FAIL", "ERROR", "TEST"]
+                    ):
                         test_vectors.append(line.strip())
                 if test_vectors:
                     st.subheader("Simulation Events & Status")
@@ -999,8 +1018,9 @@ def show_simulation():
     with tab3:
         st.subheader("Waveform Viewer — Enhanced SimVision-style (v2.5)")
         try:
-            from waveform_enhanced import render_waveform_enhanced_streamlit
             from pathlib import Path as _Path
+
+            from waveform_enhanced import render_waveform_enhanced_streamlit
 
             # Search for VCD in run directory and common fallback paths
             _vcd_candidates = []
@@ -1029,9 +1049,9 @@ def show_simulation():
             _log_path = next((p for p in _log_candidates if p.exists()), None)
 
             render_waveform_enhanced_streamlit(
-                vcd_path     = _vcd_path,
-                sim_log_path = _log_path,
-                key_prefix   = "signoff_wv",
+                vcd_path=_vcd_path,
+                sim_log_path=_log_path,
+                key_prefix="signoff_wv",
             )
 
         except Exception as _wv_err:
@@ -1039,6 +1059,7 @@ def show_simulation():
             # Fall back to original renderer if it exists
             try:
                 from waveform_display import render_waveform_streamlit
+
                 render_waveform_streamlit(str(results_dir), design_name)
             except Exception:
                 st.info("No waveform data available for this run.")
@@ -1048,11 +1069,14 @@ def show_simulation():
 # PAGE: SYNTHESIS
 # ============================================================
 
+
 def show_synthesis():
     results_dir = get_active_results_dir()
     st.header("Step 2 — RTL Synthesis (Yosys synth_sky130)")
 
-    netlist_path = next(results_dir.glob("*_sky130.v"), results_dir / "adder_8bit_sky130.v")
+    netlist_path = next(
+        results_dir.glob("*_sky130.v"), results_dir / "adder_8bit_sky130.v"
+    )
     if not netlist_path.exists():
         st.warning(
             "No synthesis results found for the active run. "
@@ -1066,25 +1090,17 @@ def show_synthesis():
     with col1:
         st.metric("Total Cells", total_cells)
     with col2:
-        st.metric("Netlist Size",
-                  f"{file_kb(netlist_path)} KB")
+        st.metric("Netlist Size", f"{file_kb(netlist_path)} KB")
     with col3:
         has_generic = False
         if netlist_path.exists():
             content = netlist_path.read_text(errors="ignore")
-            has_generic = bool(re.search(
-                r'\$_XOR_|\$_SDFF_|\$_AND_', content
-            ))
-        st.metric(
-            "Generic Cells",
-            "0 ✅" if not has_generic else "❌ Found"
-        )
+            has_generic = bool(re.search(r"\$_XOR_|\$_SDFF_|\$_AND_", content))
+        st.metric("Generic Cells", "0 ✅" if not has_generic else "❌ Found")
 
-    tab1, tab2, tab3 = st.tabs([
-        "📊 Cell Distribution",
-        "📄 Netlist",
-        "📋 Synthesis Log"
-    ])
+    tab1, tab2, tab3 = st.tabs(
+        ["📊 Cell Distribution", "📄 Netlist", "📋 Synthesis Log"]
+    )
 
     with tab1:
         st.subheader("Standard Cell Breakdown")
@@ -1092,38 +1108,31 @@ def show_synthesis():
             import pandas as pd
 
             # Bar chart
-            df = pd.DataFrame(
-                list(cell_types.items()),
-                columns=["Cell Type", "Count"]
-            )
+            df = pd.DataFrame(list(cell_types.items()), columns=["Cell Type", "Count"])
             df = df.sort_values("Count", ascending=False)
             st.bar_chart(df.set_index("Cell Type"))
 
             # Table
-            st.dataframe(df, width='stretch')
+            st.dataframe(df, width="stretch")
 
             # Cell categories
             col1, col2 = st.columns(2)
             with col1:
                 ff_count = sum(
-                    v for k, v in cell_types.items()
-                    if "df" in k or "dff" in k
+                    v for k, v in cell_types.items() if "df" in k or "dff" in k
                 )
                 st.metric("Flip-Flops", ff_count)
                 xor_count = sum(
-                    v for k, v in cell_types.items()
-                    if "xor" in k or "xnor" in k
+                    v for k, v in cell_types.items() if "xor" in k or "xnor" in k
                 )
                 st.metric("XOR/XNOR (adder logic)", xor_count)
             with col2:
                 and_count = sum(
-                    v for k, v in cell_types.items()
-                    if "and" in k or "nand" in k
+                    v for k, v in cell_types.items() if "and" in k or "nand" in k
                 )
                 st.metric("AND/NAND (carry logic)", and_count)
                 or_count = sum(
-                    v for k, v in cell_types.items()
-                    if "or" in k and "xor" not in k
+                    v for k, v in cell_types.items() if "or" in k and "xor" not in k
                 )
                 st.metric("OR/NOR (combination)", or_count)
         else:
@@ -1151,16 +1160,14 @@ def show_synthesis():
                     "⬇️ Download adder_8bit_sky130.v",
                     f,
                     file_name="adder_8bit_sky130.v",
-                    mime="text/plain"
+                    mime="text/plain",
                 )
         else:
             st.warning("Netlist not found. Run synthesis first.")
 
     with tab3:
         st.subheader("Yosys Synthesis Log")
-        synth_log = read_file_safe(
-            results_dir / "synthesis.log", ""
-        )
+        synth_log = read_file_safe(results_dir / "synthesis.log", "")
         if synth_log:
             with st.expander("Full Synthesis Log"):
                 st.code(synth_log[:3000], language="text")
@@ -1171,6 +1178,7 @@ def show_synthesis():
 # ============================================================
 # PAGE: PHYSICAL DESIGN
 # ============================================================
+
 
 def show_physical_design():
     results_dir = get_active_results_dir()
@@ -1184,10 +1192,10 @@ def show_physical_design():
         return
 
     # File size comparison — silent failure detection
-    routed_kb  = file_kb(results_dir / "routed.def")
-    cts_kb     = file_kb(results_dir / "cts.def")
-    placed_kb  = file_kb(results_dir / "placed.def")
-    floor_kb   = file_kb(results_dir / "floorplan.def")
+    routed_kb = file_kb(results_dir / "routed.def")
+    cts_kb = file_kb(results_dir / "cts.def")
+    placed_kb = file_kb(results_dir / "placed.def")
+    floor_kb = file_kb(results_dir / "floorplan.def")
 
     routing_real = routed_kb > cts_kb and routed_kb > 6
 
@@ -1200,21 +1208,16 @@ def show_physical_design():
         st.metric("CTS DEF", f"{cts_kb} KB")
     with col4:
         st.metric(
-            "Routed DEF",
-            f"{routed_kb} KB",
-            delta="REAL" if routing_real else "STUB"
+            "Routed DEF", f"{routed_kb} KB", delta="REAL" if routing_real else "STUB"
         )
 
     # Silent failure detector
     if routing_real:
         st.success(
-            f"✅ Routing is REAL — routed.def ({routed_kb} KB) "
-            f"> cts.def ({cts_kb} KB)"
+            f"✅ Routing is REAL — routed.def ({routed_kb} KB) > cts.def ({cts_kb} KB)"
         )
     else:
-        st.error(
-            f"❌ SILENT FAILURE DETECTED — routed.def == cts.def"
-        )
+        st.error(f"❌ SILENT FAILURE DETECTED — routed.def == cts.def")
 
     st.markdown("---")
     st.info("**Physical Design Flow:** Floorplan → Placement → CTS → Routing → DRC")
@@ -1223,6 +1226,7 @@ def show_physical_design():
 # ============================================================
 # PAGE: GDS LAYOUT
 # ============================================================
+
 
 def show_gds_layout():
     results_dir = get_active_results_dir()
@@ -1233,17 +1237,14 @@ def show_gds_layout():
         st.warning("No GDS file found for the active run. Run the pipeline first.")
         return
 
-    gds_kb   = file_kb(gds_path)
+    gds_kb = file_kb(gds_path)
     gds_real = gds_kb > 50
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("GDS Size", f"{gds_kb} KB")
     with col2:
-        st.metric(
-            "Status",
-            "REAL LAYOUT ✅" if gds_real else "STUB ❌"
-        )
+        st.metric("Status", "REAL LAYOUT ✅" if gds_real else "STUB ❌")
     with col3:
         st.metric("Minimum required", "50 KB")
 
@@ -1253,9 +1254,7 @@ def show_gds_layout():
             f"Real silicon layout ready for fabrication"
         )
     else:
-        st.error(
-            f"❌ GDS is only {gds_kb} KB — stub file"
-        )
+        st.error(f"❌ GDS is only {gds_kb} KB — stub file")
 
     st.markdown("""
     **To view your GDS layout:**
@@ -1271,7 +1270,7 @@ def show_gds_layout():
                 "⬇️ Download adder_8bit.gds",
                 f,
                 file_name="adder_8bit.gds",
-                mime="application/octet-stream"
+                mime="application/octet-stream",
             )
 
 
@@ -1279,13 +1278,15 @@ def show_gds_layout():
 # PAGE: SIGN-OFF (DRC + LVS + TIMING)
 # ============================================================
 
+
 def render_qor_table(results_dir: str, design_name: str):
     """
     Render QoR summary table in Streamlit.
     Shows all metrics in one professional table.
     """
-    import streamlit as st
     import pandas as pd
+    import streamlit as st
+
     from full_flow import RealMetricsParser
 
     try:
@@ -1297,64 +1298,102 @@ def render_qor_table(results_dir: str, design_name: str):
 
     rows = [
         # Category, Metric, Value, Target, Pass/Fail
-        ("Design",   "Cell Count",
-         str(qor.get("cell_count","—")),
-         "> 0", qor.get("cell_count") is not None),
-
-        ("Design",   "Core Area",
-         f"{qor.get('core_area_um2','—')} µm²" if qor.get('core_area_um2') is not None else "—",
-         "< die area", True),
-
-        ("Design",   "Utilization",
-         f"{qor.get('utilization_pct','—')}%" if qor.get('utilization_pct') is not None else "—",
-         "20-70%",
-         20 <= (qor.get('utilization_pct') or 0) <= 70),
-
-        ("Timing",   "Setup TT Slack",
-         f"{qor.get('setup_slack_tt','—')} ns" if qor.get('setup_slack_tt') is not None else "—",
-         "≥ 0",
-         (qor.get("setup_slack_tt") or -1) >= 0),
-
-        ("Timing",   "Setup SS Slack",
-         f"{qor.get('setup_slack_ss','—')} ns" if qor.get('setup_slack_ss') is not None else "—",
-         "≥ 0",
-         (qor.get("setup_slack_ss") or -1) >= 0),
-
-        ("Timing",   "Hold Slack",
-         f"{qor.get('hold_slack','—')} ns" if qor.get('hold_slack') is not None else "—",
-         "≥ 0",
-         qor.get("hold_slack") is None or
-         (qor.get("hold_slack") or -1) >= 0),
-
-        ("Timing",   "Fmax",
-         f"{qor.get('fmax_mhz','—')} MHz" if qor.get('fmax_mhz') is not None else "—",
-         "> 100 MHz",
-         (qor.get("fmax_mhz") or 0) > 100),
-
-        ("Power",    "Total Power",
-         f"{qor.get('total_power_mw','—')} mW" if qor.get('total_power_mw') is not None else "—",
-         "< 100 mW",
-         (qor.get("total_power_mw") or 999) < 100),
-
-        ("Signoff",  "DRC Violations",
-         str(qor.get("drc_violations", "—")),
-         "= 0",
-         qor.get("drc_violations") == 0),
-
-        ("Signoff",  "LVS",
-         "MATCHED" if qor.get("lvs_matched") else "FAIL",
-         "MATCHED",
-         qor.get("lvs_matched", False)),
-
-        ("Signoff",  "GDS Size",
-         f"{qor.get('gds_size_kb','—')} KB" if qor.get('gds_size_kb') is not None else "—",
-         "> 50 KB",
-         (qor.get("gds_size_kb") or 0) > 50),
+        (
+            "Design",
+            "Cell Count",
+            str(qor.get("cell_count", "—")),
+            "> 0",
+            qor.get("cell_count") is not None,
+        ),
+        (
+            "Design",
+            "Core Area",
+            f"{qor.get('core_area_um2', '—')} µm²"
+            if qor.get("core_area_um2") is not None
+            else "—",
+            "< die area",
+            True,
+        ),
+        (
+            "Design",
+            "Utilization",
+            f"{qor.get('utilization_pct', '—')}%"
+            if qor.get("utilization_pct") is not None
+            else "—",
+            "20-70%",
+            20 <= (qor.get("utilization_pct") or 0) <= 70,
+        ),
+        (
+            "Timing",
+            "Setup TT Slack",
+            f"{qor.get('setup_slack_tt', '—')} ns"
+            if qor.get("setup_slack_tt") is not None
+            else "—",
+            "≥ 0",
+            (qor.get("setup_slack_tt") or -1) >= 0,
+        ),
+        (
+            "Timing",
+            "Setup SS Slack",
+            f"{qor.get('setup_slack_ss', '—')} ns"
+            if qor.get("setup_slack_ss") is not None
+            else "—",
+            "≥ 0",
+            (qor.get("setup_slack_ss") or -1) >= 0,
+        ),
+        (
+            "Timing",
+            "Hold Slack",
+            f"{qor.get('hold_slack', '—')} ns"
+            if qor.get("hold_slack") is not None
+            else "—",
+            "≥ 0",
+            qor.get("hold_slack") is None or (qor.get("hold_slack") or -1) >= 0,
+        ),
+        (
+            "Timing",
+            "Fmax",
+            f"{qor.get('fmax_mhz', '—')} MHz"
+            if qor.get("fmax_mhz") is not None
+            else "—",
+            "> 100 MHz",
+            (qor.get("fmax_mhz") or 0) > 100,
+        ),
+        (
+            "Power",
+            "Total Power",
+            f"{qor.get('total_power_mw', '—')} mW"
+            if qor.get("total_power_mw") is not None
+            else "—",
+            "< 100 mW",
+            (qor.get("total_power_mw") or 999) < 100,
+        ),
+        (
+            "Signoff",
+            "DRC Violations",
+            str(qor.get("drc_violations", "—")),
+            "= 0",
+            qor.get("drc_violations") == 0,
+        ),
+        (
+            "Signoff",
+            "LVS",
+            "MATCHED" if qor.get("lvs_matched") else "FAIL",
+            "MATCHED",
+            qor.get("lvs_matched", False),
+        ),
+        (
+            "Signoff",
+            "GDS Size",
+            f"{qor.get('gds_size_kb', '—')} KB"
+            if qor.get("gds_size_kb") is not None
+            else "—",
+            "> 50 KB",
+            (qor.get("gds_size_kb") or 0) > 50,
+        ),
     ]
 
-    df = pd.DataFrame(rows,
-        columns=["Category", "Metric",
-                 "Value", "Target", "Pass"])
+    df = pd.DataFrame(rows, columns=["Category", "Metric", "Value", "Target", "Pass"])
 
     # Color the Pass column
     def color_pass(val):
@@ -1366,86 +1405,103 @@ def render_qor_table(results_dir: str, design_name: str):
 
     st.markdown("**QoR Summary Table**")
     st.dataframe(
-        df.style.map(
-            color_pass, subset=["Pass"]
-        ).format({"Pass": lambda x: "✅" if x else "❌"}),
-        width='stretch',
-        hide_index=True
+        df.style.map(color_pass, subset=["Pass"]).format(
+            {"Pass": lambda x: "✅" if x else "❌"}
+        ),
+        width="stretch",
+        hide_index=True,
     )
 
     # Overall verdict
-    passed = sum(1 for _,_,_,_,p in rows if p)
-    total  = len(rows)
-    color  = "#00ff9d" if passed == total else "#ffd700"
+    passed = sum(1 for _, _, _, _, p in rows if p)
+    total = len(rows)
+    color = "#00ff9d" if passed == total else "#ffd700"
     st.markdown(
         f"<div style='text-align:right;"
         f"font-family:Share Tech Mono,monospace;"
         f"font-size:0.85rem;color:{color}'>"
         f"QoR Score: {passed}/{total} checks passed"
         f"</div>",
-        unsafe_allow_html=True
+        unsafe_allow_html=True,
     )
 
 
 # ── ECO Dashboard helper plots ───────────────────────────────────────────────
 
+
 def plot_fmax_improvement(eco) -> "plotly.graph_objects.Figure":
     import plotly.graph_objects as go
+
     fig = go.Figure()
     orig = eco.original_qor.get("fmax_mhz", 0) if eco.original_qor else 0
-    opt  = eco.optimized_qor.get("fmax_mhz", 0) if eco.optimized_qor else 0
-    fig.add_trace(go.Bar(name="Before", x=["Fmax"], y=[orig],
-                         marker_color="#FF6B6B"))
-    fig.add_trace(go.Bar(name="After", x=["Fmax"], y=[opt],
-                         marker_color="#51CF66"))
-    fig.update_layout(title="Fmax Improvement", yaxis_title="MHz",
-                      template="plotly_dark", paper_bgcolor="#1e1e1e",
-                      plot_bgcolor="#1e1e1e", font=dict(color="#cccccc"))
+    opt = eco.optimized_qor.get("fmax_mhz", 0) if eco.optimized_qor else 0
+    fig.add_trace(go.Bar(name="Before", x=["Fmax"], y=[orig], marker_color="#FF6B6B"))
+    fig.add_trace(go.Bar(name="After", x=["Fmax"], y=[opt], marker_color="#51CF66"))
+    fig.update_layout(
+        title="Fmax Improvement",
+        yaxis_title="MHz",
+        template="plotly_dark",
+        paper_bgcolor="#1e1e1e",
+        plot_bgcolor="#1e1e1e",
+        font=dict(color="#cccccc"),
+    )
     return fig
 
 
 def plot_power_change(eco) -> "plotly.graph_objects.Figure":
     import plotly.graph_objects as go
+
     fig = go.Figure()
     orig = eco.original_qor.get("power_mw", 0) if eco.original_qor else 0
-    opt  = eco.optimized_qor.get("power_mw", 0) if eco.optimized_qor else 0
-    fig.add_trace(go.Bar(name="Before", x=["Power"], y=[orig],
-                         marker_color="#FF6B6B"))
-    fig.add_trace(go.Bar(name="After", x=["Power"], y=[opt],
-                         marker_color="#51CF66"))
-    fig.update_layout(title="Power Change", yaxis_title="mW",
-                      template="plotly_dark", paper_bgcolor="#1e1e1e",
-                      plot_bgcolor="#1e1e1e", font=dict(color="#cccccc"))
+    opt = eco.optimized_qor.get("power_mw", 0) if eco.optimized_qor else 0
+    fig.add_trace(go.Bar(name="Before", x=["Power"], y=[orig], marker_color="#FF6B6B"))
+    fig.add_trace(go.Bar(name="After", x=["Power"], y=[opt], marker_color="#51CF66"))
+    fig.update_layout(
+        title="Power Change",
+        yaxis_title="mW",
+        template="plotly_dark",
+        paper_bgcolor="#1e1e1e",
+        plot_bgcolor="#1e1e1e",
+        font=dict(color="#cccccc"),
+    )
     return fig
 
 
 def plot_area_change(eco) -> "plotly.graph_objects.Figure":
     import plotly.graph_objects as go
+
     fig = go.Figure()
     orig = eco.original_qor.get("area_um2", 0) if eco.original_qor else 0
-    opt  = eco.optimized_qor.get("area_um2", 0) if eco.optimized_qor else 0
-    fig.add_trace(go.Bar(name="Before", x=["Area"], y=[orig],
-                         marker_color="#FF6B6B"))
-    fig.add_trace(go.Bar(name="After", x=["Area"], y=[opt],
-                         marker_color="#51CF66"))
-    fig.update_layout(title="Area Change", yaxis_title="um2",
-                      template="plotly_dark", paper_bgcolor="#1e1e1e",
-                      plot_bgcolor="#1e1e1e", font=dict(color="#cccccc"))
+    opt = eco.optimized_qor.get("area_um2", 0) if eco.optimized_qor else 0
+    fig.add_trace(go.Bar(name="Before", x=["Area"], y=[orig], marker_color="#FF6B6B"))
+    fig.add_trace(go.Bar(name="After", x=["Area"], y=[opt], marker_color="#51CF66"))
+    fig.update_layout(
+        title="Area Change",
+        yaxis_title="um2",
+        template="plotly_dark",
+        paper_bgcolor="#1e1e1e",
+        plot_bgcolor="#1e1e1e",
+        font=dict(color="#cccccc"),
+    )
     return fig
 
 
 def plot_slack_improvement(eco) -> "plotly.graph_objects.Figure":
     import plotly.graph_objects as go
+
     fig = go.Figure()
     orig = eco.original_qor.get("slack_ns", 0) if eco.original_qor else 0
-    opt  = eco.optimized_qor.get("slack_ns", 0) if eco.optimized_qor else 0
-    fig.add_trace(go.Bar(name="Before", x=["Slack"], y=[orig],
-                         marker_color="#FF6B6B"))
-    fig.add_trace(go.Bar(name="After", x=["Slack"], y=[opt],
-                         marker_color="#51CF66"))
-    fig.update_layout(title="Slack Improvement", yaxis_title="ns",
-                      template="plotly_dark", paper_bgcolor="#1e1e1e",
-                      plot_bgcolor="#1e1e1e", font=dict(color="#cccccc"))
+    opt = eco.optimized_qor.get("slack_ns", 0) if eco.optimized_qor else 0
+    fig.add_trace(go.Bar(name="Before", x=["Slack"], y=[orig], marker_color="#FF6B6B"))
+    fig.add_trace(go.Bar(name="After", x=["Slack"], y=[opt], marker_color="#51CF66"))
+    fig.update_layout(
+        title="Slack Improvement",
+        yaxis_title="ns",
+        template="plotly_dark",
+        paper_bgcolor="#1e1e1e",
+        plot_bgcolor="#1e1e1e",
+        font=dict(color="#cccccc"),
+    )
     return fig
 
 
@@ -1454,16 +1510,20 @@ def show_signoff():
     Professional sign-off page with all views.
     Shows: Netlist | Waveforms | Layout | Timing | Reports
     """
-    st.markdown("""
+    st.markdown(
+        """
     <div style="font-family:'Rajdhani',sans-serif;
          font-size:1.4rem;font-weight:700;
          color:#f0f6fc;letter-spacing:1px;
          margin-bottom:16px">
         ✅ Sign-Off Dashboard
-    </div>""", unsafe_allow_html=True)
+    </div>""",
+        unsafe_allow_html=True,
+    )
 
     # Find latest successful run
     from pathlib import Path
+
     from database import get_all_runs
 
     # Get design selection
@@ -1478,24 +1538,22 @@ def show_signoff():
         # Try finding from filesystem
         work = Path(r"C:\tools\OpenLane")
         run_dirs = sorted(
-            [d for d in (work/"runs").iterdir()
-             if d.is_dir()],
+            [d for d in (work / "runs").iterdir() if d.is_dir()],
             key=lambda x: x.stat().st_mtime,
-            reverse=True
+            reverse=True,
         )
         if run_dirs:
             selected_dir = str(run_dirs[0])
-            design_name  = run_dirs[0].name.rsplit('_', 2)[0]
+            design_name = run_dirs[0].name.rsplit("_", 2)[0]
         else:
-            st.error("No completed runs found. "
-                     "Run a design first.")
+            st.error("No completed runs found. Run a design first.")
             return
     else:
         # Design selector
-        design_names = sorted(list(set(
-            r['design_name'] for r in ready_runs if r.get('design_name')
-        )))
-        
+        design_names = sorted(
+            list(set(r["design_name"] for r in ready_runs if r.get("design_name")))
+        )
+
         # Try to auto-select design from session state's active run dir
         default_idx = 0
         active_dir = st.session_state.get("active_results_dir")
@@ -1505,43 +1563,35 @@ def show_signoff():
             if not active_design:
                 netlist_files = list(active_path.glob("*_sky130.v"))
                 if netlist_files:
-                    active_design = netlist_files[0].name.rsplit('_sky130.v', 1)[0]
+                    active_design = netlist_files[0].name.rsplit("_sky130.v", 1)[0]
             if active_design and active_design in design_names:
                 default_idx = design_names.index(active_design)
 
-        selected_design = st.selectbox(
-            "Select Design", design_names, index=default_idx
-        )
+        selected_design = st.selectbox("Select Design", design_names, index=default_idx)
 
-        design_runs = [
-            r for r in ready_runs
-            if r['design_name'] == selected_design
-        ]
-        
+        design_runs = [r for r in ready_runs if r["design_name"] == selected_design]
+
         # Sort runs by timestamp/created_at descending
         design_runs = sorted(
             design_runs,
-            key=lambda x: x.get('timestamp', x.get('created_at', '')),
-            reverse=True
+            key=lambda x: x.get("timestamp", x.get("created_at", "")),
+            reverse=True,
         )
-        
+
         # If there are multiple runs, let the user select a specific run
         if len(design_runs) > 1:
             run_options = [
                 f"{r.get('timestamp', r.get('created_at', 'unknown'))} [status: {r.get('status', 'unknown')}]"
                 for r in design_runs
             ]
-            selected_run_opt = st.selectbox(
-                "Select Run Time", run_options, index=0
-            )
+            selected_run_opt = st.selectbox("Select Run Time", run_options, index=0)
             selected_idx = run_options.index(selected_run_opt)
             latest = design_runs[selected_idx]
         else:
             latest = design_runs[0]
 
         selected_dir = latest.get(
-            'results_dir',
-            str(Path(r"C:\tools\OpenLane\results"))
+            "results_dir", str(Path(r"C:\tools\OpenLane\results"))
         )
         design_name = selected_design
 
@@ -1552,87 +1602,89 @@ def show_signoff():
 
     def read_slack(fname):
         f = results / fname
-        if not f.exists(): return None, None
+        if not f.exists():
+            return None, None
         m = re.search(
-            r'([-\d.]+)\s+slack\s+\((MET|VIOLATED)\)',
-            f.read_text(errors='ignore')
+            r"([-\d.]+)\s+slack\s+\((MET|VIOLATED)\)", f.read_text(errors="ignore")
         )
-        return (float(m.group(1)), m.group(2)) if m else (None,None)
+        return (float(m.group(1)), m.group(2)) if m else (None, None)
 
     def read_lvs_status():
         f = results / "lvs_report_final.txt"
-        if not f.exists(): return "NOT_RUN"
-        c = f.read_text(errors='ignore')
+        if not f.exists():
+            return "NOT_RUN"
+        c = f.read_text(errors="ignore")
         return "MATCHED" if "match uniquely" in c else "MISMATCH"
 
     def read_drc():
-        for f in ["drc_report.txt","drc_klayout_full.xml"]:
+        for f in ["drc_report.txt", "drc_klayout_full.xml"]:
             p = results / f
             if p.exists():
-                c = p.read_text(errors='ignore')
-                m = re.search(r'(\d+)\s+violation', c)
+                c = p.read_text(errors="ignore")
+                m = re.search(r"(\d+)\s+violation", c)
                 return int(m.group(1)) if m else 0
         return 0
 
     def read_gds_size():
         gds_files = list(results.glob("*.gds"))
         if gds_files:
-            return max(
-                gds_files,
-                key=lambda x: x.stat().st_size
-            ).stat().st_size // 1024
+            return max(gds_files, key=lambda x: x.stat().st_size).stat().st_size // 1024
         return 0
 
     def read_coverage():
         f = results / "coverage_report.txt"
-        if not f.exists(): return None
-        content = f.read_text(errors='ignore')
-        m_cov = re.search(r'Coverage:\s*([\d.]+)%', content)
+        if not f.exists():
+            return None
+        content = f.read_text(errors="ignore")
+        m_cov = re.search(r"Coverage:\s*([\d.]+)%", content)
         return float(m_cov.group(1)) if m_cov else None
 
     def read_ir_drop():
         f = results / "ir_drop_vdd.txt"
-        if not f.exists(): return None
-        content = f.read_text(errors='ignore')
-        m = re.search(r'Calculated IR drop:\s*([\d.]+)\s*mV', content)
+        if not f.exists():
+            return None
+        content = f.read_text(errors="ignore")
+        m = re.search(r"Calculated IR drop:\s*([\d.]+)\s*mV", content)
         return float(m.group(1)) if m else None
 
     tt_slack, tt_status = read_slack("sta_final.txt")
     ss_slack, ss_status = read_slack("sta_ss.txt")
     ff_slack, ff_status = read_slack("sta_ff.txt")
-    lvs_status  = read_lvs_status()
-    drc_count   = read_drc()
-    gds_kb      = read_gds_size()
-    cov_pct     = read_coverage()
-    ir_val      = read_ir_drop()
+    lvs_status = read_lvs_status()
+    drc_count = read_drc()
+    gds_kb = read_gds_size()
+    cov_pct = read_coverage()
+    ir_val = read_ir_drop()
 
     # Status banner
     all_ok = (
-        tt_status == "MET" and
-        lvs_status == "MATCHED" and
-        drc_count == 0 and
-        gds_kb > 50
+        tt_status == "MET"
+        and lvs_status == "MATCHED"
+        and drc_count == 0
+        and gds_kb > 50
     )
     banner_color = "#00ff9d" if all_ok else "#ffd700"
-    banner_text  = "TAPE-OUT READY" if all_ok \
-                   else "IN PROGRESS"
+    banner_text = "TAPE-OUT READY" if all_ok else "IN PROGRESS"
 
-    st.markdown(f"""
+    st.markdown(
+        f"""
     <div style="
-        background:rgba({'0,255,157' if all_ok else '255,215,0'},0.1);
+        background:rgba({"0,255,157" if all_ok else "255,215,0"},0.1);
         border:1px solid {banner_color};
         border-radius:4px;padding:16px 24px;
         text-align:center;margin-bottom:20px;
         font-family:'Share Tech Mono',monospace;
         font-size:1.2rem;color:{banner_color};
         letter-spacing:3px">
-        {'✓' if all_ok else '⏳'} {banner_text} — {design_name}
-    </div>""", unsafe_allow_html=True)
+        {"✓" if all_ok else "⏳"} {banner_text} — {design_name}
+    </div>""",
+        unsafe_allow_html=True,
+    )
 
     # Metrics row
-    c1,c2,c3,c4,c5,c6,c7,c8 = st.columns(8)
+    c1, c2, c3, c4, c5, c6, c7, c8 = st.columns(8)
     with c1:
-        color = "#00ff9d" if drc_count==0 else "#ff3333"
+        color = "#00ff9d" if drc_count == 0 else "#ff3333"
         st.markdown(
             f"<div style='text-align:center'>"
             f"<div style='color:#8b949e;font-size:0.65rem;"
@@ -1642,11 +1694,10 @@ def show_signoff():
             f"{drc_count}</div>"
             f"<div style='color:{color};font-size:0.65rem'>"
             f"violations</div></div>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
     with c2:
-        color = "#00ff9d" if lvs_status=="MATCHED" \
-                else "#ff3333"
+        color = "#00ff9d" if lvs_status == "MATCHED" else "#ff3333"
         st.markdown(
             f"<div style='text-align:center'>"
             f"<div style='color:#8b949e;font-size:0.65rem;"
@@ -1654,10 +1705,10 @@ def show_signoff():
             f"<div style='color:{color};font-size:1.0rem;"
             f"font-family:monospace;font-weight:bold'>"
             f"{lvs_status}</div></div>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
     with c3:
-        color = "#00ff9d" if tt_status=="MET" else "#ff3333"
+        color = "#00ff9d" if tt_status == "MET" else "#ff3333"
         st.markdown(
             f"<div style='text-align:center'>"
             f"<div style='color:#8b949e;font-size:0.65rem;"
@@ -1665,15 +1716,15 @@ def show_signoff():
             f"<div style='color:{color};font-size:1.3rem;"
             f"font-family:monospace;font-weight:bold'>"
             f"{tt_slack:.2f}ns</div></div>"
-            if tt_slack else
-            f"<div style='text-align:center'>"
+            if tt_slack
+            else f"<div style='text-align:center'>"
             f"<div style='color:#8b949e;font-size:0.65rem;"
             f"font-family:monospace'>TT Slack</div>"
             f"<div style='color:#8b949e'>—</div></div>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
     with c4:
-        color = "#00ff9d" if ss_status=="MET" else "#ff3333"
+        color = "#00ff9d" if ss_status == "MET" else "#ff3333"
         st.markdown(
             f"<div style='text-align:center'>"
             f"<div style='color:#8b949e;font-size:0.65rem;"
@@ -1681,15 +1732,15 @@ def show_signoff():
             f"<div style='color:{color};font-size:1.3rem;"
             f"font-family:monospace'>"
             f"{ss_slack:.2f}ns</div></div>"
-            if ss_slack else
-            f"<div style='text-align:center'>"
+            if ss_slack
+            else f"<div style='text-align:center'>"
             f"<div style='color:#8b949e;font-size:0.65rem;"
             f"font-family:monospace'>SS Slack</div>"
             f"<div style='color:#8b949e'>—</div></div>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
     with c5:
-        color = "#00ff9d" if ff_status=="MET" else "#ff3333"
+        color = "#00ff9d" if ff_status == "MET" else "#ff3333"
         st.markdown(
             f"<div style='text-align:center'>"
             f"<div style='color:#8b949e;font-size:0.65rem;"
@@ -1697,12 +1748,12 @@ def show_signoff():
             f"<div style='color:{color};font-size:1.3rem;"
             f"font-family:monospace'>"
             f"{ff_slack:.2f}ns</div></div>"
-            if ff_slack else
-            f"<div style='text-align:center'>"
+            if ff_slack
+            else f"<div style='text-align:center'>"
             f"<div style='color:#8b949e;font-size:0.65rem;"
             f"font-family:monospace'>FF Slack</div>"
             f"<div style='color:#8b949e'>—</div></div>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
     with c6:
         color = "#00ff9d" if gds_kb > 50 else "#ff3333"
@@ -1713,11 +1764,17 @@ def show_signoff():
             f"<div style='color:{color};font-size:1.3rem;"
             f"font-family:monospace;font-weight:bold'>"
             f"{gds_kb}KB</div></div>",
-            unsafe_allow_html=True
+            unsafe_allow_html=True,
         )
     with c7:
         if cov_pct is not None:
-            color = "#00ff9d" if cov_pct >= 90.0 else "#ffd700" if cov_pct >= 70.0 else "#ff3333"
+            color = (
+                "#00ff9d"
+                if cov_pct >= 90.0
+                else "#ffd700"
+                if cov_pct >= 70.0
+                else "#ff3333"
+            )
             st.markdown(
                 f"<div style='text-align:center'>"
                 f"<div style='color:#8b949e;font-size:0.65rem;"
@@ -1727,7 +1784,7 @@ def show_signoff():
                 f"{cov_pct:.1f}%</div>"
                 f"<div style='color:{color};font-size:0.65rem'>"
                 f"toggle rate</div></div>",
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
         else:
             st.markdown(
@@ -1735,7 +1792,7 @@ def show_signoff():
                 f"<div style='color:#8b949e;font-size:0.65rem;"
                 f"font-family:monospace'>Coverage</div>"
                 f"<div style='color:#8b949e'>—</div></div>",
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
     with c8:
         if ir_val is not None:
@@ -1749,7 +1806,7 @@ def show_signoff():
                 f"{ir_val:.2f}mV</div>"
                 f"<div style='color:{color};font-size:0.65rem'>"
                 f"calculated</div></div>",
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
         else:
             st.markdown(
@@ -1757,7 +1814,7 @@ def show_signoff():
                 f"<div style='color:#8b949e;font-size:0.65rem;"
                 f"font-family:monospace'>IR Drop</div>"
                 f"<div style='color:#8b949e'>—</div></div>",
-                unsafe_allow_html=True
+                unsafe_allow_html=True,
             )
 
     st.markdown("---")
@@ -1769,40 +1826,54 @@ def show_signoff():
     # ── Full QoR Table ──────────────────────────────────────────────
     try:
         from qor_engine import QoRReport, render_qor_table_streamlit
+
         if "qor" in latest:
             import dataclasses
+
             qor_dict = latest["qor"]
-            qor_obj  = QoRReport(**{
-                k: v for k, v in qor_dict.items()
-                if k in QoRReport.__dataclass_fields__
-            })
+            qor_obj = QoRReport(
+                **{
+                    k: v
+                    for k, v in qor_dict.items()
+                    if k in QoRReport.__dataclass_fields__
+                }
+            )
             render_qor_table_streamlit(qor_obj)
         else:
             # Build minimal QoR from existing summary for older runs
-            from qor_engine import QoRReport, render_qor_table_streamlit, calculate_fmax
+            from qor_engine import QoRReport, calculate_fmax, render_qor_table_streamlit
+
             qor_obj = QoRReport(
-                design_name    = latest.get("design_name", ""),
-                wns_tt_ns      = latest.get("timing_slack_ns"),
-                wns_ss_ns      = latest.get("timing_slack_ss_ns"),
-                wns_ff_ns      = latest.get("timing_slack_ff_ns"),
-                drc_violations = int(latest.get("drc_violations") or 0),
-                lvs_status     = str(latest.get("lvs_status") or "UNKNOWN"),
-                cell_count     = latest.get("cell_count"),
-                chip_area_um2  = latest.get("chip_area_um2"),
-                gds_size_kb    = round((latest.get("gds_size_bytes") or 0)/1024, 1),
-                fmax_mhz       = latest.get("fmax_mhz") or calculate_fmax(10.0, latest.get("timing_slack_ns")),
-                hold_slack_ns  = latest.get("hold_slack_ns") or latest.get("worst_hold_slack"),
-                dynamic_mw     = latest.get("dynamic_mw") or latest.get("dynamic_power_mw"),
-                leakage_uw     = latest.get("leakage_uw") or (latest.get("static_power_mw") * 1000 if latest.get("static_power_mw") else None),
-                total_mw       = latest.get("total_mw") or latest.get("total_power_mw"),
-                utilization_pct= latest.get("utilization_pct"),
-                tapeout_ready  = bool(latest.get("tapeout_ready")),
+                design_name=latest.get("design_name", ""),
+                wns_tt_ns=latest.get("timing_slack_ns"),
+                wns_ss_ns=latest.get("timing_slack_ss_ns"),
+                wns_ff_ns=latest.get("timing_slack_ff_ns"),
+                drc_violations=int(latest.get("drc_violations") or 0),
+                lvs_status=str(latest.get("lvs_status") or "UNKNOWN"),
+                cell_count=latest.get("cell_count"),
+                chip_area_um2=latest.get("chip_area_um2"),
+                gds_size_kb=round((latest.get("gds_size_bytes") or 0) / 1024, 1),
+                fmax_mhz=latest.get("fmax_mhz")
+                or calculate_fmax(10.0, latest.get("timing_slack_ns")),
+                hold_slack_ns=latest.get("hold_slack_ns")
+                or latest.get("worst_hold_slack"),
+                dynamic_mw=latest.get("dynamic_mw") or latest.get("dynamic_power_mw"),
+                leakage_uw=latest.get("leakage_uw")
+                or (
+                    latest.get("static_power_mw") * 1000
+                    if latest.get("static_power_mw")
+                    else None
+                ),
+                total_mw=latest.get("total_mw") or latest.get("total_power_mw"),
+                utilization_pct=latest.get("utilization_pct"),
+                tapeout_ready=bool(latest.get("tapeout_ready")),
             )
             render_qor_table_streamlit(qor_obj)
 
         # QoR export buttons
         try:
             from qor_engine import render_qor_export_ui
+
             render_qor_export_ui(qor_obj)
         except Exception as _qe_err:
             pass
@@ -1810,37 +1881,46 @@ def show_signoff():
         st.caption(f"QoR table unavailable: {_ui_err}")
 
     # ── TABS FOR EACH VIEW ──
-    tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs([
-        "Source Code",
-        "Netlist",
-        "Waveforms",
-        "Layout",
-        "Timing",
-        "Reports",
-        "Congestion",
-        "MCMM",
-        "DRC/LVS",
-        "SPEF",
-        "ECO",
-        "Formal",
-    ])
+    tab0, tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8, tab9, tab10, tab11 = st.tabs(
+        [
+            "Source Code",
+            "Netlist",
+            "Waveforms",
+            "Layout",
+            "Timing",
+            "Reports",
+            "Congestion",
+            "MCMM",
+            "DRC/LVS",
+            "SPEF",
+            "ECO",
+            "Formal",
+        ]
+    )
 
     with tab0:
-        st.markdown("""
+        st.markdown(
+            """
         <div style="font-family:'Share Tech Mono',monospace;
              font-size:0.7rem;letter-spacing:2px;
              color:#00d4ff;border-bottom:1px solid #30363d;
              padding-bottom:6px;margin-bottom:12px">
         ▸ DESIGN & SIMULATION SOURCE CODE
-        </div>""", unsafe_allow_html=True)
-        
-        design_dir = Path(r"C:\tools\OpenLane\designs") / design_name
+        </div>""",
+            unsafe_allow_html=True,
+        )
+
+        design_dir = (
+            Path(os.getenv("OPENLANE_WORK", r"C:\tools\OpenLane"))
+            / "designs"
+            / design_name
+        )
         rtl_file = design_dir / f"{design_name}.v"
         tb_file = design_dir / f"{design_name}_tb.v"
         verify_tb_file = design_dir / f"{design_name}_verify_tb.v"
-        
+
         # Fallback to search recursively in the workspace
-        workspace_dir = Path(r"C:\Users\venka\Documents\rtl-gen-aii")
+        workspace_dir = Path(os.getenv("RTL_WORKSPACE", str(Path(__file__).parent)))
         if not rtl_file.exists():
             rtl_candidates = list(workspace_dir.glob(f"**/{design_name}.v"))
             if rtl_candidates:
@@ -1865,11 +1945,11 @@ def show_signoff():
                     rtl_content,
                     file_name=f"{design_name}.v",
                     mime="text/plain",
-                    key=f"dl_rtl_{design_name}"
+                    key=f"dl_rtl_{design_name}",
                 )
             else:
                 st.info("Original RTL source file not found.")
-                
+
         with col_tb:
             st.markdown("**Simulation Testbench**")
             if tb_file.exists():
@@ -1880,11 +1960,11 @@ def show_signoff():
                     tb_content,
                     file_name=f"{design_name}_tb.v",
                     mime="text/plain",
-                    key=f"dl_tb_{design_name}"
+                    key=f"dl_tb_{design_name}",
                 )
             else:
                 st.info("Simulation testbench file not found.")
-                
+
         if verify_tb_file.exists():
             st.markdown("")
             st.markdown("**Post-GDS Verification Testbench**")
@@ -1895,7 +1975,7 @@ def show_signoff():
                 v_tb_content,
                 file_name=f"{design_name}_verify_tb.v",
                 mime="text/plain",
-                key=f"dl_v_tb_{design_name}"
+                key=f"dl_v_tb_{design_name}",
             )
 
         # Show Synthesized Netlist in Source Code view
@@ -1904,14 +1984,16 @@ def show_signoff():
         st.markdown("**Synthesized Gate-Level Netlist (Sky130 Mapped)**")
         if netlist_file.exists():
             netlist_content = netlist_file.read_text(errors="ignore")
-            with st.expander(f"👁️ View {design_name}_sky130.v ({len(netlist_content)} characters)"):
+            with st.expander(
+                f"👁️ View {design_name}_sky130.v ({len(netlist_content)} characters)"
+            ):
                 st.code(netlist_content, language="verilog")
                 st.download_button(
                     "⬇️ Download Gate-Level Netlist",
                     netlist_content,
                     file_name=f"{design_name}_sky130.v",
                     mime="text/plain",
-                    key=f"dl_netlist_{design_name}"
+                    key=f"dl_netlist_{design_name}",
                 )
         else:
             st.info("Synthesized netlist file not found.")
@@ -1919,8 +2001,9 @@ def show_signoff():
     with tab1:
         # ── Vivado/Cadence gate-level schematic (v2.7) ──────────────────
         try:
-            from schematic_vivado import render_schematic_vivado_streamlit
             from pathlib import Path as _Path
+
+            from schematic_vivado import render_schematic_vivado_streamlit
 
             # Search for synthesized netlist
             _nl = None
@@ -1944,19 +2027,21 @@ def show_signoff():
                 if _nl is None and _results.exists():
                     sky130_files = sorted(
                         _results.glob("*_sky130.v"),
-                        key=lambda p: p.stat().st_mtime, reverse=True
+                        key=lambda p: p.stat().st_mtime,
+                        reverse=True,
                     )
                     _nl = sky130_files[0] if sky130_files else None
 
             render_schematic_vivado_streamlit(
-                netlist_path = _nl,
-                key_prefix   = "vivado_sch",
+                netlist_path=_nl,
+                key_prefix="vivado_sch",
             )
 
         except Exception as _sch_err:
             st.warning(f"Schematic viewer: {_sch_err}")
             try:
                 from netlist_viewer import render_netlist_streamlit
+
                 render_netlist_streamlit(selected_dir, design_name)
             except Exception:
                 st.info("No netlist data available. Run synthesis first.")
@@ -1964,8 +2049,9 @@ def show_signoff():
     with tab2:
         # ── Vivado-style waveform viewer (v2.7) ────────────────────────
         try:
-            from waveform_vivado import render_waveform_vivado_streamlit
             from pathlib import Path as _Path
+
+            from waveform_vivado import render_waveform_vivado_streamlit
 
             # Search for VCD file
             _vcd = None
@@ -1981,7 +2067,11 @@ def show_signoff():
                         _vcd = _candidate
                         break
                 # Search for sim log
-                for _lc in [_rd / "simulation.log", _rd / "rtl_sim.log", _rd / "sim.log"]:
+                for _lc in [
+                    _rd / "simulation.log",
+                    _rd / "rtl_sim.log",
+                    _rd / "sim.log",
+                ]:
                     if _lc.exists():
                         _log = _lc
                         break
@@ -1997,10 +2087,10 @@ def show_signoff():
                         break
 
             render_waveform_vivado_streamlit(
-                vcd_path     = _vcd,
-                sim_log_path = _log,
-                height       = 540,
-                key          = "vivado_wv",
+                vcd_path=_vcd,
+                sim_log_path=_log,
+                height=540,
+                key="vivado_wv",
             )
 
         except Exception as _wv_err:
@@ -2008,6 +2098,7 @@ def show_signoff():
             # Fallback chain
             try:
                 from waveform_enhanced import render_waveform_enhanced_streamlit
+
                 render_waveform_enhanced_streamlit(_vcd, _log)
             except Exception:
                 st.info("No waveform data available. Run the pipeline first.")
@@ -2015,8 +2106,9 @@ def show_signoff():
     with tab3:
         # ── Enhanced KLayout layout viewer (v2.5) ──────────────────────
         try:
-            from layout_enhanced import render_layout_enhanced_streamlit
             from pathlib import Path as _Path
+
+            from layout_enhanced import render_layout_enhanced_streamlit
 
             # Search for GDS in run directory and results
             _gds_candidates = []
@@ -2028,6 +2120,7 @@ def show_signoff():
                 ]
             # Results directory fallback
             import os as _os
+
             _results = _Path(r"C:\tools\OpenLane\results")
             if _results.exists():
                 _gds_candidates += sorted(
@@ -2037,29 +2130,30 @@ def show_signoff():
                 )[:3]
             # Any .gds already known from run data
             _known_gds = (
-                latest.get("gds_path")
-                or latest.get("gds_file")
-            ) if latest else None
+                (latest.get("gds_path") or latest.get("gds_file")) if latest else None
+            )
             if _known_gds:
                 _gds_candidates.insert(0, _Path(str(_known_gds)))
 
             _gds_path = next((p for p in _gds_candidates if p.exists()), None)
 
             render_layout_enhanced_streamlit(
-                gds_path   = _gds_path,
-                key_prefix = "signoff_ly",
+                gds_path=_gds_path,
+                key_prefix="signoff_ly",
             )
 
         except Exception as _ly_err:
             st.warning(f"Enhanced layout viewer error: {_ly_err}")
             try:
                 from layout_viewer import render_layout_streamlit
+
                 render_layout_streamlit(selected_dir, design_name)
             except Exception:
                 st.info("No layout data available. Run the full pipeline first.")
 
     with tab4:
         from timing_viewer import render_timing_streamlit
+
         render_timing_streamlit(selected_dir, design_name)
 
     with tab5:
@@ -2068,6 +2162,7 @@ def show_signoff():
     with tab6:
         try:
             from congestion_enhanced import render_congestion_enhanced_streamlit
+
             render_congestion_enhanced_streamlit(results)
         except Exception as _cg_err:
             st.warning(f"Congestion viewer error: {_cg_err}")
@@ -2075,17 +2170,32 @@ def show_signoff():
 
     with tab7:
         try:
-            from mcmm import run_mcmm_analysis, build_slack_comparison, build_fmax_comparison, build_violation_comparison
+            from mcmm import (
+                build_fmax_comparison,
+                build_slack_comparison,
+                build_violation_comparison,
+                run_mcmm_analysis,
+            )
+
             mcmm_data = run_mcmm_analysis(results, design_name, 10.0)
             if mcmm_data.corners:
-                st.markdown(f"**Sign-off Corner:** `{mcmm_data.signoff_corner}` | **Best:** `{mcmm_data.best_corner()}` | **Worst:** `{mcmm_data.worst_corner()}`")
+                st.markdown(
+                    f"**Sign-off Corner:** `{mcmm_data.signoff_corner}` | **Best:** `{mcmm_data.best_corner()}` | **Worst:** `{mcmm_data.worst_corner()}`"
+                )
                 col_a, col_b = st.columns(2)
                 with col_a:
-                    st.plotly_chart(build_slack_comparison(mcmm_data), use_container_width=True)
-                    st.plotly_chart(build_fmax_comparison(mcmm_data), use_container_width=True)
+                    st.plotly_chart(
+                        build_slack_comparison(mcmm_data), use_container_width=True
+                    )
+                    st.plotly_chart(
+                        build_fmax_comparison(mcmm_data), use_container_width=True
+                    )
                 with col_b:
-                    st.plotly_chart(build_violation_comparison(mcmm_data), use_container_width=True)
-                    from mcmm import export_mcmm_json, export_mcmm_html
+                    st.plotly_chart(
+                        build_violation_comparison(mcmm_data), use_container_width=True
+                    )
+                    from mcmm import export_mcmm_html, export_mcmm_json
+
                     with st.container():
                         st.markdown("##### Export")
                         cj, ch = st.columns(2)
@@ -2093,30 +2203,48 @@ def show_signoff():
                             _jp = results / "mcmm.json"
                             export_mcmm_json(mcmm_data, _jp)
                             with open(_jp, "rb") as fh:
-                                st.download_button("⬇️ JSON", fh, "mcmm.json", key="dl_mcmm_json")
+                                st.download_button(
+                                    "⬇️ JSON", fh, "mcmm.json", key="dl_mcmm_json"
+                                )
                         with ch:
                             _hp = results / "mcmm.html"
                             export_mcmm_html(mcmm_data, _hp)
                             with open(_hp, "rb") as fh:
-                                st.download_button("⬇️ HTML", fh, "mcmm.html", key="dl_mcmm_html")
+                                st.download_button(
+                                    "⬇️ HTML", fh, "mcmm.html", key="dl_mcmm_html"
+                                )
             else:
-                st.info("No MCMM reports found (TT/SS/FF). Run the full RTL→GDS flow first.")
+                st.info(
+                    "No MCMM reports found (TT/SS/FF). Run the full RTL→GDS flow first."
+                )
         except Exception as _mcmm_err:
             st.warning(f"MCMM error: {_mcmm_err}")
 
     with tab8:
         try:
-            from drc_engine import run_drc_analysis, build_violation_heatmap, build_violation_table
-            from lvs_engine import run_lvs_analysis, build_lvs_summary_figure
+            from drc_engine import (
+                build_violation_heatmap,
+                build_violation_table,
+                run_drc_analysis,
+            )
+            from lvs_engine import build_lvs_summary_figure, run_lvs_analysis
+
             col_drc, col_lvs = st.columns(2)
             with col_drc:
                 st.markdown("##### DRC Engine")
                 gds_for_drc = results / f"{design_name}.gds"
                 drc_rpt = results / "drc_report.txt"
-                drc_res = run_drc_analysis(gds_for_drc if gds_for_drc.exists() else None, drc_rpt if drc_rpt.exists() else None)
-                st.metric("Violations", drc_res.total_violations, help="Total DRC violations")
+                drc_res = run_drc_analysis(
+                    gds_for_drc if gds_for_drc.exists() else None,
+                    drc_rpt if drc_rpt.exists() else None,
+                )
+                st.metric(
+                    "Violations", drc_res.total_violations, help="Total DRC violations"
+                )
                 if drc_res.violations:
-                    st.plotly_chart(build_violation_heatmap(drc_res), use_container_width=True)
+                    st.plotly_chart(
+                        build_violation_heatmap(drc_res), use_container_width=True
+                    )
                     tbl = build_violation_table(drc_res)
                     st.dataframe(tbl[:50], height=200)
                 else:
@@ -2134,7 +2262,9 @@ def show_signoff():
                 st.metric("Status", lvs_res.status, help="LVS match status")
                 st.metric("Match %", f"{lvs_res.match_percentage:.1f}%")
                 if lvs_res.device_mismatches or lvs_res.net_mismatches:
-                    st.plotly_chart(build_lvs_summary_figure(lvs_res), use_container_width=True)
+                    st.plotly_chart(
+                        build_lvs_summary_figure(lvs_res), use_container_width=True
+                    )
                 else:
                     st.success("LVS matched")
         except Exception as _dl_err:
@@ -2142,71 +2272,103 @@ def show_signoff():
 
     with tab9:
         try:
-            from spef_engine import extract_from_routing, build_rc_histogram, build_capacitance_histogram, build_delay_impact_chart
+            from spef_engine import (
+                build_capacitance_histogram,
+                build_delay_impact_chart,
+                build_rc_histogram,
+                extract_from_routing,
+            )
+
             spef_res = extract_from_routing(
                 design_name,
                 routed_def_path=results / "routed.def",
                 routing_log_path=results / "routing.log",
             )
             if spef_res.nets or spef_res.total_wire_length_um > 0:
-                st.metric("Total Wire Length", f"{spef_res.total_wire_length_um:.0f} µm")
+                st.metric(
+                    "Total Wire Length", f"{spef_res.total_wire_length_um:.0f} µm"
+                )
                 st.metric("Total R", f"{spef_res.total_resistance_ohm:.2f} Ω")
                 st.metric("Total C", f"{spef_res.total_capacitance_pf:.4f} pF")
                 col_rh, col_ch, col_di = st.columns(3)
                 with col_rh:
-                    st.plotly_chart(build_rc_histogram(spef_res), use_container_width=True)
+                    st.plotly_chart(
+                        build_rc_histogram(spef_res), use_container_width=True
+                    )
                 with col_ch:
-                    st.plotly_chart(build_capacitance_histogram(spef_res), use_container_width=True)
+                    st.plotly_chart(
+                        build_capacitance_histogram(spef_res), use_container_width=True
+                    )
                 with col_di:
-                    st.plotly_chart(build_delay_impact_chart(spef_res), use_container_width=True)
+                    st.plotly_chart(
+                        build_delay_impact_chart(spef_res), use_container_width=True
+                    )
                 from spef_engine import export_spef_json, export_spef_text
+
                 _sp = results / "spef.json"
                 export_spef_json(spef_res, _sp)
                 with open(_sp, "rb") as fh:
-                    st.download_button("⬇️ SPEF JSON", fh, "spef.json", key="dl_spef_json")
+                    st.download_button(
+                        "⬇️ SPEF JSON", fh, "spef.json", key="dl_spef_json"
+                    )
             else:
                 st.info("SPEF data not available. Run the full RTL→GDS flow first.")
         except Exception as _sp_err:
             st.warning(f"SPEF error: {_sp_err}")
 
     with tab10:
-        st.markdown("""
+        st.markdown(
+            """
         <div style="font-family:'Share Tech Mono',monospace;
              font-size:0.7rem;letter-spacing:2px;
              color:#00d4ff;border-bottom:1px solid #30363d;
              padding-bottom:6px;margin-bottom:12px">
         ▸ ECO ANALYSIS & DESIGN SPACE EXPLORATION
-        </div>""", unsafe_allow_html=True)
+        </div>""",
+            unsafe_allow_html=True,
+        )
 
         # Build a DesignDB from current results
         eco_db = DesignDB(design_name=design_name, rtl_sources=[], netlist_path="")
         if tt_slack is not None:
-            from design_db import TimingData, TimingCorner
+            from design_db import TimingCorner, TimingData
+
             eco_db.timing = TimingData(
                 period_ns=10.0,
                 fmax_mhz=None,
                 corners={
-                    "TT": TimingCorner(corner="TT", slack_ns=tt_slack, met=(tt_status == "MET")),
+                    "TT": TimingCorner(
+                        corner="TT", slack_ns=tt_slack, met=(tt_status == "MET")
+                    ),
                 },
             )
 
         col_eco1, col_eco2, col_eco3, col_eco4 = st.columns(4)
         with col_eco1:
             setup_v = find_setup_violations(eco_db)
-            st.metric("Setup Violations", len(setup_v),
-                      delta=f"WNS={setup_v[0]['slack_ns']:.2f}ns" if setup_v else "0")
+            st.metric(
+                "Setup Violations",
+                len(setup_v),
+                delta=f"WNS={setup_v[0]['slack_ns']:.2f}ns" if setup_v else "0",
+            )
         with col_eco2:
             hold_v = find_hold_violations(eco_db)
-            st.metric("Hold Violations", len(hold_v),
-                      delta=f"{hold_v[0]['slack_ns']:.3f}ns" if hold_v else "0")
+            st.metric(
+                "Hold Violations",
+                len(hold_v),
+                delta=f"{hold_v[0]['slack_ns']:.3f}ns" if hold_v else "0",
+            )
         with col_eco3:
             recs = generate_eco_recommendations(eco_db)
             st.metric("ECO Recommendations", len(recs))
         with col_eco4:
             try:
                 eco_result = apply_eco(eco_db, strategy="full")
-                st.metric("ECO Applied", f"{len(eco_result.applied_actions)} actions",
-                          delta=f"Fmax +{eco_result.timing_improvement:.3f}ns")
+                st.metric(
+                    "ECO Applied",
+                    f"{len(eco_result.applied_actions)} actions",
+                    delta=f"Fmax +{eco_result.timing_improvement:.3f}ns",
+                )
             except Exception:
                 st.metric("ECO Applied", "N/A")
 
@@ -2250,52 +2412,64 @@ def show_signoff():
             with st.spinner("Exploring 60 design configurations..."):
                 dse_result = run_design_space_exploration(eco_db)
                 st.session_state["dse_result"] = dse_result
-                st.success(f"Exploration complete: {len(dse_result.points)} points, "
-                          f"{len(dse_result.pareto_frontier)} Pareto-optimal")
+                st.success(
+                    f"Exploration complete: {len(dse_result.points)} points, "
+                    f"{len(dse_result.pareto_frontier)} Pareto-optimal"
+                )
 
         if "dse_result" in st.session_state:
             dse_res = st.session_state["dse_result"]
             col_dse1, col_dse2, col_dse3, col_dse4 = st.columns(4)
             with col_dse1:
                 if dse_res.best_fmax:
-                    st.metric("Best Fmax",
-                              f"{dse_res.best_fmax.fmax_mhz:.0f} MHz",
-                              help=f"CP={dse_res.best_fmax.clock_period_ns}ns, "
-                                   f"Util={dse_res.best_fmax.utilization_pct}%, "
-                                   f"Den={dse_res.best_fmax.placement_density}")
+                    st.metric(
+                        "Best Fmax",
+                        f"{dse_res.best_fmax.fmax_mhz:.0f} MHz",
+                        help=f"CP={dse_res.best_fmax.clock_period_ns}ns, "
+                        f"Util={dse_res.best_fmax.utilization_pct}%, "
+                        f"Den={dse_res.best_fmax.placement_density}",
+                    )
             with col_dse2:
                 if dse_res.best_area:
-                    st.metric("Best Area",
-                              f"{dse_res.best_area.area_um2:.0f} um²",
-                              help=f"CP={dse_res.best_area.clock_period_ns}ns, "
-                                   f"Util={dse_res.best_area.utilization_pct}%")
+                    st.metric(
+                        "Best Area",
+                        f"{dse_res.best_area.area_um2:.0f} um²",
+                        help=f"CP={dse_res.best_area.clock_period_ns}ns, "
+                        f"Util={dse_res.best_area.utilization_pct}%",
+                    )
             with col_dse3:
                 if dse_res.best_power:
-                    st.metric("Best Power",
-                              f"{dse_res.best_power.power_mw:.4f} mW",
-                              help=f"CP={dse_res.best_power.clock_period_ns}ns, "
-                                   f"Util={dse_res.best_power.utilization_pct}%")
+                    st.metric(
+                        "Best Power",
+                        f"{dse_res.best_power.power_mw:.4f} mW",
+                        help=f"CP={dse_res.best_power.clock_period_ns}ns, "
+                        f"Util={dse_res.best_power.utilization_pct}%",
+                    )
             with col_dse4:
                 if dse_res.best_balanced:
-                    st.metric("Balanced Design",
-                              f"{dse_res.best_balanced.fmax_mhz:.0f} MHz",
-                              help=f"CP={dse_res.best_balanced.clock_period_ns}ns, "
-                                   f"Area={dse_res.best_balanced.area_um2:.0f} um², "
-                                   f"Power={dse_res.best_balanced.power_mw:.4f}mW")
+                    st.metric(
+                        "Balanced Design",
+                        f"{dse_res.best_balanced.fmax_mhz:.0f} MHz",
+                        help=f"CP={dse_res.best_balanced.clock_period_ns}ns, "
+                        f"Area={dse_res.best_balanced.area_um2:.0f} um², "
+                        f"Power={dse_res.best_balanced.power_mw:.4f}mW",
+                    )
 
             # Pareto charts
             pco1, pco2 = st.columns(2)
             with pco1:
                 try:
-                    fig1 = render_pareto_chart(dse_res, "area_um2", "fmax_mhz",
-                                               "Area vs Fmax")
+                    fig1 = render_pareto_chart(
+                        dse_res, "area_um2", "fmax_mhz", "Area vs Fmax"
+                    )
                     st.plotly_chart(fig1, use_container_width=True)
                 except Exception as e:
                     st.caption(f"Area-Fmax chart unavailable: {e}")
             with pco2:
                 try:
-                    fig2 = render_pareto_chart(dse_res, "power_mw", "fmax_mhz",
-                                               "Power vs Fmax")
+                    fig2 = render_pareto_chart(
+                        dse_res, "power_mw", "fmax_mhz", "Power vs Fmax"
+                    )
                     st.plotly_chart(fig2, use_container_width=True)
                 except Exception as e:
                     st.caption(f"Power-Fmax chart unavailable: {e}")
@@ -2303,13 +2477,16 @@ def show_signoff():
             pco3, _ = st.columns([1, 1])
             with pco3:
                 try:
-                    fig3 = render_pareto_chart(dse_res, "congestion_score", "fmax_mhz",
-                                               "Congestion vs Fmax")
+                    fig3 = render_pareto_chart(
+                        dse_res, "congestion_score", "fmax_mhz", "Congestion vs Fmax"
+                    )
                     st.plotly_chart(fig3, use_container_width=True)
                 except Exception as e:
                     st.caption(f"Congestion-Fmax chart unavailable: {e}")
         else:
-            st.info("Click 'Run Design Space Exploration' to generate the Pareto frontier.")
+            st.info(
+                "Click 'Run Design Space Exploration' to generate the Pareto frontier."
+            )
 
     with tab11:
         st.subheader("Formal Property Verification")
@@ -2319,25 +2496,27 @@ def show_signoff():
         )
         try:
             from formal_verify import (
+                FormalReport,
+                PropertyResult,
                 render_formal_results_streamlit,
-                FormalReport, PropertyResult
             )
+
             _fr = None
-            _formal_pass  = latest.get("formal_pass")  if latest else None
+            _formal_pass = latest.get("formal_pass") if latest else None
             _formal_total = latest.get("formal_total") if latest else None
             if _formal_pass is not None and _formal_total is not None:
                 _fr = FormalReport(
-                    design_name  = design_name or "",
-                    netlist_path = "",
-                    module_name  = design_name or "",
-                    total        = _formal_total,
-                    passed       = _formal_pass,
-                    failed       = latest.get("formal_fail", 0),
+                    design_name=design_name or "",
+                    netlist_path="",
+                    module_name=design_name or "",
+                    total=_formal_total,
+                    passed=_formal_pass,
+                    failed=latest.get("formal_fail", 0),
                 )
             render_formal_results_streamlit(
-                report      = _fr,
-                run_dir     = Path(selected_dir) if selected_dir else None,
-                design_name = design_name or "",
+                report=_fr,
+                run_dir=Path(selected_dir) if selected_dir else None,
+                design_name=design_name or "",
             )
         except Exception as _fe:
             st.caption(f"Formal verification data unavailable: {_fe}")
@@ -2347,25 +2526,28 @@ def _render_reports_tab(results: Path, design_name: str):
     """Show all report files for download."""
     import streamlit as st
 
-    st.markdown("""
+    st.markdown(
+        """
     <div style="font-family:'Share Tech Mono',monospace;
          font-size:0.7rem;letter-spacing:2px;
          color:#00d4ff;margin-bottom:12px">
     ▸ SIGN-OFF REPORTS
-    </div>""", unsafe_allow_html=True)
+    </div>""",
+        unsafe_allow_html=True,
+    )
 
     reports = {
-        "LVS Report":     "lvs_report_final.txt",
-        "DRC Report":     "drc_report.txt",
-        "Timing TT":      "sta_final.txt",
-        "Timing SS":      "sta_ss.txt",
-        "Timing FF":      "sta_ff.txt",
-        "Formal Report":  f"{design_name}_formal_report.txt",
-        "IR Drop":        "ir_drop_vdd.txt",
-        "Coverage":       "coverage_report.txt",
-        "ERC":            "erc_report.txt",
-        "Antenna":        "antenna_report.txt",
-        "Formal Equiv":   "formal_equiv.log",
+        "LVS Report": "lvs_report_final.txt",
+        "DRC Report": "drc_report.txt",
+        "Timing TT": "sta_final.txt",
+        "Timing SS": "sta_ss.txt",
+        "Timing FF": "sta_ff.txt",
+        "Formal Report": f"{design_name}_formal_report.txt",
+        "IR Drop": "ir_drop_vdd.txt",
+        "Coverage": "coverage_report.txt",
+        "ERC": "erc_report.txt",
+        "Antenna": "antenna_report.txt",
+        "Formal Equiv": "formal_equiv.log",
         "Simulation Log": "simulation.log",
     }
 
@@ -2375,52 +2557,37 @@ def _render_reports_tab(results: Path, design_name: str):
         if f.exists() and f.stat().st_size > 10:
             found_any = True
             size_b = f.stat().st_size
-            size_str = f"{size_b} B" if size_b < 1024 else f"{round(size_b / 1024, 1)} KB"
+            size_str = (
+                f"{size_b} B" if size_b < 1024 else f"{round(size_b / 1024, 1)} KB"
+            )
             col1, col2 = st.columns([3, 1])
             with col1:
-                with st.expander(
-                    f"📋 {report_name} ({size_str})"
-                ):
+                with st.expander(f"📋 {report_name} ({size_str})"):
                     content = f.read_text(errors="ignore")
                     st.code(content[:2000], language="text")
                     if len(content) > 2000:
-                        st.caption(
-                            f"Showing first 2000 of "
-                            f"{len(content)} characters"
-                        )
+                        st.caption(f"Showing first 2000 of {len(content)} characters")
             with col2:
                 with open(f, "rb") as fh:
-                    st.download_button(
-                        f"⬇️",
-                        fh,
-                        file_name=fname,
-                        key=f"dl_{fname}"
-                    )
+                    st.download_button(f"⬇️", fh, file_name=fname, key=f"dl_{fname}")
 
     if not found_any:
-        st.info(
-            "No reports found. "
-            "Run the pipeline first to generate reports."
-        )
+        st.info("No reports found. Run the pipeline first to generate reports.")
 
     # PDF sign-off button
     st.markdown("---")
-    if st.button(
-        "📄 Generate PDF Sign-Off Report",
-        type="primary"
-    ):
+    if st.button("📄 Generate PDF Sign-Off Report", type="primary"):
         try:
             from report_generator import generate_signoff_report
-            pdf = generate_signoff_report(
-                design_name, str(results)
-            )
+
+            pdf = generate_signoff_report(design_name, str(results))
             if pdf.endswith(".pdf"):
                 with open(pdf, "rb") as fh:
                     st.download_button(
                         "⬇️ Download PDF Report",
                         fh,
                         file_name=Path(pdf).name,
-                        mime="application/pdf"
+                        mime="application/pdf",
                     )
                 st.success(f"Generated PDF report: {Path(pdf).name}")
             else:
@@ -2429,7 +2596,7 @@ def _render_reports_tab(results: Path, design_name: str):
                         "⬇️ Download Text Report",
                         fh.read(),
                         file_name=Path(pdf).name,
-                        mime="text/plain"
+                        mime="text/plain",
                     )
                 st.success(f"Generated text report: {Path(pdf).name}")
         except Exception as e:
@@ -2439,6 +2606,7 @@ def _render_reports_tab(results: Path, design_name: str):
 # ============================================================
 # PAGE: DOWNLOADS
 # ============================================================
+
 
 def show_downloads():
     results_dir = get_active_results_dir()
@@ -2458,8 +2626,14 @@ def show_downloads():
     files = {
         "🏆 Primary Deliverables": {
             f"{design_name}.gds": (results_dir / f"{design_name}.gds", "GDSII layout"),
-            f"{design_name}_sky130.v": (results_dir / f"{design_name}_sky130.v", "Gate-level netlist"),
-            "lvs_report_final.txt": (results_dir / "lvs_report_final.txt", "LVS verification"),
+            f"{design_name}_sky130.v": (
+                results_dir / f"{design_name}_sky130.v",
+                "Gate-level netlist",
+            ),
+            "lvs_report_final.txt": (
+                results_dir / "lvs_report_final.txt",
+                "LVS verification",
+            ),
             "sta_final.txt": (results_dir / "sta_final.txt", "Timing analysis"),
         },
         "📐 Physical Design": {
@@ -2470,7 +2644,10 @@ def show_downloads():
         },
         "📊 Simulation": {
             "trace.vcd": (results_dir / "trace.vcd", "Waveform file"),
-            f"{design_name}_extracted.spice": (results_dir / f"{design_name}_extracted.spice", "LVS extraction"),
+            f"{design_name}_extracted.spice": (
+                results_dir / f"{design_name}_extracted.spice",
+                "LVS extraction",
+            ),
             f"{design_name}.sdf": (results_dir / f"{design_name}.sdf", "Timing SDF"),
         },
     }
@@ -2481,7 +2658,7 @@ def show_downloads():
             col1, col2, col3 = st.columns([2, 3, 1])
             with col1:
                 exists = fpath.exists()
-                size   = file_kb(fpath) if exists else 0
+                size = file_kb(fpath) if exists else 0
                 status = "✅" if exists and size > 0.1 else "❌"
                 st.write(f"{status} `{fname}`")
             with col2:
@@ -2494,13 +2671,14 @@ def show_downloads():
                             f,
                             file_name=fname,
                             mime="text/plain",
-                            key=f"dl_{fname}"
+                            key=f"dl_{fname}",
                         )
 
 
 # ============================================================
 # PAGE: STATUS
 # ============================================================
+
 
 def show_status():
     results_dir = get_active_results_dir()
@@ -2511,18 +2689,20 @@ def show_status():
         return
 
     gds_file = next(results_dir.glob("*.gds"), results_dir / "adder_8bit.gds")
-    gds_kb   = file_kb(gds_file)
+    gds_kb = file_kb(gds_file)
     routed_kb = file_kb(results_dir / "routed.def")
-    cts_kb   = file_kb(results_dir / "cts.def")
+    cts_kb = file_kb(results_dir / "cts.def")
     _, total_cells = parse_synthesis_cells(results_dir)
-    lvs      = parse_lvs_stats(results_dir)
-    timing   = parse_timing_stats(results_dir)
+    lvs = parse_lvs_stats(results_dir)
+    timing = parse_timing_stats(results_dir)
 
     col1, col2, col3 = st.columns(3)
     with col1:
         st.metric("GDS", f"{gds_kb} KB", "REAL ✅" if gds_kb > 50 else "MISSING ❌")
     with col2:
-        st.metric("Routing", f"{routed_kb} KB", "REAL ✅" if routed_kb > cts_kb else "STUB ❌")
+        st.metric(
+            "Routing", f"{routed_kb} KB", "REAL ✅" if routed_kb > cts_kb else "STUB ❌"
+        )
     with col3:
         st.metric("Cells", total_cells, "Sky130A ✅")
 
@@ -2556,6 +2736,7 @@ def show_status():
 # PAGE: AI VERILOG GENERATOR
 # ============================================================
 
+
 def page_generate_design():
     st.header("🤖 AI Verilog Generator")
     st.caption(
@@ -2570,6 +2751,7 @@ def page_generate_design():
             generate_and_validate,
             validate_testbench_has_real_checks,
         )
+
         generator_available = True
     except ImportError as e:
         generator_available = False
@@ -2577,17 +2759,13 @@ def page_generate_design():
 
     # Provider and model selection
     st.markdown(
-        "<div class='eda-panel-header'>AI PROVIDER</div>",
-        unsafe_allow_html=True
+        "<div class='eda-panel-header'>AI PROVIDER</div>", unsafe_allow_html=True
     )
 
     col1, col2 = st.columns(2)
     with col1:
         provider_type = st.selectbox(
-            "Provider",
-            ["OpenRouter (Free)",
-             "Gemini", "Groq", "OpenCode"],
-            index=0
+            "Provider", ["OpenRouter (Free)", "Gemini", "Groq", "OpenCode"], index=0
         )
     with col2:
         if "OpenRouter" in provider_type:
@@ -2600,7 +2778,7 @@ def page_generate_design():
                     "meta-llama/llama-3.3-70b-instruct:free",
                     "google/gemma-3-27b-it:free",
                 ],
-                index=0
+                index=0,
             )
             provider = "openrouter"
             st.caption(f"Model: {model_choice.split('/')[1]}")
@@ -2609,16 +2787,13 @@ def page_generate_design():
             provider = provider_type.lower()
             st.caption(f"Using {provider_type}")
 
-    max_retries = st.slider(
-        "Max retries if validation fails",
-        1, 5, 3
-    )
+    max_retries = st.slider("Max retries if validation fails", 1, 5, 3)
 
     # Design input
     module_name = st.text_input(
         "Module name (no spaces)",
         placeholder="e.g. alu_4bit, fifo_8x8, uart_tx",
-        help="Must be valid Verilog identifier"
+        help="Must be valid Verilog identifier",
     )
 
     description = st.text_area(
@@ -2630,7 +2805,7 @@ def page_generate_design():
             "Two 4-bit inputs A and B, 3-bit opcode, "
             "4-bit output with carry and zero flags. "
             "Synchronous with active-low reset."
-        )
+        ),
     )
 
     # Example designs
@@ -2642,7 +2817,7 @@ def page_generate_design():
                     "Design a 4-bit ALU with ADD, SUB, AND, OR "
                     "operations. Two 4-bit inputs A and B, "
                     "2-bit opcode, 4-bit output with carry flag."
-                )
+                ),
             },
             "8-bit Shift Register": {
                 "name": "shift_reg_8bit",
@@ -2651,7 +2826,7 @@ def page_generate_design():
                     "Inputs: serial_in, shift_enable. "
                     "Output: 8-bit parallel_out. "
                     "Shifts on rising clock edge when enabled."
-                )
+                ),
             },
             "Traffic Light FSM": {
                 "name": "traffic_light",
@@ -2659,7 +2834,7 @@ def page_generate_design():
                     "Traffic light controller FSM with states: "
                     "RED(30 cycles), GREEN(25 cycles), YELLOW(5 cycles). "
                     "Outputs: red, green, yellow signals."
-                )
+                ),
             },
             "FIFO 8x8": {
                 "name": "fifo_8x8",
@@ -2667,8 +2842,8 @@ def page_generate_design():
                     "8-deep 8-bit wide synchronous FIFO. "
                     "Inputs: write_en, read_en, data_in[7:0]. "
                     "Outputs: data_out[7:0], full, empty flags."
-                )
-            }
+                ),
+            },
         }
 
         for ex_name, ex_data in examples.items():
@@ -2685,45 +2860,48 @@ def page_generate_design():
 
     # Generate button
     col_btn1, col_btn2 = st.columns(2)
-    
+
     with col_btn1:
         generate_clicked = st.button(
             "🚀 Generate with AI (GPT-4o/Gemini)",
             type="primary",
-            disabled=not (module_name and description)
+            disabled=not (module_name and description),
         )
-    
+
     with col_btn2:
         guaranteed_clicked = st.button(
             "✅ Guaranteed GDS2 (No AI - Works Always)",
             type="secondary",
-            disabled=not (module_name and description)
+            disabled=not (module_name and description),
         )
-    
+
     if generate_clicked or guaranteed_clicked:
         if not module_name.replace("_", "").isalnum():
             st.error("Module name must contain only letters, numbers, underscores")
             return
 
         progress = st.progress(0)
-        status   = st.empty()
-        
+        status = st.empty()
+
         if guaranteed_clicked:
             if _CLOUD_MODE:
-                st.warning("Pipeline execution requires Docker (not available on Streamlit Cloud). Run locally for full EDA pipeline.")
+                st.warning(
+                    "Pipeline execution requires Docker (not available on Streamlit Cloud). Run locally for full EDA pipeline."
+                )
             else:
                 # GUARANTEED FLOW - Always works
                 status.info("Running Guaranteed GDS2 Flow...")
                 progress.progress(10)
-                
+
                 from guaranteed_flow import generate_guaranteed_gds
+
                 result = generate_guaranteed_gds(
                     description=description,
                     module_name=module_name,
-                    llm_provider=provider
+                    llm_provider=provider,
                 )
             progress.progress(100)
-            
+
             if result.get("status") == "SUCCESS":
                 st.success(f"✅ GDS2 Generated: {result.get('gds_size_kb', 0)} KB")
                 st.info(f"File: {result.get('gds_file', 'N/A')}")
@@ -2744,13 +2922,13 @@ def page_generate_design():
                 module_name=module_name,
                 llm_provider=provider,
                 openrouter_model=model_choice,  # NEW
-                max_retries=max_retries
+                max_retries=max_retries,
             )
             progress.progress(40)
 
         if result["status"] != "READY_FOR_PIPELINE":
             error_msg = result.get("error", "Unknown error - check console logs")
-            
+
             # Check for Groq rate limit
             if provider == "groq" and "rate_limit" in error_msg.lower():
                 st.error(
@@ -2771,7 +2949,9 @@ def page_generate_design():
                 st.info(
                     "**gemini** (Gemini 2.0 Flash) - HIGH QUALITY, 15 RPM Free Tier ✨ RECOMMENDED\n\n"
                 )
-            elif provider == "opencode" and ("reachable" in error_msg.lower() or "connection" in error_msg.lower()):
+            elif provider == "opencode" and (
+                "reachable" in error_msg.lower() or "connection" in error_msg.lower()
+            ):
                 st.error(
                     f"❌ OpenCode.ai API Error\n\n"
                     f"The OpenCode ACP server is not responding correctly.\n"
@@ -2792,16 +2972,13 @@ def page_generate_design():
                     f"{result['attempts']} attempts\n\n"
                     f"Error: {error_msg}"
                 )
-            
+
             if result.get("rtl"):
                 with st.expander("Generated RTL (with errors)"):
                     st.code(result["rtl"], language="verilog")
             return
 
-        st.success(
-            f"✅ Verilog generated and validated "
-            f"(attempt {result['attempts']})"
-        )
+        st.success(f"✅ Verilog generated and validated (attempt {result['attempts']})")
 
         tb_check = validate_testbench_has_real_checks(result["testbench"])
         if tb_check["is_lying"]:
@@ -2833,19 +3010,16 @@ def page_generate_design():
             st.warning("⚠️ Simulation warnings")
 
         with st.expander("Simulation output"):
-            st.code(
-                sim.get("output", "No output"),
-                language="text"
-            )
+            st.code(sim.get("output", "No output"), language="text")
 
         # Run full pipeline asynchronously
         status.info("Step 2/3 — Adding to pipeline queue...")
         progress.progress(50)
-        
+
         task_id = st.session_state["queue"].add_task(
             design_name=module_name,
             verilog_file=result["paths"]["rtl"],
-            provider=provider
+            provider=provider,
         )
         st.success(f"Task queued: {task_id}. Check the Queue Status in the sidebar.")
         progress.progress(100)
@@ -2854,6 +3028,7 @@ def page_generate_design():
 # ============================================================
 # PAGE: LIVE VIEWER (GDS Layout + Waveform + Schematic + Downloads)
 # ============================================================
+
 
 def show_viewer():
     results = get_active_results_dir()
@@ -2866,7 +3041,11 @@ def show_viewer():
     # Let user pick which design to view
     available_designs = []
     if WORK_DIR.exists():
-        for d in (WORK_DIR / "results").parent.iterdir() if (WORK_DIR / "results").exists() else []:
+        for d in (
+            (WORK_DIR / "results").parent.iterdir()
+            if (WORK_DIR / "results").exists()
+            else []
+        ):
             pass
     # Find all GDS files in active results
     gds_files = list(results.glob("*.gds")) if results.exists() else []
@@ -2875,23 +3054,26 @@ def show_viewer():
     if (results / "trace.vcd").exists():
         vcd_files = [(results / "trace.vcd")]
 
-    design_names = [f.stem.replace("_sky130", "") for f in netlist_files] or \
-                   [f.stem for f in gds_files] or ["adder_8bit"]
+    design_names = (
+        [f.stem.replace("_sky130", "") for f in netlist_files]
+        or [f.stem for f in gds_files]
+        or ["adder_8bit"]
+    )
 
     selected_design = st.selectbox(
         "Select Design",
         design_names,
-        help="Designs that have completed the RTL-to-GDSII flow"
+        help="Designs that have completed the RTL-to-GDSII flow",
     )
 
     # Resolve file paths
-    gds_path     = results / f"{selected_design}.gds"
+    gds_path = results / f"{selected_design}.gds"
     netlist_path = results / f"{selected_design}_sky130.v"
-    vcd_path     = results / "trace.vcd"
-    spice_path   = results / f"{selected_design}_extracted.spice"
-    routed_path  = results / "routed.def"
-    sta_path     = results / "sta_final.txt"
-    lvs_path     = results / "lvs_report_final.txt"
+    vcd_path = results / "trace.vcd"
+    spice_path = results / f"{selected_design}_extracted.spice"
+    routed_path = results / "routed.def"
+    sta_path = results / "sta_final.txt"
+    lvs_path = results / "lvs_report_final.txt"
 
     # ---- TABS ----
     tab_gds, tab_wave, tab_schem, tab_dl = st.tabs(
@@ -2904,6 +3086,7 @@ def show_viewer():
     with tab_gds:
         try:
             from layout_enhanced import render_layout_enhanced_streamlit
+
             gds_path_obj = gds_path if gds_path.exists() else None
             render_layout_enhanced_streamlit(gds_path_obj, key_prefix="viewer_ly")
         except Exception as _ly_err:
@@ -2929,6 +3112,7 @@ def show_viewer():
     with tab_wave:
         try:
             from waveform_enhanced import render_waveform_enhanced_streamlit
+
             _vcd_candidates = [
                 results / "trace.vcd",
                 results / "simulation" / "trace.vcd",
@@ -2942,12 +3126,15 @@ def show_viewer():
             ]
             _log_path = next((p for p in _log_candidates if p.exists()), None)
             render_waveform_enhanced_streamlit(
-                vcd_path=_vcd_path, sim_log_path=_log_path, key_prefix="viewer_wv",
+                vcd_path=_vcd_path,
+                sim_log_path=_log_path,
+                key_prefix="viewer_wv",
             )
         except Exception as _wv_err:
             st.warning(f"Enhanced waveform error: {_wv_err}")
             try:
                 from waveform_display import render_waveform_streamlit
+
                 render_waveform_streamlit(str(results), selected_design)
             except Exception:
                 st.info("No waveform data available.")
@@ -2958,6 +3145,7 @@ def show_viewer():
     with tab_schem:
         try:
             from schematic_enhanced import render_schematic_enhanced_streamlit
+
             render_schematic_enhanced_streamlit(netlist_path, key_prefix="viewer_sch")
         except Exception as _sch_err:
             st.warning(f"Enhanced schematic error: {_sch_err}")
@@ -2966,18 +3154,27 @@ def show_viewer():
             else:
                 net_kb = round(netlist_path.stat().st_size / 1024, 1)
                 st.metric("Netlist", f"{net_kb} KB", "Sky130A mapped")
-                max_cells = st.slider("Max cells to show", 20, 200, 80,
-                                      help="Large designs may be slow to render")
+                max_cells = st.slider(
+                    "Max cells to show",
+                    20,
+                    200,
+                    80,
+                    help="Large designs may be slow to render",
+                )
                 if VIZ_AVAILABLE:
                     with st.spinner("Building schematic graph..."):
-                        fig = make_schematic_figure(str(netlist_path), max_cells=max_cells)
+                        fig = make_schematic_figure(
+                            str(netlist_path), max_cells=max_cells
+                        )
                     if fig:
-                        st.plotly_chart(fig, width='stretch')
+                        st.plotly_chart(fig, width="stretch")
                     else:
                         st.warning("No cells found in netlist.")
                         with st.expander("Raw netlist"):
-                            st.code(netlist_path.read_text(errors="ignore")[:3000],
-                                    language="verilog")
+                            st.code(
+                                netlist_path.read_text(errors="ignore")[:3000],
+                                language="verilog",
+                            )
 
     # ===========================================================
     # TAB 4: DOWNLOADS
@@ -2990,25 +3187,52 @@ def show_viewer():
         )
 
         dl_files = [
-            (gds_path,     f"{selected_design}.gds",          "GDS Layout (open in KLayout)",   "application/octet-stream"),
-            (netlist_path, f"{selected_design}_sky130.v",      "Synthesized Netlist (Sky130A)",   "text/plain"),
-            (vcd_path,     "trace.vcd",                        "Simulation Waveform (open in GTKWave)", "text/plain"),
-            (spice_path,   f"{selected_design}_extracted.spice", "Extracted SPICE Netlist",       "text/plain"),
-            (routed_path,  "routed.def",                       "Routed DEF (placed+routed)",      "text/plain"),
-            (results / "cts.def",      "cts.def",              "CTS DEF (clock tree)",            "text/plain"),
-            (results / "placed.def",   "placed.def",           "Placed DEF",                      "text/plain"),
-            (results / "floorplan.def","floorplan.def",        "Floorplan DEF",                   "text/plain"),
-            (sta_path,     "sta_final.txt",                    "Timing Report (STA)",             "text/plain"),
-            (lvs_path,     "lvs_report_final.txt",             "LVS Report",                      "text/plain"),
-            (results / "drc_report.txt", "drc_report.txt",     "DRC Report",                      "text/plain"),
-            (results / "synthesis.log", "synthesis.log",       "Synthesis Log (Yosys)",           "text/plain"),
+            (
+                gds_path,
+                f"{selected_design}.gds",
+                "GDS Layout (open in KLayout)",
+                "application/octet-stream",
+            ),
+            (
+                netlist_path,
+                f"{selected_design}_sky130.v",
+                "Synthesized Netlist (Sky130A)",
+                "text/plain",
+            ),
+            (
+                vcd_path,
+                "trace.vcd",
+                "Simulation Waveform (open in GTKWave)",
+                "text/plain",
+            ),
+            (
+                spice_path,
+                f"{selected_design}_extracted.spice",
+                "Extracted SPICE Netlist",
+                "text/plain",
+            ),
+            (routed_path, "routed.def", "Routed DEF (placed+routed)", "text/plain"),
+            (results / "cts.def", "cts.def", "CTS DEF (clock tree)", "text/plain"),
+            (results / "placed.def", "placed.def", "Placed DEF", "text/plain"),
+            (results / "floorplan.def", "floorplan.def", "Floorplan DEF", "text/plain"),
+            (sta_path, "sta_final.txt", "Timing Report (STA)", "text/plain"),
+            (lvs_path, "lvs_report_final.txt", "LVS Report", "text/plain"),
+            (results / "drc_report.txt", "drc_report.txt", "DRC Report", "text/plain"),
+            (
+                results / "synthesis.log",
+                "synthesis.log",
+                "Synthesis Log (Yosys)",
+                "text/plain",
+            ),
         ]
 
         found = [(p, fn, desc, mt) for p, fn, desc, mt in dl_files if p.exists()]
         missing = [(p, fn, desc, mt) for p, fn, desc, mt in dl_files if not p.exists()]
 
         if found:
-            st.success(f"**{len(found)} files ready to download** ({len(missing)} not yet generated)")
+            st.success(
+                f"**{len(found)} files ready to download** ({len(missing)} not yet generated)"
+            )
             st.markdown("---")
 
         cols = st.columns(2)
@@ -3022,8 +3246,8 @@ def show_viewer():
                         file_name=fname,
                         mime=mime,
                         help=desc,
-                        width='stretch',
-                        key=f"dl_{fname}_{i}"
+                        width="stretch",
+                        key=f"dl_{fname}_{i}",
                     )
 
         if missing:
@@ -3031,6 +3255,7 @@ def show_viewer():
             with st.expander(f"{len(missing)} files not yet generated"):
                 for p, fn, desc, _ in missing:
                     st.write(f"- `{fn}` — {desc}")
+
 
 # ============================================================
 # MAIN APP
@@ -3040,24 +3265,25 @@ def show_viewer():
 menu_option = st.sidebar.radio(
     "NAVIGATION",
     [
-         "🏠 Home",
-         "🖼️ Design Gallery",
-         "🤖 Generate / Upload",
-         "🔍 Verify GDS",
-         "📚 Design History",
-         "✅ Sign-Off",
-         "📊 Pipeline Monitor",
-         "[CAT] IP Catalog",
-         "🏗️ Hierarchy Builder",
-         "💬 Conversational Designer",
-         "📚 Example Library",
-         "🗃️ Training Dataset",
-     ],
-    label_visibility="collapsed"
+        "🏠 Home",
+        "🖼️ Design Gallery",
+        "🤖 Generate / Upload",
+        "🔍 Verify GDS",
+        "📚 Design History",
+        "✅ Sign-Off",
+        "📊 Pipeline Monitor",
+        "[CAT] IP Catalog",
+        "🏗️ Hierarchy Builder",
+        "💬 Conversational Designer",
+        "📚 Example Library",
+        "🗃️ Training Dataset",
+    ],
+    label_visibility="collapsed",
 )
 
 # Sidebar metrics panel
-st.sidebar.markdown("""
+st.sidebar.markdown(
+    """
 <div style="
     margin-top:16px;
     padding:8px 12px;
@@ -3071,7 +3297,9 @@ st.sidebar.markdown("""
     letter-spacing:1px;">
     Quick Metrics
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 _sidebar_results = get_active_results_dir()
 _sidebar_gds = next(_sidebar_results.glob("*.gds"), _sidebar_results / "adder_8bit.gds")
@@ -3081,9 +3309,12 @@ timing = parse_timing_stats(_sidebar_results)
 
 st.sidebar.metric("GDS", f"{gds_kb} KB", "REAL" if gds_kb > 50 else "MISSING")
 st.sidebar.metric("LVS", "✅" if lvs.get("matched") else "❌")
-st.sidebar.metric("Timing", f"{timing.get('slack',0)}ns", "MET" if timing.get("met") else "FAIL")
+st.sidebar.metric(
+    "Timing", f"{timing.get('slack', 0)}ns", "MET" if timing.get("met") else "FAIL"
+)
 
-st.sidebar.markdown("""
+st.sidebar.markdown(
+    """
 <div style="
     margin-top:16px;
     padding:8px 12px;
@@ -3097,22 +3328,33 @@ st.sidebar.markdown("""
     letter-spacing:1px;">
     Queue Status
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
 if "queue" in st.session_state:
     tasks = st.session_state["queue"].list_tasks()
     if not tasks:
         st.sidebar.caption("No active tasks")
     for t in tasks:
-        color = "🟢" if t["status"] == "COMPLETED" else "🟡" if t["status"] == "RUNNING" else "🔴" if t["status"] == "FAILED" else "⚪"
+        color = (
+            "🟢"
+            if t["status"] == "COMPLETED"
+            else "🟡"
+            if t["status"] == "RUNNING"
+            else "🔴"
+            if t["status"] == "FAILED"
+            else "⚪"
+        )
         st.sidebar.caption(f"{color} {t['name']} - {t['status']} ({t['progress']}%)")
-        
+
         if t["status"] == "FAILED":
             with st.sidebar.expander("View Error Details"):
                 error_detail = t.get("error", "Unknown error")
                 description = t.get("description", "unknown design")
                 if "{" in error_detail and "steps" in error_detail:
                     import json
+
                     try:
                         summary = json.loads(error_detail.replace("'", '"'))
                         st.error(format_pipeline_error(summary, description))
@@ -3120,14 +3362,15 @@ if "queue" in st.session_state:
                         st.error(error_detail)
                 else:
                     st.error(error_detail)
-        
+
         if t["status"] == "RUNNING":
             if st.sidebar.button("🔄 Refresh", key=f"ref_{t['id']}"):
                 st.rerun()
 else:
     st.sidebar.caption("Queue inactive")
 
-st.sidebar.markdown("""
+st.sidebar.markdown(
+    """
 <div style="
     margin-top:16px;
     padding:8px 12px;
@@ -3151,9 +3394,12 @@ st.sidebar.markdown("""
         API Health Check
     </a>
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
 
-st.sidebar.markdown(f"""
+st.sidebar.markdown(
+    f"""
 <div style="
     margin-top:16px;
     text-align:center;
@@ -3161,12 +3407,16 @@ st.sidebar.markdown(f"""
     font-size:0.65rem;
     color:#8b949e;
     letter-spacing:1px;">
-    Updated: {datetime.now().strftime('%H:%M:%S')}
+    Updated: {datetime.now().strftime("%H:%M:%S")}
 </div>
-""", unsafe_allow_html=True)
+""",
+    unsafe_allow_html=True,
+)
+
 
 def page_design_history():
-    st.markdown("""
+    st.markdown(
+        """
     <div style="
         font-family:'Share Tech Mono',monospace;
         font-size:0.7rem;
@@ -3178,126 +3428,100 @@ def page_design_history():
         margin-bottom:20px">
         DESIGN RUN HISTORY
     </div>
-    """, unsafe_allow_html=True)
+    """,
+        unsafe_allow_html=True,
+    )
 
     try:
         from database import get_all_runs, get_db_status
+
         db_status = get_db_status()
         runs = get_all_runs()
         if db_status["connected"]:
-            st.caption(
-                f"PostgreSQL - {len(runs)} total runs"
-            )
+            st.caption(f"PostgreSQL - {len(runs)} total runs")
         else:
-            st.caption(
-                f"JSON fallback - {len(runs)} total runs"
-            )
+            st.caption(f"JSON fallback - {len(runs)} total runs")
     except Exception as e:
         st.error(f"Could not load history: {e}")
         return
 
     if not runs:
-        st.info(
-            "No runs yet. Go to Generate/Upload to run a design."
-        )
+        st.info("No runs yet. Go to Generate/Upload to run a design.")
         return
 
     col1, col2, col3 = st.columns(3)
     with col1:
         status_filter = st.selectbox(
-            "Filter by status",
-            ["All", "TAPE_OUT_READY", "INCOMPLETE", "IN_PROGRESS"]
+            "Filter by status", ["All", "TAPE_OUT_READY", "INCOMPLETE", "IN_PROGRESS"]
         )
     with col2:
         sort_by = st.selectbox(
-            "Sort by",
-            ["Newest first", "Oldest first",
-             "Largest GDS", "Best timing"]
+            "Sort by", ["Newest first", "Oldest first", "Largest GDS", "Best timing"]
         )
     with col3:
-        design_filter = st.text_input(
-            "Search design name", placeholder="e.g. adder"
-        )
+        design_filter = st.text_input("Search design name", placeholder="e.g. adder")
 
     filtered = runs
     if status_filter == "TAPE_OUT_READY":
-        filtered = [
-            r for r in filtered
-            if r.get("tapeout_ready")
-        ]
+        filtered = [r for r in filtered if r.get("tapeout_ready")]
     elif status_filter == "INCOMPLETE":
-        filtered = [
-            r for r in filtered
-            if not r.get("tapeout_ready")
-        ]
+        filtered = [r for r in filtered if not r.get("tapeout_ready")]
     if design_filter:
         filtered = [
-            r for r in filtered
-            if design_filter.lower() in
-            r.get("design_name","").lower()
+            r
+            for r in filtered
+            if design_filter.lower() in r.get("design_name", "").lower()
         ]
 
     if sort_by == "Newest first":
-        filtered = sorted(
-            filtered,
-            key=lambda x: x.get("timestamp",""),
-            reverse=True
-        )
+        filtered = sorted(filtered, key=lambda x: x.get("timestamp", ""), reverse=True)
     elif sort_by == "Oldest first":
-        filtered = sorted(
-            filtered,
-            key=lambda x: x.get("timestamp","")
-        )
+        filtered = sorted(filtered, key=lambda x: x.get("timestamp", ""))
     elif sort_by == "Largest GDS":
         filtered = sorted(
-            filtered,
-            key=lambda x: x.get("gds_size_bytes",0) or 0,
-            reverse=True
+            filtered, key=lambda x: x.get("gds_size_bytes", 0) or 0, reverse=True
         )
     elif sort_by == "Best timing":
         filtered = sorted(
-            filtered,
-            key=lambda x: x.get("timing_slack_ns",0) or -999,
-            reverse=True
+            filtered, key=lambda x: x.get("timing_slack_ns", 0) or -999, reverse=True
         )
 
-    total   = len(filtered)
-    ready   = sum(1 for r in filtered if r.get("tapeout_ready"))
-    avg_gds = sum(
-        r.get("gds_size_bytes",0) or 0 for r in filtered
-    ) / max(total,1) / 1024
+    total = len(filtered)
+    ready = sum(1 for r in filtered if r.get("tapeout_ready"))
+    avg_gds = (
+        sum(r.get("gds_size_bytes", 0) or 0 for r in filtered) / max(total, 1) / 1024
+    )
 
     c1, c2, c3, c4 = st.columns(4)
     with c1:
         st.metric("Showing", total)
     with c2:
-        st.metric("Tape-Out Ready",
-                  f"{ready}/{total}")
+        st.metric("Tape-Out Ready", f"{ready}/{total}")
     with c3:
-        pct = int(ready/max(total,1)*100)
+        pct = int(ready / max(total, 1) * 100)
         st.metric("Success Rate", f"{pct}%")
     with c4:
-        st.metric("Avg GDS",
-                  f"{avg_gds:.1f} KB")
+        st.metric("Avg GDS", f"{avg_gds:.1f} KB")
 
     st.markdown("---")
 
     for run in filtered:
-        name      = run.get("design_name","unknown")
-        status    = run.get("status","UNKNOWN")
-        ready_ok  = run.get("tapeout_ready", False)
-        elapsed   = run.get("elapsed_sec", 0) or 0
+        name = run.get("design_name", "unknown")
+        status = run.get("status", "UNKNOWN")
+        ready_ok = run.get("tapeout_ready", False)
+        elapsed = run.get("elapsed_sec", 0) or 0
         gds_bytes = run.get("gds_size_bytes", 0) or 0
-        gds_kb    = round(gds_bytes/1024,1)
-        slack     = run.get("timing_slack_ns", "N/A")
-        cells     = run.get("cell_count", 0) or 0
-        timestamp = run.get("timestamp","")[:16].replace("T", " ")
-        run_id    = run.get("run_id", name)
+        gds_kb = round(gds_bytes / 1024, 1)
+        slack = run.get("timing_slack_ns", "N/A")
+        cells = run.get("cell_count", 0) or 0
+        timestamp = run.get("timestamp", "")[:16].replace("T", " ")
+        run_id = run.get("run_id", name)
 
         border = "#00ff9d" if ready_ok else "#ff3333"
 
         with st.container():
-            st.markdown(f"""
+            st.markdown(
+                f"""
             <div style="
                 border:1px solid {border};
                 border-left:4px solid {border};
@@ -3319,8 +3543,8 @@ def page_design_history():
                     <span style="
                         font-family:'Share Tech Mono',monospace;
                         font-size:0.75rem;
-                        color:{'#00ff9d' if ready_ok else '#ff3333'}">
-                        {'TAPE-OUT READY' if ready_ok else status}
+                        color:{"#00ff9d" if ready_ok else "#ff3333"}">
+                        {"TAPE-OUT READY" if ready_ok else status}
                     </span>
                 </div>
                 <div style="
@@ -3338,7 +3562,9 @@ def page_design_history():
                     Time: <span style="color:#00d4ff">{elapsed}s</span>
                 </div>
             </div>
-            """, unsafe_allow_html=True)
+            """,
+                unsafe_allow_html=True,
+            )
 
             with st.expander(f"Details - {run_id}"):
                 dcol1, dcol2 = st.columns(2)
@@ -3349,25 +3575,23 @@ def page_design_history():
                         st.caption("PIPELINE STEPS")
                         for step, result in steps.items():
                             icon = "PASS" if result == "PASS" else "FAIL"
-                            st.markdown(
-                                f"`{icon} {step}: {result}`"
-                            )
+                            st.markdown(f"`{icon} {step}: {result}`")
                     else:
                         st.caption("No step data available")
 
                 with dcol2:
                     st.caption("DOWNLOADS")
-                    results_dir = run.get("results_dir","")
-                    gds_path = run.get("gds_path","")
+                    results_dir = run.get("results_dir", "")
+                    gds_path = run.get("gds_path", "")
 
                     if gds_path and Path(gds_path).exists():
-                        with open(gds_path,"rb") as f:
+                        with open(gds_path, "rb") as f:
                             st.download_button(
                                 f"Download GDS ({gds_kb} KB)",
                                 f,
                                 file_name=f"{name}.gds",
                                 mime="application/octet-stream",
-                                key=f"gds_{run_id}"
+                                key=f"gds_{run_id}",
                             )
 
                     if results_dir:
@@ -3377,28 +3601,28 @@ def page_design_history():
                         sim = rd / "simulation.log"
 
                         if lvs.exists():
-                            with open(lvs,"rb") as f:
+                            with open(lvs, "rb") as f:
                                 st.download_button(
                                     "Download LVS Report",
                                     f,
                                     file_name="lvs_report.txt",
-                                    key=f"lvs_{run_id}"
+                                    key=f"lvs_{run_id}",
                                 )
                         if sta.exists():
-                            with open(sta,"rb") as f:
+                            with open(sta, "rb") as f:
                                 st.download_button(
                                     "Download STA Report",
                                     f,
                                     file_name="sta_report.txt",
-                                    key=f"sta_{run_id}"
+                                    key=f"sta_{run_id}",
                                 )
                         if sim.exists():
-                            with open(sim,"rb") as f:
+                            with open(sim, "rb") as f:
                                 st.download_button(
                                     "Download Simulation Log",
                                     f,
                                     file_name="simulation.log",
-                                    key=f"sim_{run_id}"
+                                    key=f"sim_{run_id}",
                                 )
 
 
@@ -3420,19 +3644,19 @@ def page_upload_custom():
         [
             "📝 Describe in plain English (AI generates Verilog)",
             "📁 Upload Verilog file (.v)",
-            "⌨️ Paste Verilog code directly"
+            "⌨️ Paste Verilog code directly",
         ],
-        horizontal=True
+        horizontal=True,
     )
 
     module_name = st.text_input(
         "Module name",
         placeholder="e.g. my_counter, uart_tx, custom_alu",
-        help="Must match module name in Verilog. Letters, numbers, underscores only."
+        help="Must match module name in Verilog. Letters, numbers, underscores only.",
     )
 
-    rtl_code   = ""
-    tb_code    = ""
+    rtl_code = ""
+    tb_code = ""
     ready_to_run = False
 
     if method.startswith("📝"):
@@ -3443,25 +3667,24 @@ def page_upload_custom():
                 "Example: Design a 4-bit synchronous "
                 "counter with active-low reset and enable. "
                 "Output is 4-bit count value."
-            )
+            ),
         )
 
         col1, col2 = st.columns(2)
         with col1:
             provider = st.selectbox(
                 "AI Provider",
-                ["github", "gemini", "groq", "opencode", "nvidia"],
-                index=0
+                ["local", "github", "gemini", "groq", "opencode", "nvidia"],
+                index=0,
             )
+            st.caption("local = fine-tuned CodeLlama-7B trained on 539 verified silicon designs")
         with col2:
             pdk_choice = st.selectbox(
                 "PDK / Process",
                 ["sky130A", "gf180mcuD (beta)", "IHP SG13G2 (coming soon)"],
-                index=0
+                index=0,
             )
-            max_retries = st.slider(
-                "Max repair attempts", 1, 5, 3
-            )
+            max_retries = st.slider("Max repair attempts", 1, 5, 3)
 
         if st.button("🔧 Generate Verilog", type="secondary"):
             if not module_name:
@@ -3473,21 +3696,20 @@ def page_upload_custom():
 
             with st.spinner("Generating Verilog..."):
                 try:
-                    from verilog_generator import (
-                        generate_and_validate
-                    )
+                    from verilog_generator import generate_and_validate
+
                     result = generate_and_validate(
                         description=description,
                         module_name=module_name,
                         llm_provider=provider,
-                        max_retries=max_retries
+                        max_retries=max_retries,
                     )
 
                     if result["status"] == "READY_FOR_PIPELINE":
                         rtl_code = result["rtl"]
-                        tb_code  = result["testbench"]
+                        tb_code = result["testbench"]
                         st.session_state["custom_rtl"] = rtl_code
-                        st.session_state["custom_tb"]  = tb_code
+                        st.session_state["custom_tb"] = tb_code
                         st.success("✅ Verilog generated")
 
                         col1, col2 = st.columns(2)
@@ -3507,7 +3729,7 @@ def page_upload_custom():
                             with st.expander("Error details"):
                                 st.code(
                                     result["simulation"]["output"][-1000:],
-                                    language="text"
+                                    language="text",
                                 )
                         return
                 except Exception as e:
@@ -3518,12 +3740,12 @@ def page_upload_custom():
         uploaded = st.file_uploader(
             "Upload Verilog RTL file",
             type=["v", "sv"],
-            help="Upload your .v or .sv Verilog file"
+            help="Upload your .v or .sv Verilog file",
         )
         uploaded_tb = st.file_uploader(
             "Upload Testbench (optional)",
             type=["v", "sv"],
-            help="If no testbench, AI will generate one"
+            help="If no testbench, AI will generate one",
         )
 
         if uploaded:
@@ -3531,7 +3753,7 @@ def page_upload_custom():
             st.session_state["custom_rtl"] = rtl_code
 
             if not module_name:
-                m = re.search(r'module\s+(\w+)', rtl_code)
+                m = re.search(r"module\s+(\w+)", rtl_code)
                 if m:
                     module_name = m.group(1)
                     st.info(f"Detected module name: {module_name}")
@@ -3545,21 +3767,18 @@ def page_upload_custom():
                 st.subheader("Uploaded Testbench")
                 st.code(tb_code, language="verilog")
             else:
-                st.info(
-                    "No testbench uploaded. "
-                    "AI will generate one automatically."
-                )
+                st.info("No testbench uploaded. AI will generate one automatically.")
 
     elif method.startswith("⌨️"):
         rtl_code = st.text_area(
             "Paste your Verilog RTL code",
             height=300,
-            placeholder="module my_design (...\nendmodule"
+            placeholder="module my_design (...\nendmodule",
         )
         tb_code = st.text_area(
             "Paste testbench (optional)",
             height=200,
-            placeholder="`timescale 1ns/1ps\nmodule my_design_tb();\n..."
+            placeholder="`timescale 1ns/1ps\nmodule my_design_tb();\n...",
         )
 
         if rtl_code:
@@ -3577,22 +3796,18 @@ def page_upload_custom():
         st.subheader("Pre-Pipeline Validation")
 
         from verilog_generator import (
-            validate_verilog_syntax,
-            validate_testbench_has_real_checks,
             auto_fix_testbench,
-            inject_real_checks_into_testbench,
             generate_verilog_gemini,
             generate_verilog_groq,
-            generate_verilog_opencode
+            generate_verilog_opencode,
+            inject_real_checks_into_testbench,
+            validate_testbench_has_real_checks,
+            validate_verilog_syntax,
         )
 
-        val = validate_verilog_syntax(
-            rtl_code, tb_code, module_name
-        )
+        val = validate_verilog_syntax(rtl_code, tb_code, module_name)
         if val["errors"]:
-            st.error(
-                f"❌ Syntax errors: {', '.join(val['errors'])}"
-            )
+            st.error(f"❌ Syntax errors: {', '.join(val['errors'])}")
             st.warning("Fix these before running pipeline")
         else:
             st.success("✅ Syntax valid")
@@ -3600,10 +3815,7 @@ def page_upload_custom():
         if tb_code:
             lying = validate_testbench_has_real_checks(tb_code)
             if lying["is_lying"]:
-                st.warning(
-                    "⚠️ Testbench has weak assertions. "
-                    "Auto-fixing..."
-                )
+                st.warning("⚠️ Testbench has weak assertions. Auto-fixing...")
                 for issue in lying["issues"]:
                     st.caption(f"• {issue}")
                 tb_code = inject_real_checks_into_testbench(
@@ -3618,17 +3830,15 @@ def page_upload_custom():
                 if api_key:
                     _, tb_code = generate_verilog_gemini(
                         f"Write only the testbench for this module:\n{rtl_code}",
-                        module_name
+                        module_name,
                     )
                 else:
                     _, tb_code = generate_verilog_opencode(
                         f"Write only the testbench for this module:\n{rtl_code}",
-                        module_name
+                        module_name,
                     )
                 if tb_code:
-                    tb_code = auto_fix_testbench(
-                        tb_code, module_name, rtl_code
-                    )
+                    tb_code = auto_fix_testbench(tb_code, module_name, rtl_code)
                     st.session_state["custom_tb"] = tb_code
                     st.success("✅ Testbench generated")
                     with st.expander("Generated Testbench"):
@@ -3641,15 +3851,16 @@ def page_upload_custom():
     if ready_to_run and module_name:
         st.markdown("---")
         if st.button(
-            f"🚀 Run Full RTL-to-GDSII Pipeline for {module_name}",
-            type="primary"
+            f"🚀 Run Full RTL-to-GDSII Pipeline for {module_name}", type="primary"
         ):
             _run_custom_pipeline(module_name, rtl_code, tb_code)
 
 
 def _run_custom_pipeline(module_name, rtl_code, tb_code):
     if _CLOUD_MODE:
-        st.warning("Pipeline execution requires Docker (not available on Streamlit Cloud).")
+        st.warning(
+            "Pipeline execution requires Docker (not available on Streamlit Cloud)."
+        )
         return
     from full_flow import RTLtoGDSIIFlow
 
@@ -3658,20 +3869,17 @@ def _run_custom_pipeline(module_name, rtl_code, tb_code):
     design_dir.mkdir(parents=True, exist_ok=True)
 
     rtl_path = design_dir / f"{module_name}.v"
-    tb_path  = design_dir / f"{module_name}_tb.v"
+    tb_path = design_dir / f"{module_name}_tb.v"
     rtl_path.write_text(rtl_code, encoding="utf-8")
     tb_path.write_text(tb_code, encoding="utf-8")
 
-    st.info(
-        f"Design saved to: {rtl_path}\n"
-        f"Testbench saved to: {tb_path}"
-    )
+    st.info(f"Design saved to: {rtl_path}\nTestbench saved to: {tb_path}")
 
-    progress_bar    = st.progress(0)
-    status_display  = st.empty()
-    steps_display   = st.empty()
+    progress_bar = st.progress(0)
+    status_display = st.empty()
+    steps_display = st.empty()
     completed_steps = []
-    failed_steps    = []
+    failed_steps = []
 
     TOTAL_STEPS = 11
 
@@ -3682,42 +3890,39 @@ def _run_custom_pipeline(module_name, rtl_code, tb_code):
             failed_steps.append(f"❌ {step_name}")
 
         progress_bar.progress(step_num / TOTAL_STEPS)
-        status_display.info(
-            f"Running step {step_num}/{TOTAL_STEPS}: {step_name}"
-        )
+        status_display.info(f"Running step {step_num}/{TOTAL_STEPS}: {step_name}")
 
         all_lines = completed_steps + failed_steps
         steps_display.markdown("\n".join(all_lines))
 
     try:
         flow = RTLtoGDSIIFlow(
-            design_name  = module_name,
-            verilog_file = str(rtl_path),
-            work_dir     = str(WORK),
-            pdk_dir      = r"C:\pdk",
-            clock_period = 10.0
+            design_name=module_name,
+            verilog_file=str(rtl_path),
+            work_dir=str(WORK),
+            pdk_dir=r"C:\pdk",
+            clock_period=10.0,
         )
 
-        summary = flow.run_full_flow(
-            progress_callback=update_ui
-        )
+        summary = flow.run_full_flow(progress_callback=update_ui)
 
         progress_bar.progress(1.0)
 
         results_dir = Path(summary.get("results_dir", str(WORK / "results")))
-        
+
         # Set active_results_dir in session state so it auto-selects in other tabs/pages
         st.session_state["active_results_dir"] = str(results_dir)
-        
+
         # Persist run to database
         try:
             from datetime import datetime
+
             parser = RealMetricsParser(str(results_dir))
             metrics = parser.get_all_metrics()
             metrics["status"] = "SUCCESS" if summary.get("tapeout_ready") else "FAILED"
             metrics["tapeout_ready"] = summary.get("tapeout_ready", False)
             metrics["elapsed_sec"] = summary.get("elapsed_sec", 90)
-            
+
             db_summary = {
                 "run_id": f"{module_name}_{int(datetime.now().timestamp())}",
                 "design_name": module_name,
@@ -3727,39 +3932,36 @@ def _run_custom_pipeline(module_name, rtl_code, tb_code):
                 "results_dir": str(results_dir),
                 "gds_path": str(results_dir / f"{module_name}.gds"),
                 "metrics": metrics,
-                "steps": summary.get("steps", {})
+                "steps": summary.get("steps", {}),
             }
             save_run(db_summary)
         except Exception as e:
             log.error(f"Failed to save custom run metrics to DB: {e}")
 
         if summary["tapeout_ready"]:
-            status_display.success(
-                f"🎯 TAPE-OUT READY in {summary['elapsed_sec']}s"
-            )
+            status_display.success(f"🎯 TAPE-OUT READY in {summary['elapsed_sec']}s")
             st.balloons()
 
             col1, col2, col3, col4 = st.columns(4)
 
             gds = results_dir / f"{module_name}.gds"
-            gds_kb = round(gds.stat().st_size/1024,1) if gds.exists() else 0
+            gds_kb = round(gds.stat().st_size / 1024, 1) if gds.exists() else 0
 
             with col1:
                 st.metric("GDS Size", f"{gds_kb} KB")
             with col2:
                 lvs = results_dir / "lvs_report_final.txt"
-                lvs_ok = (lvs.exists() and
-                         "equivalent" in lvs.read_text(errors="ignore"))
+                lvs_ok = lvs.exists() and "equivalent" in lvs.read_text(errors="ignore")
                 st.metric("LVS", "MATCHED ✅" if lvs_ok else "FAIL ❌")
             with col3:
                 sta = results_dir / "sta_final.txt"
                 slack = 0
                 if sta.exists():
                     m = re.search(
-                        r'([\d.]+)\s+slack\s+\(MET\)',
-                        sta.read_text(errors="ignore")
+                        r"([\d.]+)\s+slack\s+\(MET\)", sta.read_text(errors="ignore")
                     )
-                    if m: slack = float(m.group(1))
+                    if m:
+                        slack = float(m.group(1))
                 st.metric("Timing Slack", f"{slack} ns")
             with col4:
                 st.metric("DRC", "0 violations")
@@ -3771,16 +3973,11 @@ def _run_custom_pipeline(module_name, rtl_code, tb_code):
                         f,
                         file_name=f"{module_name}.gds",
                         mime="application/octet-stream",
-                        type="primary"
+                        type="primary",
                     )
         else:
-            failed = [
-                k for k, v in summary["steps"].items()
-                if v != "PASS"
-            ]
-            status_display.error(
-                f"❌ Pipeline failed at: {', '.join(failed)}"
-            )
+            failed = [k for k, v in summary["steps"].items() if v != "PASS"]
+            status_display.error(f"❌ Pipeline failed at: {', '.join(failed)}")
             st.error(
                 "Check the step details above. "
                 "Common fixes:\n"
@@ -3792,15 +3989,18 @@ def _run_custom_pipeline(module_name, rtl_code, tb_code):
 
     except Exception as e:
         import traceback
+
         status_display.error(f"Pipeline exception: {str(e)}")
         with st.expander("Full error traceback"):
             st.code(traceback.format_exc(), language="text")
 
+
 def page_verify_gds():
     st.header("🔍 GDS Verification")
     st.caption("Upload any GDS file to verify with DRC, LVS, and functional tests")
-    
-    st.markdown("""
+
+    st.markdown(
+        """
     <div style="background:#1c2128;border:1px solid #30363d;border-radius:8px;padding:16px;margin-bottom:20px">
         <h3 style="color:#00d4ff;margin:0 0 8px">🤖 AI Auto-Detection</h3>
         <p style="color:#c9d1d9;margin:0">
@@ -3810,33 +4010,36 @@ def page_verify_gds():
             <br>• Generate appropriate test cases
         </p>
     </div>
-    """, unsafe_allow_html=True)
-    
+    """,
+        unsafe_allow_html=True,
+    )
+
     uploaded_file = st.file_uploader(
         "Upload GDS File",
         type=["gds"],
-        help="Upload any GDSII layout file - AI will analyze it"
+        help="Upload any GDSII layout file - AI will analyze it",
     )
-    
+
     auto_detect = st.checkbox(
         "🤖 AI Auto-Detect Design",
         value=True,
-        help="Automatically analyze GDS to identify module name and design type"
+        help="Automatically analyze GDS to identify module name and design type",
     )
-    
+
     if uploaded_file and auto_detect:
         import tempfile
+
         from gds_analyzer import analyze_and_generate_tests
-        
+
         with tempfile.NamedTemporaryFile(suffix=".gds", delete=False) as tmp:
             tmp.write(uploaded_file.getbuffer())
             tmp_path = tmp.name
-        
+
         with st.spinner("🤖 AI analyzing GDS structure..."):
             analysis = analyze_and_generate_tests(tmp_path)
-        
+
         st.markdown("### 📊 GDS Analysis Results")
-        
+
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Module", analysis.get("module_name", "Unknown"))
@@ -3845,31 +4048,35 @@ def page_verify_gds():
         with col3:
             size_kb = analysis.get("structure", {}).get("file_size_kb", 0)
             st.metric("Size", f"{size_kb:.1f} KB")
-        
+
         structure = analysis.get("structure", {})
         if structure.get("bounding_box"):
             bb = structure["bounding_box"]
             st.info(f"📐 Die Area: {bb['width_um']:.1f} × {bb['height_um']:.1f} μm")
-        
+
         if structure.get("total_polygons", 0) > 0:
-            st.success(f"✅ Real layout: {structure['total_polygons']} polygons, {structure['total_paths']} paths")
-        
+            st.success(
+                f"✅ Real layout: {structure['total_polygons']} polygons, {structure['total_paths']} paths"
+            )
+
         design_info = analysis.get("design_info", {})
         if design_info:
             st.markdown(f"**Description:** {design_info.get('description', 'Unknown')}")
-            st.markdown(f"**Test Pattern:** `{design_info.get('test_pattern', 'Standard tests')}`")
-        
+            st.markdown(
+                f"**Test Pattern:** `{design_info.get('test_pattern', 'Standard tests')}`"
+            )
+
         st.markdown("---")
         st.markdown("### Generated Testbench")
         with st.expander("View Testbench Code", expanded=True):
             st.code(analysis.get("testbench", ""), language="verilog")
-        
+
         run_verification = st.button(
             "▶️ Run Full Verification",
             type="primary",
-            disabled=not analysis.get("verification_ready", False)
+            disabled=not analysis.get("verification_ready", False),
         )
-        
+
         design_name = analysis.get("module_name", "unknown")
         design_description = design_info.get("description", "")
         use_ai_tests = True
@@ -3878,86 +4085,94 @@ def page_verify_gds():
         design_name = st.text_input(
             "Module/Design Name",
             placeholder="e.g., adder_8bit, alu_4bit, counter",
-            help="Used to identify the design type and generate tests"
+            help="Used to identify the design type and generate tests",
         )
-        
+
         design_description = st.text_area(
             "What does this module do?",
             height=100,
             placeholder="Example: This is an 8-bit adder that takes two 8-bit inputs A and B and outputs a 9-bit sum.",
-            help="Describes functionality for test generation"
+            help="Describes functionality for test generation",
         )
-        
+
         expected_ports = st.text_area(
             "Port List (one per line: name direction bits)",
             height=100,
             placeholder="clk input 1\nreset_n input 1\na input 8\nb input 8\nsum output 9",
-            help="List of ports with direction and bit width"
+            help="List of ports with direction and bit width",
         )
-        
+
         run_verification = st.button(
             "▶️ Run Verification",
             type="primary",
-            disabled=not (uploaded_file and design_name)
+            disabled=not (uploaded_file and design_name),
         )
         use_ai_tests = True
-    
-    if 'run_verification' in dir() and run_verification and uploaded_file:
+
+    if "run_verification" in dir() and run_verification and uploaded_file:
         st.markdown("---")
         st.subheader("Verification Progress")
-        
+
         progress_bar = st.progress(0)
         status_text = st.empty()
-        
-        import tempfile
+
         import shutil
+        import tempfile
         from pathlib import Path as PathLib
-        
+
         with tempfile.TemporaryDirectory() as tmpdir:
             gds_path = PathLib(tmpdir) / f"{design_name}.gds"
             with open(gds_path, "wb") as f:
                 f.write(uploaded_file.getbuffer())
-            
+
             st.info(f"GDS file saved: {gds_path.stat().st_size / 1024:.1f} KB")
-            
+
             status_text.info("Step 1/4: Running DRC (Design Rule Check)...")
             progress_bar.progress(25)
-            
+
             # Run actual DRC using Magic
             try:
                 from full_flow import run_magic_drc
+
                 drc_result = run_magic_drc(str(gds_path), str(gds_path.parent))
             except Exception as e:
                 drc_result = {
                     "status": "SKIPPED",
                     "violations": 0,
-                    "details": f"DRC check unavailable: {e}"
+                    "details": f"DRC check unavailable: {e}",
                 }
-            
+
             if drc_result.get("status") == "SKIPPED":
                 gds_size_ok = gds_path.stat().st_size > 50000
                 drc_result["status"] = "CHECK_SIZE" if gds_size_ok else "WARNING"
-                drc_result["details"] = "✅ GDS size indicates real layout" if gds_size_ok else "⚠️ GDS size suggests stub"
-            
+                drc_result["details"] = (
+                    "✅ GDS size indicates real layout"
+                    if gds_size_ok
+                    else "⚠️ GDS size suggests stub"
+                )
+
             if drc_result.get("violations", 0) == 0:
                 st.success("✅ DRC: 0 violations")
             else:
                 st.warning(f"⚠️ DRC: {drc_result.get('violations', '?')} violations")
-            
+
             status_text.info("Step 2/4: Running LVS (Layout vs Schematic)...")
             progress_bar.progress(50)
-            
+
             # Run actual LVS check
             try:
                 from full_flow import RealMetricsParser
+
                 parser = RealMetricsParser(PathLib(str(gds_path.parent)))
                 lvs_data = parser.parse_lvs()
                 lvs_result = {
                     "status": lvs_data.get("reason_code", "UNKNOWN"),
                     "matched": lvs_data.get("has_match", False),
-                    "transistors": lvs_data.get("device_pair", (0, 0))[0] if lvs_data.get("device_pair") else 0,
+                    "transistors": lvs_data.get("device_pair", (0, 0))[0]
+                    if lvs_data.get("device_pair")
+                    else 0,
                     "nets": 0,
-                    "reason": lvs_data.get("reason_code", "UNKNOWN")
+                    "reason": lvs_data.get("reason_code", "UNKNOWN"),
                 }
             except Exception as e:
                 gds_size_ok = gds_path.stat().st_size > 50000
@@ -3966,137 +4181,157 @@ def page_verify_gds():
                     "matched": gds_size_ok,
                     "transistors": 0,
                     "nets": 0,
-                    "reason": f"LVS unavailable: {e}"
+                    "reason": f"LVS unavailable: {e}",
                 }
-            
+
             if lvs_result.get("matched"):
                 st.success("✅ LVS: Layout matches schematic")
             else:
                 st.warning(f"⚠️ LVS: {lvs_result.get('reason', 'Check failed')}")
-            
+
             status_text.info("Step 3/4: Running STA (Timing Analysis)...")
             progress_bar.progress(75)
-            
+
             # Run actual STA
             try:
                 from full_flow import RealMetricsParser
+
                 parser = RealMetricsParser(PathLib(str(gds_path.parent)))
                 timing_data = parser.parse_timing()
                 sta_result = {
                     "status": timing_data.get("status", "UNKNOWN"),
                     "slack_ns": timing_data.get("worst_slack_ns", 0),
                     "wns": timing_data.get("wns_ns", 0),
-                    "met": timing_data.get("status") == "PASS"
+                    "met": timing_data.get("status") == "PASS",
                 }
             except Exception as e:
                 sta_result = {
                     "status": "SKIPPED",
                     "slack_ns": 0,
                     "wns": 0,
-                    "met": False
+                    "met": False,
                 }
-            
+
             if sta_result.get("met"):
                 st.success(f"✅ Timing: {sta_result.get('slack_ns', 0)}ns slack (MET)")
             else:
                 st.warning(f"⚠️ Timing: WNS={sta_result.get('wns', 0)}ns")
-            
+
             status_text.info("Step 4/4: Running Functional Simulation...")
             progress_bar.progress(95)
-            
+
             if use_ai_tests and design_description:
                 st.info("🤖 Generating test cases with AI...")
-                
+
                 generated_tests = generate_tests_for_design(
                     design_name=design_name,
                     description=design_description,
-                    ports=expected_ports
+                    ports=expected_ports,
                 )
-                
+
                 if generated_tests:
                     st.code(generated_tests, language="verilog")
-            
+
             # Check for actual simulation results
             try:
                 from full_flow import RealMetricsParser
+
                 parser = RealMetricsParser(PathLib(str(gds_path.parent)))
                 sim_data = parser.parse_simulation()
                 sim_result = {
                     "status": sim_data.get("status", "UNKNOWN"),
                     "tests_run": sim_data.get("tests_total", 0),
                     "tests_passed": sim_data.get("tests_passed", 0),
-                    "tests_failed": sim_data.get("tests_failed", 0)
+                    "tests_failed": sim_data.get("tests_failed", 0),
                 }
             except Exception:
                 sim_result = {
                     "status": "SKIPPED",
                     "tests_run": 0,
                     "tests_passed": 0,
-                    "tests_failed": 0
+                    "tests_failed": 0,
                 }
-            
+
             if sim_result.get("tests_run", 0) > 0:
-                st.success(f"✅ Simulation: {sim_result.get('tests_passed', 0)}/{sim_result.get('tests_run', 0)} tests passed")
+                st.success(
+                    f"✅ Simulation: {sim_result.get('tests_passed', 0)}/{sim_result.get('tests_run', 0)} tests passed"
+                )
             else:
                 st.info("ℹ️ Simulation skipped (no testbench found)")
-            
+
             progress_bar.progress(100)
             status_text.empty()
-            
+
             st.markdown("---")
             st.subheader("📊 Verification Summary")
-            
+
             col1, col2, col3, col4 = st.columns(4)
-            
+
             with col1:
                 if drc_result["status"] == "PASS":
-                    st.metric("DRC", "✅ PASS", f"{drc_result['violations']} violations")
+                    st.metric(
+                        "DRC", "✅ PASS", f"{drc_result['violations']} violations"
+                    )
                 else:
                     st.metric("DRC", "⚠️ WARNING", drc_result["details"])
-            
+
             with col2:
                 if lvs_result["status"] == "PASS":
-                    st.metric("LVS", "✅ MATCHED", f"{lvs_result['transistors']} devices")
+                    st.metric(
+                        "LVS", "✅ MATCHED", f"{lvs_result['transistors']} devices"
+                    )
                 else:
                     st.metric("LVS", "❓ INCONCLUSIVE", lvs_result["reason"])
-            
+
             with col3:
                 if sta_result["status"] == "PASS":
                     st.metric("Timing", "✅ MET", f"{sta_result['slack_ns']}ns slack")
                 else:
-                    st.metric("Timing", "❌ FAIL", sta_result.get("error", "Violations"))
-            
+                    st.metric(
+                        "Timing", "❌ FAIL", sta_result.get("error", "Violations")
+                    )
+
             with col4:
                 if sim_result["status"] == "PASS":
-                    st.metric("Simulation", "✅ PASS", f"{sim_result['tests_passed']}/{sim_result['tests_run']} tests")
+                    st.metric(
+                        "Simulation",
+                        "✅ PASS",
+                        f"{sim_result['tests_passed']}/{sim_result['tests_run']} tests",
+                    )
                 else:
-                    st.metric("Simulation", "❌ FAIL", f"{sim_result['tests_failed']} failures")
-            
+                    st.metric(
+                        "Simulation",
+                        "❌ FAIL",
+                        f"{sim_result['tests_failed']} failures",
+                    )
+
             all_pass = (
-                drc_result["status"] in ["PASS", "WARNING"] and
-                lvs_result["status"] in ["PASS"] and
-                sta_result["status"] == "PASS" and
-                sim_result["status"] == "PASS"
+                drc_result["status"] in ["PASS", "WARNING"]
+                and lvs_result["status"] in ["PASS"]
+                and sta_result["status"] == "PASS"
+                and sim_result["status"] == "PASS"
             )
-            
+
             st.markdown("---")
             if all_pass:
                 st.success("## ✅ TAPE-OUT READY — All verifications passed")
             else:
-                st.warning("## ⚠️ Some checks failed or inconclusive — review details above")
+                st.warning(
+                    "## ⚠️ Some checks failed or inconclusive — review details above"
+                )
 
 
 def generate_tests_for_design(design_name: str, description: str, ports: str) -> str:
     """Generate test cases using AI based on design description"""
-    
+
     try:
         from verilog_generator import generate_verilog_github
-        
+
         full_prompt = f"""Generate ONLY a Verilog testbench for this module:
 
 Module: {design_name}
 Description: {description}
-Ports: {ports if ports else 'Not specified'}
+Ports: {ports if ports else "Not specified"}
 
 Requirements:
 1. Include clock generation (10ns period)
@@ -4108,17 +4343,16 @@ Requirements:
 Output only the testbench module code, no RTL."""
 
         rtl, testbench = generate_verilog_github(
-            description=full_prompt,
-            module_name=f"{design_name}_tb"
+            description=full_prompt, module_name=f"{design_name}_tb"
         )
-        
+
         if testbench:
             return testbench
         elif rtl:
             return rtl
         else:
             return f"// No response from AI\n// Manual test needed for: {design_name}"
-            
+
     except Exception as e:
         return f"// AI error: {e}\n// Please write tests manually for {design_name}"
 
@@ -4131,6 +4365,7 @@ elif menu_option == "🖼️ Design Gallery":
     st.caption("All proven tape-out ready designs — click any card to view details")
 
     from component_catalog import CatalogStore, IPComponent
+
     store = CatalogStore()
     comps = store.load_all()
 
@@ -4141,8 +4376,9 @@ elif menu_option == "🖼️ Design Gallery":
         col_f, col_s = st.columns([2, 3])
         with col_f:
             type_filter = st.selectbox(
-                "Type", ["All"] + sorted({c.component_type for c in comps}),
-                label_visibility="collapsed"
+                "Type",
+                ["All"] + sorted({c.component_type for c in comps}),
+                label_visibility="collapsed",
             )
         with col_s:
             proven_only = st.checkbox("Tape-out ready only", value=True)
@@ -4161,30 +4397,36 @@ elif menu_option == "🖼️ Design Gallery":
         for i, comp in enumerate(shown):
             with cols[i % 3]:
                 proven_color = "green" if comp.is_proven else "orange"
-                st.markdown(
-                    f"### {comp.icon} {comp.name.replace('_',' ').title()}"
+                st.markdown(f"### {comp.icon} {comp.name.replace('_', ' ').title()}")
+                st.caption(
+                    f":{proven_color}[{'✅ TAPE-OUT READY' if comp.is_proven else '⚠️ NOT VERIFIED'}]"
                 )
-                st.caption(f":{proven_color}[{'✅ TAPE-OUT READY' if comp.is_proven else '⚠️ NOT VERIFIED'}]")
 
                 metric_cols = st.columns(2)
-                metric_cols[0].metric("GDS",  f"{comp.gds_size_kb:.0f} KB")
-                metric_cols[1].metric("Fmax", f"{comp.fmax_mhz:.0f} MHz" if comp.fmax_mhz else "—")
+                metric_cols[0].metric("GDS", f"{comp.gds_size_kb:.0f} KB")
+                metric_cols[1].metric(
+                    "Fmax", f"{comp.fmax_mhz:.0f} MHz" if comp.fmax_mhz else "—"
+                )
 
                 metric_cols2 = st.columns(2)
                 metric_cols2[0].metric("Cells", comp.cell_count or "—")
-                metric_cols2[1].metric("Power", f"{comp.total_mw:.1f} mW" if comp.total_mw else "—")
+                metric_cols2[1].metric(
+                    "Power", f"{comp.total_mw:.1f} mW" if comp.total_mw else "—"
+                )
 
-                drc_icon = "✅" if comp.drc_violations == 0 else f"❌ {comp.drc_violations}"
+                drc_icon = (
+                    "✅" if comp.drc_violations == 0 else f"❌ {comp.drc_violations}"
+                )
                 lvs_icon = "✅" if "MATCHED" in comp.lvs_status else "❌"
                 st.caption(f"DRC: {drc_icon}  LVS: {lvs_icon}")
 
                 if comp.gds_path and Path(comp.gds_path).exists():
                     st.download_button(
-                        label     = "⬇ GDS",
-                        data      = Path(comp.gds_path).read_bytes(),
-                        file_name = f"{comp.name}.gds",
-                        mime      = "application/octet-stream",
-                        key       = f"gallery_dl_{comp.name}_{i}",
+                        label="⬇ GDS",
+                        data=Path(comp.gds_path).read_bytes(),
+                        file_name=f"{comp.name}.gds",
+                        mime="application/octet-stream",
+                        key=f"gallery_dl_{comp.name}_{i}",
                     )
                 st.divider()
 elif menu_option == "🤖 Generate / Upload":
@@ -4199,26 +4441,31 @@ elif menu_option == "📊 Pipeline Monitor":
     show_status()
 elif menu_option == "[CAT] IP Catalog":
     from component_catalog import render_catalog_streamlit
+
     render_catalog_streamlit()
 elif menu_option == "🏗️ Hierarchy Builder":
     from hierarchy_builder import render_hierarchy_builder_streamlit
+
     render_hierarchy_builder_streamlit()
 
 elif menu_option == "💬 Conversational Designer":
     from conversational_rtl import render_conversational_rtl_streamlit
+
     render_conversational_rtl_streamlit()
 
 elif menu_option == "📚 Example Library":
     from rag_engine import _EXAMPLES, retrieve
+
     st.title("Verilog Example Library")
     st.caption(f"{len(_EXAMPLES)} proven synthesizable designs")
     search = st.text_input("Search", placeholder="uart, counter, alu...")
     shown = retrieve(search, top_k=35) if search else _EXAMPLES
     for ex in shown:
         with st.expander(f"{ex['id']} — {ex['desc']}"):
-            st.code(ex['verilog'], language='verilog')
-            st.caption("Keywords: " + ", ".join(ex['keywords']))
+            st.code(ex["verilog"], language="verilog")
+            st.caption("Keywords: " + ", ".join(ex["keywords"]))
 
 elif menu_option == "🗃️ Training Dataset":
     from dataset_builder import render_dataset_browser_streamlit
+
     render_dataset_browser_streamlit()

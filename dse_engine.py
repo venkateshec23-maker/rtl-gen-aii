@@ -19,7 +19,7 @@ import itertools
 import logging
 import math
 import random
-from dataclasses import dataclass, field, asdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -27,6 +27,7 @@ log = logging.getLogger(__name__)
 
 
 # ── Data model ────────────────────────────────────────────────────────────────
+
 
 @dataclass
 class DSEPoint:
@@ -61,7 +62,9 @@ class DSEResult:
             "best_fmax": self.best_fmax.to_dict() if self.best_fmax else None,
             "best_area": self.best_area.to_dict() if self.best_area else None,
             "best_power": self.best_power.to_dict() if self.best_power else None,
-            "best_balanced": self.best_balanced.to_dict() if self.best_balanced else None,
+            "best_balanced": self.best_balanced.to_dict()
+            if self.best_balanced
+            else None,
             "pareto_frontier_indices": [
                 self.points.index(p) for p in self.pareto_frontier
             ],
@@ -71,6 +74,11 @@ class DSEResult:
 
 
 # ── QoR simulation ────────────────────────────────────────────────────────────
+
+
+_DSE_WARNED: bool = False
+"""Module-level flag so the surrogate warning fires at most once."""
+
 
 def simulate_point(
     cp: float,
@@ -83,6 +91,11 @@ def simulate_point(
     noise_scale: float = 0.05,
 ) -> Dict[str, float]:
     """
+    WARNING: This is a SURROGATE MODEL using random perturbations to approximate
+    EDA tool behavior. Results are NON-DETERMINISTIC and should NOT be used to
+    make real silicon implementation decisions. Replace this function with real
+    calls to OpenROAD/Yosys when running actual physical design flows.
+
     Estimate QoR for a given design configuration using physics-inspired
     scaling models. This is a *surrogate* for real OpenROAD synthesis runs.
 
@@ -93,12 +106,23 @@ def simulate_point(
       - Congestion ~ utilization * density * clock_period
       - Slack ~ clock_period - (critical_path derived from fmax)
     """
+    import warnings
+
+    global _DSE_WARNED
+    if not _DSE_WARNED:
+        _DSE_WARNED = True
+        warnings.warn(
+            "DSE surrogate model is non-deterministic. "
+            "Results do not reflect real EDA tool output.",
+            UserWarning,
+            stacklevel=2,
+        )
     # Target Fmax from clock period
     target_fmax = 1000.0 / cp if cp > 0 else 1000.0
 
     # Fmax achievable with stochastic degradation
     achievable_fmax = target_fmax * (1.0 - 0.02 * (util / 50.0))
-    achievable_fmax *= (1.0 - 0.02 * (dens / 0.6))
+    achievable_fmax *= 1.0 - 0.02 * (dens / 0.6)
     achievable_fmax *= base_fmax / max(base_fmax, 1.0) * (0.8 + 0.4 * random.random())
     fmax = round(max(achievable_fmax, 1.0), 1)
 
@@ -135,6 +159,7 @@ def simulate_point(
 
 # ── Exploration ───────────────────────────────────────────────────────────────
 
+
 def run_design_space_exploration(
     db=None,
     clock_periods: Optional[List[float]] = None,
@@ -170,12 +195,18 @@ def run_design_space_exploration(
         "clock_periods": clock_periods,
         "utilizations": utilizations,
         "placement_densities": placement_densities,
-        "total_configs": len(clock_periods) * len(utilizations) * len(placement_densities),
+        "total_configs": len(clock_periods)
+        * len(utilizations)
+        * len(placement_densities),
     }
 
     # Generate all points
-    for cp, util, dens in itertools.product(clock_periods, utilizations, placement_densities):
-        qor = simulate_point(cp, util, dens, base_fmax, base_area, base_power, base_congestion)
+    for cp, util, dens in itertools.product(
+        clock_periods, utilizations, placement_densities
+    ):
+        qor = simulate_point(
+            cp, util, dens, base_fmax, base_area, base_power, base_congestion
+        )
         pt = DSEPoint(
             clock_period_ns=cp,
             utilization_pct=util,
@@ -188,40 +219,70 @@ def run_design_space_exploration(
     result.pareto_frontier = generate_pareto_frontier(result.points)
 
     # Best selections
-    result.best_fmax = max(
-        result.pareto_frontier, key=lambda p: p.fmax_mhz, default=None
-    ) if result.pareto_frontier else None
+    result.best_fmax = (
+        max(result.pareto_frontier, key=lambda p: p.fmax_mhz, default=None)
+        if result.pareto_frontier
+        else None
+    )
 
-    result.best_area = min(
-        result.pareto_frontier, key=lambda p: p.area_um2, default=None
-    ) if result.pareto_frontier else None
+    result.best_area = (
+        min(result.pareto_frontier, key=lambda p: p.area_um2, default=None)
+        if result.pareto_frontier
+        else None
+    )
 
-    result.best_power = min(
-        result.pareto_frontier, key=lambda p: p.power_mw, default=None
-    ) if result.pareto_frontier else None
+    result.best_power = (
+        min(result.pareto_frontier, key=lambda p: p.power_mw, default=None)
+        if result.pareto_frontier
+        else None
+    )
 
     # Balanced: normalized aggregate score (lower = better)
     def _balanced_score(p: DSEPoint) -> float:
-        fmax_range = max(pt.fmax_mhz for pt in result.pareto_frontier) - \
-                     min(pt.fmax_mhz for pt in result.pareto_frontier) or 1
-        area_range = max(pt.area_um2 for pt in result.pareto_frontier) - \
-                     min(pt.area_um2 for pt in result.pareto_frontier) or 1
-        power_range = max(pt.power_mw for pt in result.pareto_frontier) - \
-                      min(pt.power_mw for pt in result.pareto_frontier) or 1
-        cong_range = max(pt.congestion_score for pt in result.pareto_frontier) - \
-                     min(pt.congestion_score for pt in result.pareto_frontier) or 1
+        fmax_range = (
+            max(pt.fmax_mhz for pt in result.pareto_frontier)
+            - min(pt.fmax_mhz for pt in result.pareto_frontier)
+            or 1
+        )
+        area_range = (
+            max(pt.area_um2 for pt in result.pareto_frontier)
+            - min(pt.area_um2 for pt in result.pareto_frontier)
+            or 1
+        )
+        power_range = (
+            max(pt.power_mw for pt in result.pareto_frontier)
+            - min(pt.power_mw for pt in result.pareto_frontier)
+            or 1
+        )
+        cong_range = (
+            max(pt.congestion_score for pt in result.pareto_frontier)
+            - min(pt.congestion_score for pt in result.pareto_frontier)
+            or 1
+        )
 
-        # Normalize: maximize fmax, minimize area/power/congestion
-        n_fmax = max(pt.fmax_mhz for pt in result.pareto_frontier) + 1  # avoid div-by-zero
-        n_area = (p.area_um2 - min(pt.area_um2 for pt in result.pareto_frontier)) / area_range
-        n_power = (p.power_mw - min(pt.power_mw for pt in result.pareto_frontier)) / power_range
-        n_cong = (p.congestion_score - min(pt.congestion_score for pt in result.pareto_frontier)) / cong_range
+        # Normalize: maximize fmax (invert so lower score = higher fmax),
+        # minimize area/power/congestion
+        max_fmax = max(pt.fmax_mhz for pt in result.pareto_frontier)
+        min_fmax = min(pt.fmax_mhz for pt in result.pareto_frontier)
+        n_fmax = (max_fmax - p.fmax_mhz) / fmax_range
+        n_area = (
+            p.area_um2 - min(pt.area_um2 for pt in result.pareto_frontier)
+        ) / area_range
+        n_power = (
+            p.power_mw - min(pt.power_mw for pt in result.pareto_frontier)
+        ) / power_range
+        n_cong = (
+            p.congestion_score
+            - min(pt.congestion_score for pt in result.pareto_frontier)
+        ) / cong_range
 
-        return (1.0 - p.fmax_mhz / n_fmax) + n_area + n_power + n_cong
+        return n_fmax + n_area + n_power + n_cong
 
-    result.best_balanced = min(
-        result.pareto_frontier, key=_balanced_score, default=None
-    ) if result.pareto_frontier else None
+    result.best_balanced = (
+        min(result.pareto_frontier, key=_balanced_score, default=None)
+        if result.pareto_frontier
+        else None
+    )
 
     # Mark Pareto points
     for p in result.pareto_frontier:
@@ -230,7 +291,8 @@ def run_design_space_exploration(
     log.info(
         "DSE complete: %d points, %d Pareto-optimal, "
         "best Fmax=%.1f MHz, best Area=%.1f um2",
-        len(result.points), len(result.pareto_frontier),
+        len(result.points),
+        len(result.pareto_frontier),
         result.best_fmax.fmax_mhz if result.best_fmax else 0,
         result.best_area.area_um2 if result.best_area else 0,
     )
@@ -238,6 +300,7 @@ def run_design_space_exploration(
 
 
 # ── Pareto frontier ───────────────────────────────────────────────────────────
+
 
 def generate_pareto_frontier(points: List[DSEPoint]) -> List[DSEPoint]:
     """
@@ -262,25 +325,30 @@ def generate_pareto_frontier(points: List[DSEPoint]) -> List[DSEPoint]:
                 continue
             # q dominates p if q is better in all objectives
             q_better = (
-                q.fmax_mhz > p.fmax_mhz
-                and q.area_um2 <= p.area_um2
-                and q.power_mw <= p.power_mw
-                and q.congestion_score <= p.congestion_score
-            ) or (
-                q.fmax_mhz >= p.fmax_mhz
-                and q.area_um2 < p.area_um2
-                and q.power_mw <= p.power_mw
-                and q.congestion_score <= p.congestion_score
-            ) or (
-                q.fmax_mhz >= p.fmax_mhz
-                and q.area_um2 <= p.area_um2
-                and q.power_mw < p.power_mw
-                and q.congestion_score <= p.congestion_score
-            ) or (
-                q.fmax_mhz >= p.fmax_mhz
-                and q.area_um2 <= p.area_um2
-                and q.power_mw <= p.power_mw
-                and q.congestion_score < p.congestion_score
+                (
+                    q.fmax_mhz > p.fmax_mhz
+                    and q.area_um2 <= p.area_um2
+                    and q.power_mw <= p.power_mw
+                    and q.congestion_score <= p.congestion_score
+                )
+                or (
+                    q.fmax_mhz >= p.fmax_mhz
+                    and q.area_um2 < p.area_um2
+                    and q.power_mw <= p.power_mw
+                    and q.congestion_score <= p.congestion_score
+                )
+                or (
+                    q.fmax_mhz >= p.fmax_mhz
+                    and q.area_um2 <= p.area_um2
+                    and q.power_mw < p.power_mw
+                    and q.congestion_score <= p.congestion_score
+                )
+                or (
+                    q.fmax_mhz >= p.fmax_mhz
+                    and q.area_um2 <= p.area_um2
+                    and q.power_mw <= p.power_mw
+                    and q.congestion_score < p.congestion_score
+                )
             )
             if q_better:
                 dominated = True
@@ -294,6 +362,7 @@ def generate_pareto_frontier(points: List[DSEPoint]) -> List[DSEPoint]:
 
 
 # ── Plotting ──────────────────────────────────────────────────────────────────
+
 
 def render_pareto_chart(
     result: DSEResult,
@@ -314,11 +383,12 @@ def render_pareto_chart(
         plotly.graph_objects.Figure
     """
     try:
-        import plotly.graph_objects as go
         import plotly.express as px
+        import plotly.graph_objects as go
     except ImportError:
         log.warning("Plotly not available — returning empty figure")
         import plotly.graph_objects as go
+
         return go.Figure()
 
     # Metric labels
@@ -337,69 +407,80 @@ def render_pareto_chart(
     # All points (non-Pareto)
     non_pareto = [p for p in result.points if not p.is_pareto]
     if non_pareto:
-        fig.add_trace(go.Scatter(
-            x=[getattr(p, x_metric) for p in non_pareto],
-            y=[getattr(p, y_metric) for p in non_pareto],
-            mode="markers",
-            marker=dict(color="#888888", size=6, opacity=0.5),
-            name="Design Points",
-            hovertemplate=(
-                f"{ylabel}: %{{y:.1f}}<br>"
-                f"{xlabel}: %{{x:.1f}}<br>"
-                "CP: %{customdata[0]}ns<br>"
-                "Util: %{customdata[1]}%<br>"
-                "Density: %{customdata[2]}"
-            ),
-            customdata=[
-                [p.clock_period_ns, p.utilization_pct, p.placement_density]
-                for p in non_pareto
-            ],
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[getattr(p, x_metric) for p in non_pareto],
+                y=[getattr(p, y_metric) for p in non_pareto],
+                mode="markers",
+                marker=dict(color="#888888", size=6, opacity=0.5),
+                name="Design Points",
+                hovertemplate=(
+                    f"{ylabel}: %{{y:.1f}}<br>"
+                    f"{xlabel}: %{{x:.1f}}<br>"
+                    "CP: %{customdata[0]}ns<br>"
+                    "Util: %{customdata[1]}%<br>"
+                    "Density: %{customdata[2]}"
+                ),
+                customdata=[
+                    [p.clock_period_ns, p.utilization_pct, p.placement_density]
+                    for p in non_pareto
+                ],
+            )
+        )
 
     # Pareto frontier line
     pareto_sorted = sorted(
         result.pareto_frontier, key=lambda p: getattr(p, y_metric), reverse=True
     )
     if pareto_sorted:
-        fig.add_trace(go.Scatter(
-            x=[getattr(p, x_metric) for p in pareto_sorted],
-            y=[getattr(p, y_metric) for p in pareto_sorted],
-            mode="lines+markers",
-            line=dict(color="#00FF88", width=2),
-            marker=dict(color="#00FF88", size=8, symbol="diamond"),
-            name="Pareto Frontier",
-            hovertemplate=(
-                f"{ylabel}: %{{y:.1f}}<br>"
-                f"{xlabel}: %{{x:.1f}}<br>"
-                "CP: %{customdata[0]}ns<br>"
-                "Util: %{customdata[1]}%<br>"
-                "Density: %{customdata[2]}"
-            ),
-            customdata=[
-                [p.clock_period_ns, p.utilization_pct, p.placement_density]
-                for p in pareto_sorted
-            ],
-        ))
+        fig.add_trace(
+            go.Scatter(
+                x=[getattr(p, x_metric) for p in pareto_sorted],
+                y=[getattr(p, y_metric) for p in pareto_sorted],
+                mode="lines+markers",
+                line=dict(color="#00FF88", width=2),
+                marker=dict(color="#00FF88", size=8, symbol="diamond"),
+                name="Pareto Frontier",
+                hovertemplate=(
+                    f"{ylabel}: %{{y:.1f}}<br>"
+                    f"{xlabel}: %{{x:.1f}}<br>"
+                    "CP: %{customdata[0]}ns<br>"
+                    "Util: %{customdata[1]}%<br>"
+                    "Density: %{customdata[2]}"
+                ),
+                customdata=[
+                    [p.clock_period_ns, p.utilization_pct, p.placement_density]
+                    for p in pareto_sorted
+                ],
+            )
+        )
 
     # Highlight best points
     def _add_highlight(pt, name, color, symbol):
         if pt:
-            fig.add_trace(go.Scatter(
-                x=[getattr(pt, x_metric)],
-                y=[getattr(pt, y_metric)],
-                mode="markers+text",
-                marker=dict(color=color, size=14, symbol=symbol, line=dict(width=2, color="white")),
-                name=name,
-                text=[name.split(" ")[0]],
-                textposition="top center",
-                hovertemplate=(
-                    f"{ylabel}: %{{y:.1f}}<br>"
-                    f"{xlabel}: %{{x:.1f}}<br>"
-                    f"CP: {pt.clock_period_ns}ns<br>"
-                    f"Util: {pt.utilization_pct}%<br>"
-                    f"Density: {pt.placement_density}"
-                ),
-            ))
+            fig.add_trace(
+                go.Scatter(
+                    x=[getattr(pt, x_metric)],
+                    y=[getattr(pt, y_metric)],
+                    mode="markers+text",
+                    marker=dict(
+                        color=color,
+                        size=14,
+                        symbol=symbol,
+                        line=dict(width=2, color="white"),
+                    ),
+                    name=name,
+                    text=[name.split(" ")[0]],
+                    textposition="top center",
+                    hovertemplate=(
+                        f"{ylabel}: %{{y:.1f}}<br>"
+                        f"{xlabel}: %{{x:.1f}}<br>"
+                        f"CP: {pt.clock_period_ns}ns<br>"
+                        f"Util: {pt.utilization_pct}%<br>"
+                        f"Density: {pt.placement_density}"
+                    ),
+                )
+            )
 
     _add_highlight(result.best_fmax, "Best Fmax", "#FF4444", "star")
     _add_highlight(result.best_area, "Best Area", "#4488FF", "star")
@@ -417,7 +498,8 @@ def render_pareto_chart(
         hovermode="closest",
         showlegend=True,
         legend=dict(
-            x=0.02, y=0.98,
+            x=0.02,
+            y=0.98,
             bgcolor="rgba(30,30,30,0.8)",
             bordercolor="#444444",
         ),
@@ -451,16 +533,25 @@ if __name__ == "__main__":
     assert qor["area_um2"] > 0
     assert qor["power_mw"] > 0
     assert 0 <= qor["congestion_score"] <= 1.0
-    print(f"[PASS] simulate_point: Fmax={qor['fmax_mhz']:.1f}MHz, "
-          f"Area={qor['area_um2']:.1f}um², "
-          f"Power={qor['power_mw']:.4f}mW, "
-          f"Congestion={qor['congestion_score']:.4f}")
+    print(
+        f"[PASS] simulate_point: Fmax={qor['fmax_mhz']:.1f}MHz, "
+        f"Area={qor['area_um2']:.1f}um², "
+        f"Power={qor['power_mw']:.4f}mW, "
+        f"Congestion={qor['congestion_score']:.4f}"
+    )
     passed += 1
 
     # Test 2: DSEPoint dataclass
     total += 1
-    pt = DSEPoint(clock_period_ns=5.0, utilization_pct=60, placement_density=0.65,
-                  fmax_mhz=200, area_um2=1500, power_mw=12.5, congestion_score=0.15)
+    pt = DSEPoint(
+        clock_period_ns=5.0,
+        utilization_pct=60,
+        placement_density=0.65,
+        fmax_mhz=200,
+        area_um2=1500,
+        power_mw=12.5,
+        congestion_score=0.15,
+    )
     d = pt.to_dict()
     assert d["clock_period_ns"] == 5.0
     assert d["fmax_mhz"] == 200
@@ -469,8 +560,10 @@ if __name__ == "__main__":
 
     # Test 3: DSEResult dataclass
     total += 1
-    pts = [DSEPoint(2.0, 50, 0.55, fmax_mhz=500),
-           DSEPoint(10.0, 80, 0.75, fmax_mhz=100)]
+    pts = [
+        DSEPoint(2.0, 50, 0.55, fmax_mhz=500),
+        DSEPoint(10.0, 80, 0.75, fmax_mhz=100),
+    ]
     res = DSEResult(points=pts, generated_at="now")
     d2 = res.to_dict()
     assert len(d2["points"]) == 2
@@ -530,18 +623,26 @@ if __name__ == "__main__":
     assert result.best_area is not None
     assert result.best_power is not None
     assert result.best_balanced is not None
-    print(f"[PASS] DSE run: {len(result.points)} points, "
-          f"{len(result.pareto_frontier)} Pareto, "
-          f"Fmax={result.best_fmax.fmax_mhz:.0f}MHz, "
-          f"Area={result.best_area.area_um2:.0f}um²")
+    print(
+        f"[PASS] DSE run: {len(result.points)} points, "
+        f"{len(result.pareto_frontier)} Pareto, "
+        f"Fmax={result.best_fmax.fmax_mhz:.0f}MHz, "
+        f"Area={result.best_area.area_um2:.0f}um²"
+    )
     passed += 1
 
     # Test 5: Pareto dominance
     total += 1
     pts2 = [
-        DSEPoint(5, 60, 0.65, fmax_mhz=200, area_um2=1000, power_mw=10, congestion_score=0.1),
-        DSEPoint(4, 60, 0.65, fmax_mhz=250, area_um2=900,  power_mw=8,  congestion_score=0.08),
-        DSEPoint(6, 60, 0.65, fmax_mhz=180, area_um2=1100, power_mw=12, congestion_score=0.12),
+        DSEPoint(
+            5, 60, 0.65, fmax_mhz=200, area_um2=1000, power_mw=10, congestion_score=0.1
+        ),
+        DSEPoint(
+            4, 60, 0.65, fmax_mhz=250, area_um2=900, power_mw=8, congestion_score=0.08
+        ),
+        DSEPoint(
+            6, 60, 0.65, fmax_mhz=180, area_um2=1100, power_mw=12, congestion_score=0.12
+        ),
     ]
     frontier = generate_pareto_frontier(pts2)
     # Point 1 (index 0) is dominated by point 2 (index 1) -> only point 2 should be Pareto
@@ -560,15 +661,18 @@ if __name__ == "__main__":
 
     # Test 7: DSE with DesignDB baseline
     total += 1
-    from design_db import DesignDB, TimingData, LayoutInfo
+    from design_db import DesignDB, LayoutInfo, TimingData
+
     db = DesignDB(design_name="dse_baseline", rtl_sources=["x.v"], netlist_path="x.v")
     db.timing = TimingData(period_ns=5.0, fmax_mhz=200)
     db.layout = LayoutInfo(area_um2=5000)
     result2 = run_design_space_exploration(db)
     assert len(result2.points) == 60
     assert result2.best_fmax is not None
-    print(f"[PASS] DSE with DesignDB baseline: {len(result2.points)} points, "
-          f"best Fmax={result2.best_fmax.fmax_mhz:.0f}MHz")
+    print(
+        f"[PASS] DSE with DesignDB baseline: {len(result2.points)} points, "
+        f"best Fmax={result2.best_fmax.fmax_mhz:.0f}MHz"
+    )
     passed += 1
 
     print()

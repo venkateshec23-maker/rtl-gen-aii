@@ -25,6 +25,9 @@ module i2c_master (
     
     assign sda = sda_out ? 1'bz : 1'b0;
     
+    // Drive SDA high (idle) at time 0 to prevent X on open-drain output
+    initial sda_out = 1'b1;
+
     always @(posedge clk) begin
         if (!reset_n) begin
             state <= IDLE; bit_cnt <= 0; shift_reg <= 0;
@@ -91,6 +94,11 @@ module i2c_master (
                         state <= IDLE; busy <= 0; done <= 1; scl_en <= 0;
                         if (rw) rx_data <= shift_reg;
                     end
+                end
+                default: begin
+                    // Unknown state: recover to IDLE safely
+                    state <= IDLE; busy <= 0; scl_en <= 0;
+                    sda_out <= 1; scl <= 1;
                 end
             endcase
             if (!scl_en) scl <= 1;
