@@ -131,6 +131,7 @@ def _build_formal_tcl(
     netlist_linux: str,
     module_name: str,
     properties: List[Property],
+    pdk_type: str = "sky130A",
 ) -> str:
     """
     Build Yosys TCL with =PROP_BEGIN:name= / =PROP_DONE:name= markers.
@@ -143,8 +144,15 @@ def _build_formal_tcl(
         checks += p.yosys_cmd + "\n"
         checks += "log =PROP_DONE:" + p.name + "=\n\n"
 
+    lib_load = ""
+    if pdk_type == "sky130A":
+        lib_load = "catch { read_verilog -DFUNCTIONAL -DUNIT_DELAY -sv -lib /pdk/sky130A/libs.ref/sky130_fd_sc_hd/verilog/sky130_fd_sc_hd.v }\n"
+    elif pdk_type == "gf180mcuD":
+        lib_load = "catch { read_verilog -DFUNCTIONAL -sv -lib /pdk/gf180mcuD/libraries/gf180mcu_fd_sc_mcu7t5v0/latest/cells/*/*.v }\n"
+
     return (
         "# RTL-Gen AI Formal Verification -- " + module_name + "\n"
+        + lib_load +
         "read_verilog " + netlist_linux + "\n"
         "hierarchy -top " + module_name + "\n"
         "log =FORMAL_START=\n"
@@ -218,6 +226,7 @@ def run_formal_verification_simple(
     module_name: str,
     work_dir: Path = _WORK_DIR,
     properties: Optional[List[Property]] = None,
+    pdk_type: str = "sky130A",
 ) -> FormalReport:
     """Run formal verification via Docker. No DockerManager required."""
     t0 = time.time()
@@ -236,7 +245,7 @@ def run_formal_verification_simple(
     except ValueError:
         nl_linux = "/work/designs/" + module_name + "/" + netlist_path.name
 
-    tcl_content = _build_formal_tcl(nl_linux, module_name, properties)
+    tcl_content = _build_formal_tcl(nl_linux, module_name, properties, pdk_type)
     tcl_dir = work_dir / "scripts"
     tcl_dir.mkdir(parents=True, exist_ok=True)
     tcl_path = tcl_dir / (module_name + "_formal.tcl")
@@ -245,10 +254,19 @@ def run_formal_verification_simple(
 
     log.debug("Formal TCL:\n%s", tcl_content)
 
+    import platform
+    import os
+    if platform.system() == "Windows":
+        _DEFAULT_PDK = r"C:\pdk"
+    else:
+        _DEFAULT_PDK = "/pdk"
+    pdk_host = os.getenv("PDK_ROOT", _DEFAULT_PDK)
+
     try:
         result = subprocess.run(
             ["docker", "run", "--rm",
              "-v", str(work_dir) + ":/work",
+             "-v", f"{pdk_host}:/pdk",
              "efabless/openlane:latest",
              "yosys", "-s", tcl_linux],
             capture_output=True, text=True, timeout=120,
@@ -300,8 +318,9 @@ def run_formal_verification(
     module_name: str,
     docker_manager=None,
     work_dir: Path = _WORK_DIR,
+    pdk_type: str = "sky130A",
 ) -> FormalReport:
-    return run_formal_verification_simple(netlist_path, module_name, work_dir)
+    return run_formal_verification_simple(netlist_path, module_name, work_dir, pdk_type=pdk_type)
 
 
 def diagnose_formal(netlist_path: Path, module_name: str) -> None:

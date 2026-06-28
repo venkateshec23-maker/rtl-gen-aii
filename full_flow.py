@@ -3304,6 +3304,7 @@ equiv_status
                 netlist_path = netlist_path,
                 module_name  = self.design_name,
                 work_dir     = Path(OPENLANE_HOST),
+                pdk_type     = self.pdk_type,
             )
 
             if self.formal_report.failed > 0:
@@ -5440,6 +5441,7 @@ LVS_PASSED
                     netlist_path = _netlist,
                     module_name  = self.design_name,
                     work_dir     = Path(OPENLANE_HOST),
+                    pdk_type     = self.pdk_type,
                 )
                 summary["formal_pass"]  = _formal.passed
                 summary["formal_fail"]  = _formal.failed
